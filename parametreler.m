@@ -14,7 +14,24 @@ n  = 10;                               % Kat sayısı
 m  = 360e3 * ones(n,1);                % Kat kütleleri [kg]
 k  = 6.5e8 * ones(n,1);                % Kat rijitlikleri [N/m]
 c  = 6.2e6 * ones(n,1);                % Rayleigh eşdeğeri sönüm [N·s/m]
-[M,K,C0] = make_KCM(n,m,k,c);         % Kütle, rijitlik ve sönüm matrisleri
+% --- Kütle, rijitlik ve sönüm matrisleri ---
+M  = diag(m);
+K  = zeros(n); C0 = zeros(n);
+for i = 1:n
+    kL = k(i);    cL = c(i);
+    if i < n
+        kU = k(i+1); cU = c(i+1);
+    else
+        kU = 0;    cU = 0;
+    end
+    K(i,i)   = kL + kU;   C0(i,i)   = cL + cU;
+    if i > 1
+        K(i,i-1) = -kL;  C0(i,i-1) = -cL;
+    end
+    if i < n
+        K(i,i+1) = -kU;  C0(i,i+1) = -cU;
+    end
+end
 
 % Birinci doğal periyot (dampersiz referans)
 [~,D] = eig(K,M);
