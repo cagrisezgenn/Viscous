@@ -53,6 +53,48 @@ x10_0   = x0(:,10);
 x10_lin = x_lin(:,10);
 x10_orf = x_orf(:,10);
 
+%% Self-check \zeta_{1}
+% Toggle ve damper çoğulluğu dikkate alınarak, lineer ve orifis/termal
+% senaryoları için birinci mod sönüm oranını hesapla.
+nStories = n - 1;
+Rvec = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
+mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
+ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
+multi = mask .* ndps;                % sütun vektörü
+
+% Damper kaynaklı katkı matrisleri
+Kadd = zeros(n);
+Cl_add = zeros(n);
+Co_add = zeros(n);
+for i = 1:nStories
+    idx = [i, i+1];
+    k_eq  = k_sd * (Rvec(i)^2) * multi(i);
+    c_eq_l = diag_lin.c_lam * (Rvec(i)^2) * multi(i);
+    c_eq_o = diag_orf.c_lam * (Rvec(i)^2) * multi(i);
+    kM = k_eq  * [1 -1; -1 1];
+    cM_l = c_eq_l * [1 -1; -1 1];
+    cM_o = c_eq_o * [1 -1; -1 1];
+    Kadd(idx,idx)  = Kadd(idx,idx)  + kM;
+    Cl_add(idx,idx)= Cl_add(idx,idx)+ cM_l;
+    Co_add(idx,idx)= Co_add(idx,idx)+ cM_o;
+end
+
+K_tot = K + Kadd;
+C_lin = C0 + Cl_add;
+C_orf = C0 + Co_add;
+
+% Birinci mod için özdeğer/özvektör
+[V,D] = eig(K_tot,M);
+[w2,ord] = sort(diag(D),'ascend');
+phi1 = V(:,ord(1));
+w1 = sqrt(w2(1));
+normM = phi1.' * M * phi1;
+zeta_lin = (phi1.' * C_lin * phi1) / (2*w1*normM);
+zeta_orf = (phi1.' * C_orf * phi1) / (2*w1*normM);
+
+fprintf('Self-check zeta1: %.3f %% (linear) vs %.3f %% (orifice/thermal)\n', ...
+    100*zeta_lin, 100*zeta_orf);
+
 %% 5) Grafiklerin çizimi ve kısa özet
 grafik;
 
