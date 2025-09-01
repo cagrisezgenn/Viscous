@@ -58,6 +58,26 @@ a10_0   = a0(:,10)   + ag;
 a10_lin = a_lin(:,10)+ ag;
 a10_orf = a_orf(:,10)+ ag;
 
+%% --- Diagnostic metrics ---
+q = @(x,p) quantile(x,p);
+nStories = size(diag_orf.drift,2);
+rows = (1:nStories).';
+Tdiag = table(rows, ...
+    q(abs(diag_orf.drift),0.95).', ...
+    q(abs(diag_orf.story_force),0.95).', ...
+    q(diag_orf.Q,0.50).', q(diag_orf.Q,0.95).', ...
+    q(diag_orf.dP_orf,0.50).', q(diag_orf.dP_orf,0.95).', ...
+    100*mean(diag_orf.dP_orf<0).', ...
+    q(abs(diag_orf.PF),0.95).', ...
+    repmat(diag_orf.T_oil(end),nStories,1), ...
+    repmat(diag_orf.T_steel(end),nStories,1), ...
+    repmat(diag_orf.mu(end),nStories,1), ...
+    repmat(diag_orf.energy(end),nStories,1), ...
+    'VariableNames',{ 'story','drift_p95','story_force_p95','Q_q50','Q_q95', ...
+    'dP_orf_q50','dP_orf_q95','cav_pct','PF_p95','T_oil_end','T_steel_end','mu_end','energy_tot'});
+if ~exist('out','dir'), mkdir('out'); end
+writetable(Tdiag,'out/diagnostic.csv');
+
 %% Self-check \zeta_{1}
 % Toggle ve damper çoğulluğu dikkate alınarak, lineer ve orifis/termal
 % senaryoları için birinci mod sönüm oranını hesapla.
@@ -243,8 +263,39 @@ function [x,a,diag] = mck_with_damper( ...
     a = ( -(M\(C*v.' + K*x.' + dev_force(x,v,k_sd,c_lam,use_orf,orf,rho,Ap,Ao,Qcap,mu_abs,toggle_gain,story_mask,n_dampers_per_story))).' ...
           - ag.*r.' );
 
-    % Diag
-    diag = struct('dT_est',dT_est,'c_lam',c_lam);
+    % --- Diagnostic fields ---
+    drift = x(:,Mvec) - x(:,Nvec);
+    dvel  = v(:,Mvec) - v(:,Nvec);
+    story_force = k_sd*drift + c_lam*dvel;
+    drift_p = drift .* Rvec;
+    dvel_p  = dvel  .* Rvec;
+    F_lin_p = k_sd*drift_p + c_lam*dvel_p;
+    if use_orf
+        qmag = Qcap * tanh( (Ap/Qcap) * sqrt(dvel_p.^2 + orf.veps^2) );
+        Re   = (rho .* qmag ./ max(Ao*mu_abs,1e-9)) .* max(orf.d_o,1e-9);
+        Cd   = orf.CdInf - (orf.CdInf - orf.Cd0) ./ (1 + (Re./orf.Rec).^orf.p_exp);
+        dP_calc = 0.5*rho .* ( qmag ./ max(Cd.*Ao,1e-9) ).^2;
+        p_up   = orf.p_amb + abs(F_lin_p)./max(Ap,1e-12);
+        dP_cav = max( (p_up - orf.p_cav_eff) .* orf.cav_sf, 0 );
+        dP_orf = softmin(dP_calc, dP_cav, 1e5);
+        sgn = dvel_p ./ sqrt(dvel_p.^2 + orf.veps^2);
+        F_orf_p = dP_orf .* Ap .* sgn;
+        F_p = F_lin_p + F_orf_p;
+        Q = Ap * sqrt(dvel_p.^2 + orf.veps^2);
+        P_orf_per = dP_orf .* Q;
+    else
+        dP_orf = zeros(size(dvel_p));
+        Q = zeros(size(dvel_p));
+        F_p = F_lin_p;
+        P_orf_per = zeros(size(dvel_p));
+    end
+    P_visc_per = c_lam * (dvel_p.^2);
+    P_sum = sum( (P_visc_per + P_orf_per) .* multi, 2 );
+    energy = cumtrapz(t, P_sum);
+    mu = mu_ref * exp(b_mu*(Tser - T_ref_C));
+    diag = struct('dT_est',dT_est,'c_lam',c_lam,'drift',drift,...
+        'story_force',story_force,'Q',Q,'dP_orf',dP_orf,'PF',F_p,...
+        'T_oil',Tser,'T_steel',Tser,'mu',mu,'energy',energy);
 
     % ----- iç yardımcılar -----
     function dz = rhs(tt,zz,c_lam_loc,mu_abs_loc)
