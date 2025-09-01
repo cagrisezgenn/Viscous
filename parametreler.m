@@ -41,7 +41,7 @@ T1 = 2*pi/w(1);
 %% --- 2) Damper geometrisi ve malzeme ---
 Dp     = 0.125;     % Piston çapı [m]
 Lgap   = 0.055;     % Dış gövde/piston aralığı [m]
-d_o    = 2.7e-3;    % Orifis çapı [m]
+d_o    = 1.5e-3;    % Orifis çapı [m]
 Lori   = 0.10;      % Orifis uzunluğu [m]
 mu_ref = 0.9;       % Referans viskozite [Pa·s]
 

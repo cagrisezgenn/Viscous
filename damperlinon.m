@@ -11,8 +11,8 @@
 clear; clc; close all;
 
 %% --- Model anahtarları ---
-use_orifice = true;     % Orifis modeli aç/kapa
-use_thermal = true;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
+use_orifice = false;     % Orifis modeli aç/kapa
+use_thermal = false;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
 
 %% 0) Deprem girdisi (ham ivme, m/s^2)
 S  = load('acc_matrix.mat','acc_matrix7');   % gerekirse path'i değiştirin
