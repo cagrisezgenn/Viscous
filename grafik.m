@@ -4,7 +4,7 @@
 %  karşılaştırma grafiğini üretir ve maksimum yer değiştirmeleri yazdırır.
 %  Aşağıdaki değişkenlerin ana betikte tanımlanmış olması beklenir:
 %    t, x10_0, x10_lin, x10_orf, T1, t5, t95, use_thermal
-%% ================================================================
+
 %% Grafik: 10. kat yer değiştirme eğrileri
 figure('Name','10. Kat yer değiştirme — ham ivme (ODE-only)','Color','w');
 plot(t, x10_0 ,'k','LineWidth',1.4); hold on;
@@ -23,7 +23,7 @@ plot(t, a10_lin,'b','LineWidth',1.1);
 plot(t, a10_orf,'r','LineWidth',1.0);
 yl = ylim; plot([t5 t5],yl,'k--','HandleVisibility','off');
 plot([t95 t95],yl,'k--','HandleVisibility','off');
-grid on; xlabel('t [s]'); ylabel('\ddot{x}_{10,abs}(t) [m/s^2]','Interpreter','latex');
+grid on; xlabel('t [s]'); ylabel('a10abs(t) [m/s^2]');
 legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
 
 %% Grafik: Maksimum göreli kat ötelemeleri (IDR)
@@ -57,4 +57,3 @@ if exist('diag_orf','var') && isstruct(diag_orf) && isfield(diag_orf,'dT_est')
     fprintf('Termal döngü: ΔT_est=%.2f K | c_lam(final)=%.3e N·s/m\n', diag_orf.dT_est, diag_orf.c_lam);
 end
 fprintf('Not: orifis modelini kapatmak için use_orifice=false; termali kapatmak için use_thermal=false.\n');
-
