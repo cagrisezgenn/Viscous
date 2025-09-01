@@ -39,13 +39,15 @@ parametreler;
 [x_lin,~] = mck_with_damper( ...
     t,ag,M,C0,K, k_sd, c_lam0, false, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
     false, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
-    cp_oil, cp_steel, steel_to_oil_mass_ratio, n_dampers_per_story, resFactor);
+    cp_oil, cp_steel, steel_to_oil_mass_ratio, n_dampers_per_story, ...
+    toggle_gain, story_mask, resFactor);
 
 % Orifisli (+ termal anahtarına göre)
 [x_orf,diag] = mck_with_damper( ...
     t,ag,M,C0,K, k_sd, c_lam0, use_orifice, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
     use_thermal, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
-    cp_oil, cp_steel, steel_to_oil_mass_ratio, n_dampers_per_story, resFactor);
+    cp_oil, cp_steel, steel_to_oil_mass_ratio, n_dampers_per_story, ...
+    toggle_gain, story_mask, resFactor);
 
 x10_0   = x0(:,10);
 x10_lin = x_lin(:,10);
@@ -83,12 +85,23 @@ end
 function [x,a,diag] = mck_with_damper( ...
     t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
     use_thermal, thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap, Lgap, ...
-    cp_oil,cp_steel, steel_to_oil_mass_ratio, n_dampers_per_story, resFactor)
+    cp_oil,cp_steel, steel_to_oil_mass_ratio, n_dampers_per_story, ...
+    toggle_gain, story_mask, resFactor)
 
     n = size(M,1); r = ones(n,1);
     agf = griddedInterpolant(t,ag,'linear','nearest');
     z0  = zeros(2*n,1);
     opts= odeset('RelTol',1e-3,'AbsTol',1e-6);
+
+    % --- Toggle ve damper çoğulluğu vektörleri ---
+    nStories = n-1;
+    Rvec  = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
+    mask  = story_mask(:);  if numel(mask)==1,  mask  = mask *ones(nStories,1); end
+    ndps  = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
+    multi = (mask .* ndps).';           % satır vektörü
+    Rvec  = Rvec.';                     % satır vektörü
+    Nvec  = 1:nStories;                 % alt düğümler
+    Mvec  = 2:n;                        % üst düğümler
 
     % --- Termal arayıncı başlangıç ---
     T      = T0_C;              % anlık sıcaklık tahmini
@@ -116,34 +129,39 @@ function [x,a,diag] = mck_with_damper( ...
         end
 
         % Story farkları
-        drift = x(:,2:end) - x(:,1:end-1);      % [Nt x (n-1)]
-        dvel  = v(:,2:end) - v(:,1:end-1);
+        drift = x(:,Mvec) - x(:,Nvec);      % [Nt x (n-1)]
+        dvel  = v(:,Mvec) - v(:,Nvec);
 
-        % Viskoz güç
-        P_visc = c_lam * (dvel.^2);             % [Nt x (n-1)]
+        % Toggle → piston dönüşümü
+        drift_p = drift .* Rvec;            % piston yer değiştirmesi
+        dvel_p  = dvel  .* Rvec;            % piston hızı
 
-        % Orifis güç (varsa)
+        % Viskoz güç (damper başına)
+        P_visc_per = c_lam * (dvel_p.^2);
+
+        % Orifis güç (varsa, damper başına)
         if use_orf
-            qmag   = Qcap * tanh( (Ap/Qcap)*sqrt(dvel.^2 + orf.veps^2) );
+            qmag   = Qcap * tanh( (Ap/Qcap)*sqrt(dvel_p.^2 + orf.veps^2) );
             % Re = (rho*q/Ao/μ)*d_o  → μ_abs ile
             Re     = (rho .* qmag ./ max(Ao*mu_abs,1e-9)) .* max(orf.d_o,1e-9);
             Cd     = orf.CdInf - (orf.CdInf - orf.Cd0) ./ (1 + (Re./orf.Rec).^orf.p_exp);
             dPcalc = 0.5*rho .* ( qmag ./ max(Cd.*Ao,1e-9) ).^2;
-            F_lin  = k_sd.*drift + c_lam.*dvel;
-            p_up   = orf.p_amb + abs(F_lin)./max(Ap,1e-12);
+            F_lin_p = k_sd.*drift_p + c_lam.*dvel_p;
+            p_up   = orf.p_amb + abs(F_lin_p)./max(Ap,1e-12);
             dPcav  = max( (p_up - orf.p_cav_eff).*orf.cav_sf, 0 );
             dP_orf = softmin(dPcalc, dPcav, 1e5);          % soft-min clamp
-            Q      = Ap * sqrt(dvel.^2 + orf.veps^2);       % piston debisi büyüklüğü
-            P_orf  = dP_orf .* Q;
+            Q      = Ap * sqrt(dvel_p.^2 + orf.veps^2);       % piston debisi büyüklüğü
+            P_orf_per  = dP_orf .* Q;
         else
-            P_orf = 0*dvel;
+            P_orf_per = 0*dvel_p;
         end
 
-        P_sum = sum(P_visc + P_orf, 2);         % toplam güç (t anında)
+        % Toplam güç (t anında, tüm damperler)
+        P_sum = sum( (P_visc_per + P_orf_per) .* multi, 2 );
 
         % Termal kapasite ve ΔT entegrasyonu (konvektif kayıplı, ileri-Euler)
         nStories = n-1;
-        nDtot    = nStories * n_dampers_per_story;
+        nDtot    = sum(multi);
         V_oil_per = resFactor * (Ap * (2*Lgap));
         m_oil_tot   = nDtot * (rho * V_oil_per);
         m_steel_tot = steel_to_oil_mass_ratio * m_oil_tot;
@@ -175,7 +193,7 @@ function [x,a,diag] = mck_with_damper( ...
     end
 
     % Son ivme
-    a = ( -(M\(C*v.' + K*x.' + dev_force(x,v,k_sd,c_lam,use_orf,orf,rho,Ap,Ao,Qcap,mu_abs))).' ...
+    a = ( -(M\(C*v.' + K*x.' + dev_force(x,v,k_sd,c_lam,use_orf,orf,rho,Ap,Ao,Qcap,mu_abs,toggle_gain,story_mask,n_dampers_per_story))).' ...
           - ag.*r.' );
 
     % Diag
@@ -184,29 +202,41 @@ function [x,a,diag] = mck_with_damper( ...
     % ----- iç yardımcılar -----
     function dz = rhs(tt,zz,c_lam_loc,mu_abs_loc)
         x_ = zz(1:n); v_ = zz(n+1:end);
-        Fd = dev_force(x_,v_, k_sd,c_lam_loc, use_orf,orf,rho,Ap,Ao,Qcap,mu_abs_loc);
+        Fd = dev_force(x_,v_, k_sd,c_lam_loc, use_orf,orf,rho,Ap,Ao,Qcap,mu_abs_loc,toggle_gain,story_mask,n_dampers_per_story);
         dv = M \ ( -C*v_ - K*x_ - Fd - M*r*agf(tt) );
         dz = [v_; dv];
     end
 end
 
-function F = dev_force(x,v, k_sd,c_lam, use_orf,orf,rho,Ap,Ao,Qcap,mu_abs)
+function F = dev_force(x,v, k_sd,c_lam, use_orf,orf,rho,Ap,Ao,Qcap,mu_abs,toggle_gain,story_mask,n_dampers_per_story)
     % x,v: (n x 1) veya (Nt x n) olabilir → çıktı (n x 1) veya (n x Nt)
     singleVec = isvector(x);
     if singleVec, x=x(:).'; v=v(:).'; end
     Nt = size(x,1); n = size(x,2);
 
-    drift = x(:,2:end) - x(:,1:end-1);     % (Nt x n-1)
-    dvel  = v(:,2:end) - v(:,1:end-1);
+    nStories = n-1;
+    Nvec = 1:nStories; Mvec = 2:n;
+    Rvec  = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
+    mask  = story_mask(:);  if numel(mask)==1,  mask  = mask *ones(nStories,1); end
+    ndps  = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
+    multi = (mask .* ndps).';           % satır vektörü
+    Rvec  = Rvec.';                     % satır vektörü
 
-    % Lineer kısım (her iki modda da var)
-    F_lin_story = k_sd*drift + c_lam*dvel; % (Nt x n-1)
+    drift = x(:,Mvec) - x(:,Nvec);     % (Nt x n-1)
+    dvel  = v(:,Mvec) - v(:,Nvec);
+
+    % Toggle → piston
+    drift_p = drift .* Rvec;
+    dvel_p  = dvel  .* Rvec;
+
+    % Lineer kısım piston domaininde (damper başına)
+    F_lin_p = k_sd*drift_p + c_lam*dvel_p; % (Nt x n-1)
 
     if ~use_orf
-        F_story = F_lin_story;
+        F_p = F_lin_p;
     else
         % Akış büyüklüğü (satürasyonlu, yumuşatılmış hız)
-        qmag = Qcap * tanh( (Ap/Qcap) * sqrt(dvel.^2 + orf.veps^2) );
+        qmag = Qcap * tanh( (Ap/Qcap) * sqrt(dvel_p.^2 + orf.veps^2) );
 
         % --- Re düzeltmesi: d_o ile ölçek (μ_abs ile) ---
         Re = (rho .* qmag ./ max(Ao*mu_abs, 1e-9)) .* max(orf.d_o,1e-9);
@@ -218,28 +248,28 @@ function F = dev_force(x,v, k_sd,c_lam, use_orf,orf,rho,Ap,Ao,Qcap,mu_abs)
         dP_calc = 0.5*rho .* ( qmag ./ max(Cd.*Ao, 1e-9) ).^2;
 
         % Kavitasyon üst sınırı (soft-min için tavan)
-        p_up   = orf.p_amb + abs(F_lin_story)./max(Ap,1e-12);
+        p_up   = orf.p_amb + abs(F_lin_p)./max(Ap,1e-12);
         dP_cav = max( (p_up - orf.p_cav_eff) .* orf.cav_sf, 0 );
 
         % Soft-min klamp (köşeleri yumuşat)
         dP_orf = softmin(dP_calc, dP_cav, 1e5);
 
         % İşaret
-        sgn = dvel ./ sqrt(dvel.^2 + orf.veps^2);
+        sgn = dvel_p ./ sqrt(dvel_p.^2 + orf.veps^2);
 
-        % Orifis katkısı (hikâye kuvveti)
-        F_orf_story = dP_orf .* Ap .* sgn;
+        % Orifis katkısı (piston kuvveti)
+        F_orf_p = dP_orf .* Ap .* sgn;
 
-        F_story = F_lin_story + F_orf_story;
+        F_p = F_lin_p + F_orf_p;
     end
 
-    % Hikâye → düğümler (eşdeğer yük dağılımı)
-    % (alt düğüme +, üst düğüme -; iç düğümler fark)
-    F = zeros(Nt,n);
-F(:,1)      = -F_story(:,1);
-if n>2, F(:,2:n-1) = F_story(:,1:end-1) - F_story(:,2:end); end
-F(:,n)      =  F_story(:,end);
+    % Piston kuvveti → hikâye kuvveti (toggle & çoğulluk)
+    F_story = F_p .* (Rvec .* multi);
 
+    % Hikâye → düğümler (eşdeğer yük dağılımı)
+    F = zeros(Nt,n);
+    F(:,Nvec) = F(:,Nvec) - F_story;
+    F(:,Mvec) = F(:,Mvec) + F_story;
 
     F = F.';                                 % (n x Nt) veya (n x 1)
     if singleVec, F = F(:,1); end
