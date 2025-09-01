@@ -6,6 +6,11 @@
 %    t, x10_0, x10_lin, x10_orf, T1, t5, t95, use_thermal
 %% ================================================================
 
+% Tüm metin öğelerinde LaTeX yorumlayıcısını varsayılan yap
+set(groot,'defaultTextInterpreter','latex');
+set(groot,'defaultLegendInterpreter','latex');
+set(groot,'defaultAxesTickLabelInterpreter','latex');
+
 %% Grafik: 10. kat yer değiştirme eğrileri
 figure('Name','10. Kat yer değiştirme — ham ivme (ODE-only)','Color','w');
 plot(t, x10_0 ,'k','LineWidth',1.4); hold on;
