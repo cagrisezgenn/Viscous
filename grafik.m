@@ -20,8 +20,12 @@ legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
 %% Kısa özet metni
 fprintf('x10_max  (dampersiz)   = %.4g m\n', max(abs(x10_0)));
 fprintf('x10_max  (lineer)      = %.4g m\n', max(abs(x10_lin)));
-fprintf('x10_max  (orifisli%s)  = %.4g m\n', tern(use_thermal,'+termal',''), max(abs(x10_orf)));
-if exist('diag','var') && isstruct(diag) && isfield(diag,'dT_est')
+if use_thermal
+    suffix = '+termal';
+else
+    suffix = '';
+end
+fprintf('x10_max  (orifisli%s)  = %.4g m\n', suffix, max(abs(x10_orf)));if exist('diag','var') && isstruct(diag) && isfield(diag,'dT_est')
     fprintf('Termal döngü: ΔT_est=%.2f K | c_lam(final)=%.3e N·s/m\n', diag.dT_est, diag.c_lam);
 end
 fprintf('Not: orifis modelini kapatmak için use_orifice=false; termali kapatmak için use_thermal=false.\n');
