@@ -4,12 +4,6 @@
 %  karşılaştırma grafiğini üretir ve maksimum yer değiştirmeleri yazdırır.
 %  Aşağıdaki değişkenlerin ana betikte tanımlanmış olması beklenir:
 %    t, x10_0, x10_lin, x10_orf, T1, t5, t95, use_thermal
-%% ================================================================
-
-% Tüm metin öğelerinde LaTeX yorumlayıcısını varsayılan yap
-set(groot,'defaultTextInterpreter','latex');
-set(groot,'defaultLegendInterpreter','latex');
-set(groot,'defaultAxesTickLabelInterpreter','latex');
 
 %% Grafik: 10. kat yer değiştirme eğrileri
 figure('Name','10. Kat yer değiştirme — ham ivme (ODE-only)','Color','w');
@@ -18,7 +12,7 @@ plot(t, x10_lin,'b','LineWidth',1.1);
 plot(t, x10_orf,'r','LineWidth',1.0);
 yl = ylim; plot([t5 t5],yl,'k--','HandleVisibility','off');
 plot([t95 t95],yl,'k--','HandleVisibility','off');
-grid on; xlabel('t [s]'); ylabel('x_{10}(t) [m]', 'Interpreter','latex');
+grid on; xlabel('t [s]'); ylabel('x10(t) [m]');
 title(sprintf('10-Kat | T1=%.3f s | Arias [%.3f, %.3f] s', T1, t5, t95));
 legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
 
@@ -29,7 +23,7 @@ plot(t, a10_lin,'b','LineWidth',1.1);
 plot(t, a10_orf,'r','LineWidth',1.0);
 yl = ylim; plot([t5 t5],yl,'k--','HandleVisibility','off');
 plot([t95 t95],yl,'k--','HandleVisibility','off');
-grid on; xlabel('t [s]'); ylabel('\ddot{x}_{10,abs}(t) [m/s^2]', 'Interpreter','latex');
+grid on; xlabel('t [s]'); ylabel('a10abs(t) [m/s^2]');
 legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
 
 %% Grafik: Maksimum göreli kat ötelemeleri (IDR)
@@ -44,7 +38,7 @@ figure('Name','Maksimum IDR','Color','w');
 plot(story_ids, IDR0,'k-o','LineWidth',1.4); hold on;
 plot(story_ids, IDR_lin,'b-s','LineWidth',1.1);
 plot(story_ids, IDR_orf,'r-d','LineWidth',1.0);
-grid on; xlabel('Kat'); ylabel('Maks IDR [\Delta x/h]', 'Interpreter','latex');
+grid on; xlabel('Kat'); ylabel('Maks IDR [Delta x/h]');
 legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
 
 %% Kısa özet metni
@@ -63,4 +57,3 @@ if exist('diag_orf','var') && isstruct(diag_orf) && isfield(diag_orf,'dT_est')
     fprintf('Termal döngü: ΔT_est=%.2f K | c_lam(final)=%.3e N·s/m\n', diag_orf.dT_est, diag_orf.c_lam);
 end
 fprintf('Not: orifis modelini kapatmak için use_orifice=false; termali kapatmak için use_thermal=false.\n');
-

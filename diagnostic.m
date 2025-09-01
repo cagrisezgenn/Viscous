@@ -30,6 +30,7 @@ nStories = size(diag.drift,2);
 q = @(x,p) quantile(x,p);
 
 rows = (1:nStories).';
+ratio = diag.E_orifice / max(diag.E_struct, eps);
 T = table(rows, ...
     q(abs(diag.drift),0.95).', ...
     q(abs(diag.story_force),0.95).', ...
@@ -41,8 +42,13 @@ T = table(rows, ...
     repmat(diag.T_steel(end),nStories,1), ...
     repmat(diag.mu(end),nStories,1), ...
     repmat(diag.energy(end),nStories,1), ...
+    repmat(diag.E_orifice,nStories,1), ...
+    repmat(diag.E_struct,nStories,1), ...
+    repmat(ratio,nStories,1), ...
+    repmat(diag.P_mech,nStories,1), ...
     'VariableNames',{ 'story','drift_p95','story_force_p95','Q_q50','Q_q95', ...
-    'dP_orf_q50','dP_orf_q95','cav_pct','PF_p95','T_oil_end','T_steel_end','mu_end','energy_tot'});
+    'dP_orf_q50','dP_orf_q95','cav_pct','PF_p95','T_oil_end','T_steel_end','mu_end','energy_tot', ...
+    'E_orifice','E_struct','E_ratio','P_mech'});
 
 if ~exist('out','dir'), mkdir('out'); end
 writetable(T,'out/diagnostic.csv');
@@ -105,6 +111,11 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     P_visc_per = c_lam * (dvel_p.^2);
     P_sum = sum( (P_visc_per + P_orf_per) .* multi, 2 );
     energy = cumtrapz(t,P_sum);
+    P_orf_tot = sum(P_orf_per .* multi, 2);
+    P_struct_tot = sum(F_story .* dvel .* multi, 2);
+    E_orifice = trapz(t, P_orf_tot);
+    E_struct = trapz(t, P_struct_tot);
+    P_mech = mean(P_struct_tot);
 
     % Thermal response
     nDtot = sum(multi);
@@ -128,7 +139,8 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
 
     diag = struct('drift',drift,'dvel',dvel,'story_force',F_story,'Q',Q, ...
         'dP_orf',dP_orf,'PF',F_p,'T_oil',Tser,'T_steel',Tser,'mu',mu, ...
-        'energy',energy,'P_sum',P_sum,'c_lam',c_lam);
+        'energy',energy,'P_sum',P_sum,'c_lam',c_lam, ...
+        'E_orifice',E_orifice,'E_struct',E_struct,'P_mech',P_mech);
 
     function Fd = dev_force(x_,v_,c_lam_loc,mu_abs_loc)
         drift_ = x_(Mvec) - x_(Nvec);
@@ -152,8 +164,8 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         end
         F_story_ = F_p_ .* (Rvec .* multi);
         Fd = zeros(n,1);
-        Fd(Nvec) = Fd(Nvec) - F_story_.';
-        Fd(Mvec) = Fd(Mvec) + F_story_.';
+        Fd(Nvec) = Fd(Nvec) - F_story_;
+        Fd(Mvec) = Fd(Mvec) + F_story_;
     end
 end
 
