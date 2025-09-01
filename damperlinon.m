@@ -11,7 +11,7 @@
 clear; clc; close all;
 
 %% --- Model anahtarları ---
-use_orifice = tru;     % Orifis modeli aç/kapa
+use_orifice = true;     % Orifis modeli aç/kapa
 use_thermal = true;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
 
 %% 0) Deprem girdisi (ham ivme, m/s^2)
@@ -28,64 +28,9 @@ ag  = interp1(S.acc_matrix7(:,1), S.acc_matrix7(:,2), t, 'linear');
 % (Sadece gösterim) Arias %5–%95 penceresi
 [t5,t95] = arias_win(t,ag,0.05,0.95);
 
-%% 1) Yapı (10 kat)
-n  = 10;
-m  = 360e3 * ones(n,1);
-k  = 6.5e8 * ones(n,1);
-c  = 6.2e6 * ones(n,1);
-[M,K,C0] = make_KCM(n,m,k,c);
-
-% T1 (dampersiz referans)
-[~,D] = eig(K,M); w = sqrt(sort(diag(D),'ascend')); T1 = 2*pi/w(1);
-
-%% 2) Damper geometrisi ve malzeme (verdiğin değerler)
-Dp=0.125;   Lgap=0.055;  d_o=2.7e-3;  Lori=0.10;  mu_ref=0.9;   % mu_ref: referans viskozite [Pa·s]
-Kd=1.6e9;   Ebody=2.1e11; Gsh=79e9;   d_w=12e-3;  D_m=80e-3; n_turn=8;
-
-% Türetilen sabitler (lineer eşdeğer)
-Ap    = pi*Dp^2/4;
-k_h   = Kd*Ap^2/Lgap;
-k_s   = Ebody*Ap/Lgap;
-k_hyd = 1/(1/k_h + 1/k_s);
-k_p   = Gsh*d_w^4/(8*n_turn*D_m^3);
-k_sd  = k_hyd + k_p;                          % (tek değer → tüm kat aralarına)
-c_lam0= 12*mu_ref*Lori*Ap^2/d_o^4;            % T0'da laminer eşdeğer sönüm
-
-%% 3) Orifis + termal parametreleri (önerilen set)
-rho   = 850;           % yağ yoğunluğu [kg/m^3]
-n_orf = 2;             % kat başına orifis sayısı
-A_o   = n_orf * (pi*d_o^2/4);
-
-orf.Cd0   = 0.61;
-orf.CdInf = 0.80;
-orf.Rec   = 3000;
-orf.p_exp = 1.1;
-orf.p_amb = 1.0e5;         % ortam basıncı
-orf.p_cav_eff = 2.0e3;     % etkin kavitasyon eşiği (Pa)
-orf.cav_sf    = 0.90;      % emniyet katsayısı
-orf.d_o   = d_o;           % Re düzeltmesi için çap
-orf.veps  = 0.10;          % [m/s] küçük hız yumuşatma
-
-% Akış satürasyonu (sayısal kararlılık için)
-Qcap_big = max(orf.CdInf*A_o, 1e-9) * sqrt(2*1.0e9/rho);
-
-% --- Termal model (ΔT relaxation + clamp + c_lam(T) sınırları) ---
-T0_C      = 25;       T_ref_C = 25;   b_mu = -0.013;      % μ(T)=μ_ref*exp(b_mu*(T-Tref))
-thermal.hA_W_perK = 150;                                          % konvektif ısı kaybı
-thermal.T_env_C   = 25;
-thermal.max_iter  = 3;
-thermal.tol_K     = 0.5;
-thermal.relax     = 0.5;
-thermal.dT_max    = 80;                                           % ΔT clamp (sim. üst sınır)
-steel_to_oil_mass_ratio = 1.5;
-n_dampers_per_story    = 1;
-cp_oil   = 1800;   cp_steel = 500;   resFactor = 3;               % hacim/kapasite ölçek
-
-% c_lam(T) sınırları
-c_lam_cap      = 2e7;                 % üst sınır (cap)
-c_lam_min_frac = 0.05;                % taban → 0.05*c_lam0
-c_lam_min_abs  = 1e5;                 % mutlak taban
-c_lam_min      = max(c_lam_min_abs, c_lam_min_frac*c_lam0);
+%% 1–3) Parametrelerin yüklenmesi
+% Yapı, damper ve akış/termal parametreleri ayrı bir dosyada tutulur.
+parametreler;
 
 %% 4) Çözümler
 [x0,~]    = lin_MCK(t,ag,M,C0,K);  % dampersiz
@@ -106,25 +51,8 @@ x10_0   = x0(:,10);
 x10_lin = x_lin(:,10);
 x10_orf = x_orf(:,10);
 
-%% 5) Grafikler (üst üste)
-figure('Name','10. Kat yer değiştirme — ham ivme (ODE-only)','Color','w');
-plot(t,x10_0 ,'k','LineWidth',1.4); hold on;
-plot(t,x10_lin,'b','LineWidth',1.1);
-plot(t,x10_orf,'r','LineWidth',1.0);
-yl = ylim; plot([t5 t5],yl,'k--','HandleVisibility','off');
-plot([t95 t95],yl,'k--','HandleVisibility','off');
-grid on; xlabel('t [s]'); ylabel('x_{10}(t) [m]');
-title(sprintf('10-Kat | T1=%.3f s | Arias [%.3f, %.3f] s',T1,t5,t95));
-legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
-
-% Kısa özet
-fprintf('x10_max  (dampersiz)   = %.4g m\n', max(abs(x10_0)));
-fprintf('x10_max  (lineer)      = %.4g m\n', max(abs(x10_lin)));
-fprintf('x10_max  (orifisli%s)  = %.4g m\n', tern(use_thermal,'+termal',''), max(abs(x10_orf)));
-if use_orifice && use_thermal && isfield(diag,'dT_est')
-    fprintf('Termal döngü: ΔT_est=%.2f K | c_lam(final)=%.3e N·s/m\n', diag.dT_est, diag.c_lam);
-end
-fprintf('Not: orifis modelini kapatmak için use_orifice=false; termali kapatmak için use_thermal=false.\n');
+%% 5) Grafiklerin çizimi ve kısa özet
+grafik;
 
 %% ===================== Yardımcı fonksiyonlar =====================
 function [M,K,C] = make_KCM(n,mv,kv,cv)
