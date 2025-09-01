@@ -14,6 +14,7 @@ n  = 10;                               % Kat sayısı
 m  = 360e3 * ones(n,1);                % Kat kütleleri [kg]
 k  = 6.5e8 * ones(n,1);                % Kat rijitlikleri [N/m]
 c  = 6.2e6 * ones(n,1);                % Rayleigh eşdeğeri sönüm [N·s/m]
+story_height = 3.0;                    % Kat yüksekliği [m]
 % --- Kütle, rijitlik ve sönüm matrisleri ---
 M  = diag(m);
 K  = zeros(n); C0 = zeros(n);
