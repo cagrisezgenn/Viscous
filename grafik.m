@@ -13,7 +13,7 @@ plot(t, x10_lin,'b','LineWidth',1.1);
 plot(t, x10_orf,'r','LineWidth',1.0);
 yl = ylim; plot([t5 t5],yl,'k--','HandleVisibility','off');
 plot([t95 t95],yl,'k--','HandleVisibility','off');
-grid on; xlabel('t [s]'); ylabel('x_{10}(t) [m]');
+grid on; xlabel('t [s]'); ylabel('x_{10}(t) [m]', 'Interpreter','latex');
 title(sprintf('10-Kat | T1=%.3f s | Arias [%.3f, %.3f] s', T1, t5, t95));
 legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
 
@@ -24,7 +24,7 @@ plot(t, a10_lin,'b','LineWidth',1.1);
 plot(t, a10_orf,'r','LineWidth',1.0);
 yl = ylim; plot([t5 t5],yl,'k--','HandleVisibility','off');
 plot([t95 t95],yl,'k--','HandleVisibility','off');
-grid on; xlabel('t [s]'); ylabel('\ddot{x}_{10,abs}(t) [m/s^2]');
+grid on; xlabel('t [s]'); ylabel('\ddot{x}_{10,abs}(t) [m/s^2]', 'Interpreter','latex');
 legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
 
 %% Grafik: Maksimum göreli kat ötelemeleri (IDR)
@@ -39,7 +39,7 @@ figure('Name','Maksimum IDR','Color','w');
 plot(story_ids, IDR0,'k-o','LineWidth',1.4); hold on;
 plot(story_ids, IDR_lin,'b-s','LineWidth',1.1);
 plot(story_ids, IDR_orf,'r-d','LineWidth',1.0);
-grid on; xlabel('Kat'); ylabel('Maks IDR [\Delta x/h]');
+grid on; xlabel('Kat'); ylabel('Maks IDR [\Delta x/h]', 'Interpreter','latex');
 legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
 
 %% Kısa özet metni
