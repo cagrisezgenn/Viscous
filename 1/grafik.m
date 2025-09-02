@@ -41,19 +41,4 @@ plot(story_ids, IDR_orf,'r-d','LineWidth',1.0);
 grid on; xlabel('Kat'); ylabel('Maks IDR [Delta x/h]');
 legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
 
-%% Kısa özet metni
-fprintf('x10_max  (dampersiz)   = %.4g m\n', max(abs(x10_0)));
-fprintf('x10_max  (lineer)      = %.4g m\n', max(abs(x10_lin)));
-if exist('diag_lin','var') && isstruct(diag_lin)
-    fprintf('Lineer diag: c_lam(final)=%.3e N·s/m\n', diag_lin.c_lam);
-end
-if use_thermal
-    suffix = '+termal';
-else
-    suffix = '';
-end
-fprintf('x10_max  (orifisli%s)  = %.4g m\n', suffix, max(abs(x10_orf)));
-if exist('diag_orf','var') && isstruct(diag_orf) && isfield(diag_orf,'dT_est')
-    fprintf('Termal döngü: ΔT_est=%.2f K | c_lam(final)=%.3e N·s/m\n', diag_orf.dT_est, diag_orf.c_lam);
-end
-fprintf('Not: orifis modelini kapatmak için use_orifice=false; termali kapatmak için use_thermal=false.\n');
+%% Kısa özet metni (ekrana yazdırma kaldırıldı)

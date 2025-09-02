@@ -97,9 +97,6 @@ normM = phi1.' * M * phi1;
 zeta_lin = (phi1.' * C_lin * phi1) / (2*w1*normM);
 zeta_orf = (phi1.' * C_orf * phi1) / (2*w1*normM);
 
-fprintf('Self-check zeta1: %.3f %% (linear) vs %.3f %% (orifice/thermal)\n', ...
-    100*zeta_lin, 100*zeta_orf);
-
 %% 5) Grafiklerin çizimi ve kısa özet
 grafik;
 
