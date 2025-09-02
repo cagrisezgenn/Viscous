@@ -143,10 +143,12 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         'E_orifice',E_orifice,'E_struct',E_struct,'P_mech',P_mech);
 
     function Fd = dev_force(x_,v_,c_lam_loc,mu_abs_loc)
+        Rcol = Rvec.';
+        multicol = multi.';
         drift_ = x_(Mvec) - x_(Nvec);
         dvel_  = v_(Mvec) - v_(Nvec);
-        drift_p_ = drift_ .* Rvec;
-        dvel_p_  = dvel_  .* Rvec;
+        drift_p_ = drift_ .* Rcol;
+        dvel_p_  = dvel_  .* Rcol;
         F_lin_p_ = k_sd*drift_p_ + c_lam_loc*dvel_p_;
         if ~use_orf
             F_p_ = F_lin_p_;
@@ -162,7 +164,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
             F_orf_p_ = dP_orf_ .* Ap .* sgn_;
             F_p_ = F_lin_p_ + F_orf_p_;
         end
-        F_story_ = F_p_ .* (Rvec .* multi);
+        F_story_ = F_p_ .* (Rcol .* multicol);
         Fd = zeros(n,1);
         Fd(Nvec) = Fd(Nvec) - F_story_;
         Fd(Mvec) = Fd(Mvec) + F_story_;
