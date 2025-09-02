@@ -20,10 +20,20 @@ parametreler;
 use_orifice = true;
 use_thermal = true;
 
+% Basınç-kuvvet filtresi (PF) ayarları
+cfg = struct();
+cfg.PF.mode      = 'lag';
+cfg.PF.tau       = 0.03;
+cfg.PF.gain      = 1.0;
+cfg.PF.t_on      = 0;
+cfg.PF.auto_t_on = false;
+cfg.on.pressure_force     = true;
+cfg.on.pf_resistive_only = true;  % sadece rezistif (viskoz+orifis) bileşeni filtrele
+
 [x,a,diag] = mck_with_damper(t,ag,M,C0,K, k_sd,c_lam0, use_orifice, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
     use_thermal, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
     cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
-    n_dampers_per_story, resFactor);
+    n_dampers_per_story, resFactor, cfg);
 
 % --- Per-story statistics ---
 nStories = size(diag.drift,2);
@@ -58,7 +68,7 @@ writetable(T,'out/diagnostic.csv');
 function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
     use_thermal, thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
-    n_dampers_per_story, resFactor)
+    n_dampers_per_story, resFactor, cfg)
 
     n = size(M,1); r = ones(n,1);
     agf = griddedInterpolant(t,ag,'linear','nearest');
@@ -80,7 +90,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     c_lam = c_lam0;
 
     % Solve ODE
-    odef = @(tt,z) [ z(n+1:end); M \ ( -C*z(n+1:end) - K*z(1:n) - dev_force(z(1:n),z(n+1:end),c_lam,mu_abs) - M*r*agf(tt) ) ];
+    odef = @(tt,z) [ z(n+1:end); M \ ( -C*z(n+1:end) - K*z(1:n) - dev_force(tt,z(1:n),z(n+1:end),c_lam,mu_abs) - M*r*agf(tt) ) ];
     sol  = ode15s(odef,[t(1) t(end)],z0,opts);
     z    = deval(sol,t).';
     x    = z(:,1:n); v = z(:,n+1:end);
@@ -106,6 +116,14 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     else
         F_p = F_lin_p; Q = 0*dvel_p; dP_orf = 0*dvel_p; P_orf_per = 0*dvel_p;
     end
+
+    dp_pf = (c_lam*dvel_p + (F_p - k_sd*drift_p)) ./ Ap;
+    if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
+        s = tanh(20*dvel_p);
+        dp_pf = s .* max(0, s .* dp_pf);
+    end
+    w_pf_vec = pf_weight(t, cfg) * cfg.PF.gain;
+    F_p = k_sd*drift_p + (w_pf_vec .* dp_pf) * Ap;
 
     F_story = F_p .* (Rvec .* multi);
     P_visc_per = c_lam * (dvel_p.^2);
@@ -142,7 +160,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         'energy',energy,'P_sum',P_sum,'c_lam',c_lam, ...
         'E_orifice',E_orifice,'E_struct',E_struct,'P_mech',P_mech);
 
-    function Fd = dev_force(x_,v_,c_lam_loc,mu_abs_loc)
+    function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)
         Rcol = Rvec.';
         multicol = multi.';
         drift_ = x_(Mvec) - x_(Nvec);
@@ -151,7 +169,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         dvel_p_  = dvel_  .* Rcol;
         F_lin_p_ = k_sd*drift_p_ + c_lam_loc*dvel_p_;
         if ~use_orf
-            F_p_ = F_lin_p_;
+            F_orf_p_ = 0*dvel_p_;
         else
             qmag_ = Qcap * tanh( (Ap/Qcap) * sqrt(dvel_p_.^2 + orf.veps^2) );
             Re_   = (rho .* qmag_ ./ max(Ao*mu_abs_loc,1e-9)) .* max(orf.d_o,1e-9);
@@ -162,13 +180,23 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
             dP_orf_ = softmin(dP_calc_,dP_cav_,1e5);
             sgn_ = dvel_p_ ./ sqrt(dvel_p_.^2 + orf.veps^2);
             F_orf_p_ = dP_orf_ .* Ap .* sgn_;
-            F_p_ = F_lin_p_ + F_orf_p_;
         end
+        dp_pf_ = (c_lam_loc*dvel_p_ + F_orf_p_) ./ Ap;
+        if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
+            s = tanh(20*dvel_p_);
+            dp_pf_ = s .* max(0, s .* dp_pf_);
+        end
+        w_pf = pf_weight(tt,cfg) * cfg.PF.gain;
+        F_p_ = k_sd*drift_p_ + (w_pf .* dp_pf_) * Ap;
         F_story_ = F_p_ .* (Rcol .* multicol);
         Fd = zeros(n,1);
-        Fd(Nvec) = Fd(Nvec) - F_story_;
-        Fd(Mvec) = Fd(Mvec) + F_story_;
+    Fd(Nvec) = Fd(Nvec) - F_story_;
+    Fd(Mvec) = Fd(Mvec) + F_story_;
     end
+end
+
+function w = pf_weight(t, cfg)
+    w = cfg.on.pressure_force * (1 - exp(-max(t - cfg.PF.t_on, 0) ./ max(cfg.PF.tau, 1e-6)));
 end
 
 function y = softmin(a,b,epsm)
