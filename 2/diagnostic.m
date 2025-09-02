@@ -20,16 +20,6 @@ parametreler;
 use_orifice = true;
 use_thermal = true;
 
-% Basınç-kuvvet filtresi (PF) ayarları
-cfg = struct();
-cfg.PF.mode      = 'lag';
-cfg.PF.tau       = 0.03;
-cfg.PF.gain      = 1.0;
-cfg.PF.t_on      = 0;
-cfg.PF.auto_t_on = false;
-cfg.on.pressure_force     = true;
-cfg.on.pf_resistive_only = true;  % sadece rezistif (viskoz+orifis) bileşeni filtrele
-
 [x0,a0] = lin_MCK(t,ag,M,C0,K);
 [x,a,diag_out] = mck_with_damper(t,ag,M,C0,K, k_sd,c_lam0, use_orifice, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
     use_thermal, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
@@ -67,8 +57,10 @@ writetable(T,'out/diagnostic.csv');
 % Özet diagnostikler
 x10_max_0   = max(abs(x0(:,10)));
 x10_max_d   = max(abs(x(:,10)));
-a10abs_max_0 = max(abs(a0(:,10) + ag));
-a10abs_max_d = max(abs(a(:,10) + ag));
+a10_0       = a0(:,10) + ag;
+a10_d       = a(:,10) + ag;
+a10abs_max_0 = max(abs(a10_0));
+a10abs_max_d = max(abs(a10_d));
 
 n = size(M,1);
 nStories = n-1;

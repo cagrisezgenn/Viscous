@@ -109,3 +109,13 @@ c_lam_min_frac = 0.05;               % Tabandaki oran
 c_lam_min_abs  = 1e5;                % Mutlak taban
 c_lam_min      = max(c_lam_min_abs, c_lam_min_frac*c_lam0);
 
+% Basınç-kuvvet filtresi (PF) ayarları
+cfg = struct();
+cfg.PF.mode      = 'lag';
+cfg.PF.tau       = 0.03;
+cfg.PF.gain      = 1.0;
+cfg.PF.t_on      = 0;
+cfg.PF.auto_t_on = false;
+cfg.on.pressure_force     = true;
+cfg.on.pf_resistive_only = true;  % sadece rezistif (viskoz+orifis) bileşeni filtrele
+
