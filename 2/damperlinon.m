@@ -11,18 +11,8 @@
 clear; clc; close all;
 
 %% --- Model anahtarları ---
-use_orifice = false;     % Orifis modeli aç/kapa
-use_thermal = false;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
-
-% Basınç-kuvvet filtresi (PF) ayarları
-cfg = struct();
-cfg.PF.mode      = 'lag';   % varsa 'lag'/'first_order' modu
-cfg.PF.tau       = 0.03;    % 20–50 ms aralığında dene (fc ≈ 1/(2πτ) ≈ 5–8 Hz)
-cfg.PF.gain      = 1.0;     % sönümü kısmamak için 1.0
-cfg.PF.t_on      = 0;       % sürekli aktif
-cfg.PF.auto_t_on = false;
-cfg.on.pressure_force     = true;
-cfg.on.pf_resistive_only = true;  % sadece rezistif (viskoz+orifis) bileşeni filtrele
+use_orifice = true;     % Orifis modeli aç/kapa
+use_thermal = true;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
 
 %% 0) Deprem girdisi (ham ivme, m/s^2)
 S  = load('acc_matrix.mat','acc_matrix7');   % gerekirse path'i değiştirin
