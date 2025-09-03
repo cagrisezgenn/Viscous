@@ -6,13 +6,10 @@
 clear;
 
 % --- Load earthquake acceleration input ---
-S  = load('acc_matrix.mat','acc_matrix7');
-t  = S.acc_matrix7(:,1);
-ag = S.acc_matrix7(:,2);
-[t,iu] = unique(t,'stable'); ag = ag(iu);
-dt = median(diff(t));
-t  = (t(1):dt:t(end)).';
-ag = interp1(S.acc_matrix7(:,1), S.acc_matrix7(:,2), t, 'linear');
+recs = load_ground_motions();
+irec = 1;                       % index of record to use
+t    = recs(irec).t;
+ag   = recs(irec).ag;
 
 % --- Load structural and damper parameters ---
 parametreler;
