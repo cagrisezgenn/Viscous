@@ -1,11 +1,18 @@
-function records = load_ground_motions()
+function [records, scaled] = load_ground_motions(T1, targetIM)
 %LOAD_GROUND_MOTIONS Load and preprocess multiple ground-motion records.
-%   records = LOAD_GROUND_MOTIONS() loads all ground-motion time histories
-%   from <acc_matrix.mat> whose variables follow the pattern acc_matrix1,
+%   R = LOAD_GROUND_MOTIONS() loads all ground-motion time histories from
+%   <acc_matrix.mat> whose variables follow the pattern acc_matrix1,
 %   acc_matrix2, ... The function performs basic checks and preprocessing
-%   (demean/detrend and a small high-pass filter) and returns a struct array
-%   with time vector, acceleration, and metadata (name, dt, duration,
+%   (demean/detrend and a small high-pass filter) and returns a struct
+%   array with time vector, acceleration, and metadata (name, dt, duration,
 %   rough PGA/PGV).
+%
+%   [RAW, SCALED] = LOAD_GROUND_MOTIONS(T1, TARGETIM) additionally computes
+%   an intensity measure (PSA at period T1 with 5%% damping) for each record
+%   and scales the accelerations so that the spectral acceleration equals
+%   TARGETIM. The unscaled set is returned as RAW and the scaled set as
+%   SCALED. The scaling factor is stored in field <scale>.
+%   If TARGETIM is empty, the mean IM of the raw set is used.
 %
 %   Requirements: Signal Processing Toolbox for BUTTER/FILTFILT. If not
 %   available, preprocessing will fall back to mean removal only.
@@ -17,10 +24,12 @@ function records = load_ground_motions()
 %       duration - total duration (s)
 %       PGA      - peak ground acceleration (m/s^2)
 %       PGV      - peak ground velocity (m/s)
+%       IM       - (optional) PSA at T1, 5%% damping [m/s^2]
+%       scale    - (scaled set only) scale factor s such that IM*s = TARGETIM
 
 raw = load('acc_matrix.mat');
 fn  = fieldnames(raw);
-records = struct('name',{},'t',{},'ag',{},'dt',{},'duration',{},'PGA',{},'PGV',{});
+records = struct('name',{},'t',{},'ag',{},'dt',{},'duration',{},'PGA',{},'PGV',{},'IM',{},'scale',{});
 
 hp_cut = 0.05;   % small high-pass corner [Hz]
 
@@ -61,7 +70,8 @@ for k = 1:numel(fn)
 
     records(end+1) = struct('name', fn{k}, 't', t, 'ag', ag, ...
                             'dt', dt, 'duration', duration, ...
-                            'PGA', PGA, 'PGV', PGV); %#ok<AGROW>
+                            'PGA', PGA, 'PGV', PGV, ...
+                            'IM', [], 'scale', 1); %#ok<AGROW>
 end
 
 % Print a quick summary table
@@ -70,5 +80,31 @@ for k = 1:numel(records)
     r = records(k);
     fprintf('%2d) %-12s dt=%6.4f s dur=%6.2f s PGA=%7.3f PGV=%7.3f\n', ...
         k, r.name, r.dt, r.duration, r.PGA, r.PGV);
+end
+
+scaled = [];
+if nargin >= 1 && ~isempty(T1)
+    zeta = 0.05;  % default damping ratio
+    for k = 1:numel(records)
+        records(k).IM = calc_psa(records(k).t, records(k).ag, T1, zeta);
+    end
+
+    if nargin < 2 || isempty(targetIM)
+        targetIM = mean([records.IM]);
+    end
+
+    scaled = records;  % start with a copy
+    for k = 1:numel(records)
+        s = targetIM / records(k).IM;
+        scaled(k).ag   = s * records(k).ag;
+        scaled(k).PGA  = s * records(k).PGA;
+        scaled(k).PGV  = s * records(k).PGV;
+        scaled(k).scale = s;
+        scaled(k).IM    = calc_psa(records(k).t, scaled(k).ag, T1, zeta);
+    end
+
+    err = abs([scaled.IM] - targetIM) / targetIM * 100;
+    fprintf('Target IM = %.3f (PSA @ T1=%.2fs). Max error = %.2f%%\n', ...
+        targetIM, T1, max(err));
 end
 end
