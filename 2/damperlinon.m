@@ -15,15 +15,10 @@ use_orifice = true;     % Orifis modeli aç/kapa
 use_thermal = true;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
 
 %% 0) Deprem girdisi (ham ivme, m/s^2)
-S  = load('acc_matrix.mat','acc_matrix7');   % gerekirse path'i değiştirin
-t  = S.acc_matrix7(:,1);
-ag = S.acc_matrix7(:,2);
-
-% tekilleştir + eş-adımlı küçük düzeltme
-[t,iu] = unique(t,'stable'); ag = ag(iu);
-dt  = median(diff(t));
-t   = (t(1):dt:t(end)).';
-ag  = interp1(S.acc_matrix7(:,1), S.acc_matrix7(:,2), t, 'linear');
+recs = load_ground_motions();    % tüm kayıtları yükle
+irec = 1;                        % kullanılacak kayıt indeksi
+t    = recs(irec).t;
+ag   = recs(irec).ag;
 
 % (Sadece gösterim) Arias %5–%95 penceresi
 [t5,t95] = arias_win(t,ag,0.05,0.95);
