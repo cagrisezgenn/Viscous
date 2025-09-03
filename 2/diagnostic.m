@@ -3,7 +3,7 @@
 % enabled and computes diagnostic metrics per story. Results are written
 % to out/diagnostic.csv.
 
-clear; clc;
+clear;
 
 % --- Load earthquake acceleration input ---
 S  = load('acc_matrix.mat','acc_matrix7');
@@ -53,46 +53,6 @@ T = table(rows, ...
 
 if ~exist('out','dir'), mkdir('out'); end
 writetable(T,'out/diagnostic.csv');
-
-% Özet diagnostikler
-x10_max_0   = max(abs(x0(:,10)));
-x10_max_d   = max(abs(x(:,10)));
-a10_0       = a0(:,10) + ag;
-a10_d       = a(:,10) + ag;
-a10abs_max_0 = max(abs(a10_0));
-a10abs_max_d = max(abs(a10_d));
-
-n = size(M,1);
-nStories = n-1;
-Rvec = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
-mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
-ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
-multi = mask .* ndps;
-Kadd = zeros(n); Cadd = zeros(n);
-for i=1:nStories
-    idx = [i i+1];
-    k_eq = k_sd * (Rvec(i)^2) * multi(i);
-    c_eq = diag_out.c_lam * (Rvec(i)^2) * multi(i);
-    kM = k_eq * [1 -1; -1 1];
-    cM = c_eq * [1 -1; -1 1];
-    Kadd(idx,idx) = Kadd(idx,idx) + kM;
-    Cadd(idx,idx) = Cadd(idx,idx) + cM;
-end
-K_damp = K + Kadd;
-C_damp = C0 + Cadd;
-[V,D] = eig(K_damp,M);
-[w2,ord] = sort(diag(D));
-phi1 = V(:,ord(1));
-w1 = sqrt(w2(1));
-normM = phi1.' * M * phi1;
-zeta0 = (phi1.' * C0 * phi1) / (2*w1*normM);
-zeta_d = (phi1.' * C_damp * phi1) / (2*w1*normM);
-
-fprintf('Self-check zeta1: %.3f %% (dampersiz) vs %.3f %% (damperli)\n', 100*zeta0, 100*zeta_d);
-fprintf('x10_max  (dampersiz)   = %.4g m\n', x10_max_0);
-fprintf('x10_max  (damperli)    = %.4g m\n', x10_max_d);
-fprintf('a10abs_max  (dampersiz)= %.4g m/s^2\n', a10abs_max_0);
-fprintf('a10abs_max  (damperli) = %.4g m/s^2\n', a10abs_max_d);
 
 %% ---------------------------------------------------------------
 %% Yardımcı çözücüler
