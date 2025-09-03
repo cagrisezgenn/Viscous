@@ -14,91 +14,102 @@ clear; clc; close all;
 use_orifice = true;     % Orifis modeli aç/kapa
 use_thermal = true;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
 
-%% 0) Deprem girdisi (ham ivme, m/s^2)
-S  = load('acc_matrix.mat','acc_matrix7');   % gerekirse path'i değiştirin
-t  = S.acc_matrix7(:,1);
-ag = S.acc_matrix7(:,2);
+%% --- Kayıt listesi ve metadata ---
+record_vars = {
+    'acc_matrix', 'acc_matrix2', 'acc_matrix3', 'acc_matrix4', ...
+    'acc_matrix5', 'acc_matrix6', 'acc_matrix7'};
+meta = struct('name',{},'dt',{},'duration',{},'PGA',{},'PGV',{});
 
-% tekilleştir + eş-adımlı küçük düzeltme
-[t,iu] = unique(t,'stable'); ag = ag(iu);
-dt  = median(diff(t));
-t   = (t(1):dt:t(end)).';
-ag  = interp1(S.acc_matrix7(:,1), S.acc_matrix7(:,2), t, 'linear');
+for ir = 1:numel(record_vars)
+    rec_name = record_vars{ir};
+    S = load('acc_matrix.mat', rec_name);   % gerekirse path'i değiştirin
+    data = S.(rec_name);
+    t_raw  = data(:,1);
+    ag_raw = data(:,2);
 
-% (Sadece gösterim) Arias %5–%95 penceresi
-[t5,t95] = arias_win(t,ag,0.05,0.95);
+    % Ön-işleme ve metadata hesaplama
+    [t, ag, meta(ir)] = preprocess_record(t_raw, ag_raw, rec_name);
 
-%% 1–3) Parametrelerin yüklenmesi
-% Yapı, damper ve akış/termal parametreleri ayrı bir dosyada tutulur.
-parametreler;
+    % (Sadece gösterim) Arias %5–%95 penceresi
+    [t5,t95] = arias_win(t,ag,0.05,0.95);
 
-%% 4) Çözümler
-[x0,a0]    = lin_MCK(t,ag,M,C0,K);  % dampersiz
+    %% 1–3) Parametrelerin yüklenmesi
+    % Yapı, damper ve akış/termal parametreleri ayrı bir dosyada tutulur.
+    parametreler;
 
-% Lineer (termal kapalı tutarak)
-[x_lin,a_lin,diag_lin] = mck_with_damper( ...
-    t,ag,M,C0,K, k_sd, c_lam0, false, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
-    false, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
-    cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
-    n_dampers_per_story, resFactor, cfg);
+    %% 4) Çözümler
+    [x0,a0]    = lin_MCK(t,ag,M,C0,K);  % dampersiz
 
-% Orifisli (+ termal anahtarına göre)
-[x_orf,a_orf,diag_orf] = mck_with_damper( ...
-    t,ag,M,C0,K, k_sd, c_lam0, use_orifice, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
-    use_thermal, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
-    cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
-    n_dampers_per_story, resFactor, cfg);
+    % Lineer (termal kapalı tutarak)
+    [x_lin,a_lin,diag_lin] = mck_with_damper( ...
+        t,ag,M,C0,K, k_sd, c_lam0, false, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
+        false, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
+        cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
+        n_dampers_per_story, resFactor, cfg);
 
-x10_0   = x0(:,10);
-x10_lin = x_lin(:,10);
-x10_orf = x_orf(:,10);
+    % Orifisli (+ termal anahtarına göre)
+    [x_orf,a_orf,diag_orf] = mck_with_damper( ...
+        t,ag,M,C0,K, k_sd, c_lam0, use_orifice, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
+        use_thermal, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
+        cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
+        n_dampers_per_story, resFactor, cfg);
 
-% 10. kat mutlak ivmeler
-a10_0   = a0(:,10)   + ag;
-a10_lin = a_lin(:,10)+ ag;
-a10_orf = a_orf(:,10)+ ag;
+    x10_0   = x0(:,10);
+    x10_lin = x_lin(:,10);
+    x10_orf = x_orf(:,10);
 
-%% Self-check \zeta_{1}
-% Toggle ve damper çoğulluğu dikkate alınarak, lineer ve orifis/termal
-% senaryoları için birinci mod sönüm oranını hesapla.
-nStories = n - 1;
-Rvec = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
-mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
-ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
-multi = mask .* ndps;                % sütun vektörü
+    % 10. kat mutlak ivmeler
+    a10_0   = a0(:,10)   + ag;
+    a10_lin = a_lin(:,10)+ ag;
+    a10_orf = a_orf(:,10)+ ag;
 
-% Damper kaynaklı katkı matrisleri
-Kadd = zeros(n);
-Cl_add = zeros(n);
-Co_add = zeros(n);
-for i = 1:nStories
-    idx = [i, i+1];
-    k_eq  = k_sd * (Rvec(i)^2) * multi(i);
-    c_eq_l = diag_lin.c_lam * (Rvec(i)^2) * multi(i);
-    c_eq_o = diag_orf.c_lam * (Rvec(i)^2) * multi(i);
-    kM = k_eq  * [1 -1; -1 1];
-    cM_l = c_eq_l * [1 -1; -1 1];
-    cM_o = c_eq_o * [1 -1; -1 1];
-    Kadd(idx,idx)  = Kadd(idx,idx)  + kM;
-    Cl_add(idx,idx)= Cl_add(idx,idx)+ cM_l;
-    Co_add(idx,idx)= Co_add(idx,idx)+ cM_o;
+    %% Self-check \zeta_{1}
+    % Toggle ve damper çoğulluğu dikkate alınarak, lineer ve orifis/termal
+    % senaryoları için birinci mod sönüm oranını hesapla.
+    nStories = n - 1;
+    Rvec = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
+    mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
+    ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
+    multi = mask .* ndps;                % sütun vektörü
+
+    % Damper kaynaklı katkı matrisleri
+    Kadd = zeros(n);
+    Cl_add = zeros(n);
+    Co_add = zeros(n);
+    for i = 1:nStories
+        idx = [i, i+1];
+        k_eq  = k_sd * (Rvec(i)^2) * multi(i);
+        c_eq_l = diag_lin.c_lam * (Rvec(i)^2) * multi(i);
+        c_eq_o = diag_orf.c_lam * (Rvec(i)^2) * multi(i);
+        kM = k_eq  * [1 -1; -1 1];
+        cM_l = c_eq_l * [1 -1; -1 1];
+        cM_o = c_eq_o * [1 -1; -1 1];
+        Kadd(idx,idx)  = Kadd(idx,idx)  + kM;
+        Cl_add(idx,idx)= Cl_add(idx,idx)+ cM_l;
+        Co_add(idx,idx)= Co_add(idx,idx)+ cM_o;
+    end
+
+    K_tot = K + Kadd;
+    C_lin = C0 + Cl_add;
+    C_orf = C0 + Co_add;
+
+    % Birinci mod için özdeğer/özvektör
+    [V,D] = eig(K_tot,M);
+    [w2,ord] = sort(diag(D),'ascend');
+    phi1 = V(:,ord(1));
+    w1 = sqrt(w2(1));
+    normM = phi1.' * M * phi1;
+    zeta_lin = (phi1.' * C_lin * phi1) / (2*w1*normM);
+    zeta_orf = (phi1.' * C_orf * phi1) / (2*w1*normM);
+
+    %% 5) Grafiklerin çizimi ve kısa özet
+    grafik;
 end
 
-K_tot = K + Kadd;
-C_lin = C0 + Cl_add;
-C_orf = C0 + Co_add;
-
-% Birinci mod için özdeğer/özvektör
-[V,D] = eig(K_tot,M);
-[w2,ord] = sort(diag(D),'ascend');
-phi1 = V(:,ord(1));
-w1 = sqrt(w2(1));
-normM = phi1.' * M * phi1;
-zeta_lin = (phi1.' * C_lin * phi1) / (2*w1*normM);
-zeta_orf = (phi1.' * C_orf * phi1) / (2*w1*normM);
-
-%% 5) Grafiklerin çizimi ve kısa özet
-grafik;
+% Metadata özetini yazdır
+if exist('meta','var') && ~isempty(meta)
+    disp(struct2table(meta));
+end
 
 %% ===================== Yardımcı fonksiyonlar =====================
 function [M,K,C] = make_KCM(n,mv,kv,cv)
@@ -348,4 +359,43 @@ function [t5,t95] = arias_win(t,ag,p1,p2)
     E  = cumsum(0.5*(a2 + [a2(2:end); a2(end)]).*dt);
     t5  = interp1(E,t,p1*E(end),'linear','extrap');
     t95 = interp1(E,t,p2*E(end),'linear','extrap');
+end
+
+function [t,ag,meta] = preprocess_record(t_raw,ag_raw,name)
+    % Zaman vektörü monoton mu?
+    [t_raw,iu] = unique(t_raw(:),'stable');
+    ag_raw = ag_raw(iu);
+    assert(all(diff(t_raw) > 0), 'Time vector not monotonic');
+
+    % Tek dt kontrolü
+    dt = median(diff(t_raw));
+    assert(all(abs(diff(t_raw) - dt) < 1e-6), 'Nonuniform dt detected');
+
+    % Eş-adımlı vektöre yeniden örnekle
+    t = (t_raw(1):dt:t_raw(end)).';
+    ag = interp1(t_raw, ag_raw, t, 'linear');
+
+    % Birim kontrolü (g ise m/s^2'ye çevir)
+    if max(abs(ag)) < 5
+        ag = ag * 9.81;
+    end
+
+    % Demean + detrend
+    ag = ag - mean(ag);
+    ag = detrend(ag);
+
+    % Hafif yüksek geçiren filtre
+    fs = 1/dt;
+    fc = 0.05;  % Hz
+    if fs > 2*fc
+        [b,a] = butter(2, fc/(fs/2), 'high');
+        ag = filtfilt(b,a,ag);
+    end
+
+    assert(all(isfinite(ag)), 'Preprocess produced NaN/Inf');
+
+    % Metadata
+    vel = cumtrapz(t,ag);
+    meta = struct('name',name, 'dt',dt, 'duration',t(end)-t(1), ...
+                  'PGA',max(abs(ag)), 'PGV',max(abs(vel)));
 end
