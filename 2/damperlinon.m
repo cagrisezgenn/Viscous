@@ -13,19 +13,21 @@ clear; clc; close all;
 %% --- Model anahtarları ---
 use_orifice = true;     % Orifis modeli aç/kapa
 use_thermal = true;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
+use_scaled  = true;     % Deprem girdisi: scaled (true) vs raw (false)
+
+%% 1–3) Parametrelerin yüklenmesi
+% Yapı, damper ve akış/termal parametreleri ayrı bir dosyada tutulur.
+parametreler;           % T1 değeri burada hesaplanır
 
 %% 0) Deprem girdisi (ham ivme, m/s^2)
-recs = load_ground_motions();    % tüm kayıtları yükle
+[recs_raw, recs_scaled] = load_ground_motions(T1);    % kayıtları yükle ve ölçekle
+recs = tern(use_scaled, recs_scaled, recs_raw);
 irec = 1;                        % kullanılacak kayıt indeksi
 t    = recs(irec).t;
 ag   = recs(irec).ag;
 
 % (Sadece gösterim) Arias %5–%95 penceresi
 [t5,t95] = arias_win(t,ag,0.05,0.95);
-
-%% 1–3) Parametrelerin yüklenmesi
-% Yapı, damper ve akış/termal parametreleri ayrı bir dosyada tutulur.
-parametreler;
 
 %% 4) Çözümler
 [x0,a0]    = lin_MCK(t,ag,M,C0,K);  % dampersiz
