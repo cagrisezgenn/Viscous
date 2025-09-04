@@ -64,7 +64,7 @@ c_lam0 = 12*mu_ref*Lori*Ap^2/d_o^4;   % Laminer eşdeğer sönüm (T0)
 
 %% --- 3) Orifis ve termal parametreleri ---
 rho   = 850;       % Yağ yoğunluğu [kg/m^3]
-n_orf = 2;         % Kat başına orifis sayısı
+n_orf = 6;         % Kat başına orifis sayısı
 A_o   = n_orf * (pi*d_o^2/4);     % Toplam orifis alanı [m^2]
 
 % Orifis katsayıları
@@ -87,7 +87,7 @@ T0_C      = 25;                      % Başlangıç sıcaklığı [°C]
 T_ref_C   = 25;                      % Referans sıcaklık [°C]
 b_mu      = -0.013;                  % Viskozite-sıcaklık katsayısı
 thermal = struct();
-thermal.hA_W_perK = 150;             % Konvektif ısı kaybı katsayısı
+thermal.hA_W_perK = 450;             % Konvektif ısı kaybı katsayısı
 thermal.T_env_C   = 25;              % Ortam sıcaklığı [°C]
 thermal.max_iter  = 3;               % ΔT iterasyon sayısı
 thermal.tol_K     = 0.5;             % Yakınsama toleransı [K]
@@ -97,11 +97,11 @@ thermal.dT_max    = 80;              % Maksimum izin verilen ΔT [K]
 % Ek kütle/kapasite verileri
 steel_to_oil_mass_ratio = 1.5;       % Çelik/yağ kütle oranı
 n_dampers_per_story    = 1;          % Kat başına damper adedi (skaler veya (n-1)x1 vektör)
-toggle_gain            = 3.0;        % Toggle kazancı (skaler veya (n-1)x1 vektör)
+toggle_gain            = 1.6;        % Toggle kazancı (skaler veya (n-1)x1 vektör)
 story_mask             = ones(n-1,1);% Kat maskesi; 1=aktif, 0=damper yok
 cp_oil   = 1800;                     % Yağın özgül ısısı [J/(kg·K)]
 cp_steel = 500;                      % Çeliğin özgül ısısı [J/(kg·K)]
-resFactor = 3;                       % Hacim/kapasite ölçeği
+resFactor = 12;                       % Hacim/kapasite ölçeği
 
 % c_lam(T) sınırları
 c_lam_cap      = 2e7;                % Üst sınır (cap)
@@ -111,8 +111,8 @@ c_lam_min      = max(c_lam_min_abs, c_lam_min_frac*c_lam0);
 
 % Basınç-kuvvet filtresi (PF) ayarları
 cfg = struct();
-cfg.PF.mode      = 'lag';
-cfg.PF.tau       = 0.03;
+cfg.PF.mode      = 'ramp';
+cfg.PF.tau       = 0.05;
 cfg.PF.gain      = 1.0;
 cfg.PF.t_on      = 0;
 cfg.PF.auto_t_on = false;

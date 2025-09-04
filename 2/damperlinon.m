@@ -11,7 +11,7 @@
 clear; clc; close all;
 
 %% --- Çıktı anahtarı ---
-do_export = false;      % true → sonuçları out/<timestamp>/ altına kaydet
+do_export = true;      % true → sonuçları out/<timestamp>/ altına kaydet
 if do_export
     ts = datestr(now,'yyyymmdd_HHMMSS');
     outdir = fullfile('out', ts);
@@ -28,7 +28,7 @@ use_thermal = true;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
 %% 1–3) Parametrelerin yüklenmesi
 % Yapı, damper ve akış/termal parametreleri ayrı bir dosyada tutulur.
 parametreler;           % T1 değeri burada hesaplanır
-
+fprintf('hA=%g, resFactor=%g\n', thermal.hA_W_perK, resFactor);
 % export için parametreleri yapılaştır
 params = struct('M',M,'C0',C0,'K',K,'k_sd',k_sd,'c_lam0',c_lam0, ...
     'orf',orf,'rho',rho,'Ap',Ap,'A_o',A_o,'Qcap_big',Qcap_big,'mu_ref',mu_ref, ...
@@ -94,9 +94,9 @@ Cl_add = zeros(n);
 Co_add = zeros(n);
 for i = 1:nStories
     idx = [i, i+1];
-    k_eq  = k_sd * (Rvec(i)^2) * multi(i);
-    c_eq_l = diag_lin.c_lam * (Rvec(i)^2) * multi(i);
-    c_eq_o = diag_orf.c_lam * (Rvec(i)^2) * multi(i);
+    k_eq   = k_sd               * (Rvec(i)^2) * multi(i);
+c_eq_l = diag_lin.c_lam     * (Rvec(i)^2) * multi(i);
+c_eq_o = diag_orf.c_lam     * (Rvec(i)^2) * multi(i);
     kM = k_eq  * [1 -1; -1 1];
     cM_l = c_eq_l * [1 -1; -1 1];
     cM_o = c_eq_o * [1 -1; -1 1];
