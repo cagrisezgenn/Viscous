@@ -19,7 +19,13 @@ use_thermal = true;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
 parametreler;           % T1 değeri burada hesaplanır
 
 %% 0) Deprem girdisi (ham ivme, m/s^2)
-[recs_raw, recs] = load_ground_motions(T1);    % kayıtları yükle ve ölçekle
+use_scaled = true;               % true → ölçekli kayıt, false → ham kayıt
+if use_scaled
+    [recs_raw, recs] = load_ground_motions(T1);   % kayıtları yükle ve ölçekle
+else
+    [recs_raw, ~] = load_ground_motions();        % sadece ham kayıtları yükle
+    recs = recs_raw;
+end
 irec = 1;                        % kullanılacak kayıt indeksi
 t    = recs(irec).t;
 ag   = recs(irec).ag;
