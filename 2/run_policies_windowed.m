@@ -28,10 +28,25 @@ if ~isfield(opts,'orders'), opts.orders = {'natural','random','worst_first'}; en
 if ~isfield(opts,'cooldown_s_list'), opts.cooldown_s_list = 60; end
 if ~isfield(opts,'rng_seed'), opts.rng_seed = 42; end
 
+do_export = isfield(opts,'do_export') && opts.do_export;
+if do_export
+    if isfield(opts,'outdir')
+        outdir = opts.outdir;
+    else
+        ts = datestr(now,'yyyymmdd_HHMMSS');
+        outdir = fullfile('out', ts);
+    end
+    if ~exist(outdir,'dir'), mkdir(outdir); end
+    diary(fullfile(outdir,'console.log'));
+else
+    outdir = '';
+end
+
 nRec = numel(scaled);
 
 % Baseline run for deltas and worst_first ordering
 base_opts = opts; base_opts.thermal_reset = 'each'; base_opts.order = 'natural';
+base_opts.do_export = false;
 [base_summary, base_all] = run_batch_windowed(scaled, params, base_opts);
 basePFA = max(base_summary.table.PFA_nom);
 baseIDR = max(base_summary.table.IDR_nom);
@@ -68,6 +83,7 @@ for ip = 1:numel(opts.policies)
             if isfield(run_opts,'cooldown_s'), run_opts = rmfield(run_opts,'cooldown_s'); end
             run_opts.order = ord;
             run_opts.thermal_reset = pol;
+            run_opts.do_export = false;
             if strcmp(pol,'cooldown'), run_opts.cooldown_s = cdval; end
             [summary, ~] = run_batch_windowed(scaled_run, params, run_opts);
 
@@ -95,5 +111,10 @@ for ip = 1:numel(opts.policies)
                 'summary',summary.table,'qc',qc,'deltas',deltas); %#ok<AGROW>
         end
     end
+end
+
+if do_export
+    export_results(outdir, scaled, params, opts, base_summary, base_all, P);
+    diary off;
 end
 end

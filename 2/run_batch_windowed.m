@@ -16,6 +16,21 @@ function [summary, all_out] = run_batch_windowed(scaled, params, opts)
 if nargin < 3, opts = struct(); end
 if ~isfield(opts,'mu_factors'), opts.mu_factors = [0.75 1.00 1.25]; end
 if ~isfield(opts,'mu_weights'), opts.mu_weights = [0.2 0.6 0.2]; end
+
+do_export = isfield(opts,'do_export') && opts.do_export;
+if do_export
+    if isfield(opts,'outdir')
+        outdir = opts.outdir;
+    else
+        ts = datestr(now,'yyyymmdd_HHMMSS');
+        outdir = fullfile('out', ts);
+    end
+    if ~exist(outdir,'dir'), mkdir(outdir); end
+    diary(fullfile(outdir,'console.log'));
+else
+    outdir = '';
+end
+
 n = numel(scaled);
 
 all_out = cell(n,1);
@@ -142,5 +157,10 @@ summary.all_out = all_out;
 
 fprintf('Worst PFA: %s, mu=%.2f\n', worstPFA_name, worstPFA_mu);
 fprintf('Worst IDR: %s, mu=%.2f\n', worstIDR_name, worstIDR_mu);
+
+if do_export
+    export_results(outdir, scaled, params, opts, summary, all_out);
+    diary off;
+end
 
 end
