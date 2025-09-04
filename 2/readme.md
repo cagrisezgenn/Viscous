@@ -68,3 +68,65 @@ Bu klasördeki `run_one_record_windowed.m` ve `run_batch_windowed.m` betikleri, 
 - **Toplu analiz:** `run_batch_windowed` art\u0131k nominal, a\u011f\u0131rl\u0131kl\u0131 ve en k\u00f6t\u00fc durum metriklerini i\u00e7eren geni\u015f bir \u00f6zet tablosu (`summary.table`) d\u00f6nd\u00fcr\u00fcr ve en k\u00f6t PFA/IDR de\u011ferlerinin hangi kay\u0131t ve \u03bc de\u011ferine ait oldu\u011funu g\u00fcnl\u00fc\u011fe yazar.
 
 Bu eklemeler, damper tasar\u0131m\u0131n\u0131 viskozite sapmalar\u0131 kar\u015f\u0131s\u0131nda daha g\u00fc\u00e7l\u00fc hale getirmek i\u00e7in \u00f6ng\u00f6r\u00fclm\u00fc\u015f t\u00fcm senaryolar\u0131n birlikte de\u011ferlendirilmesini sa\u011flar.
+
+## Is\u0131l Reset Politikalar\u0131 + QC ve K\u0131yas (Ad\u0131m 5 & 6)
+
+Fizik/denklemler, \u00e7\u00f6z\u00fcc\u00fc ve IM/Arias mant\u0131\u011f\u0131 **de\u011fi\u015ftirilmeden**, orkestrasyon, toplama, QC ve d\u0131\u015fa aktar\u0131m katmanlar\u0131 a\u015fa\u011f\u0131daki \u015fekilde genisletildi:
+
+- **Is\u0131l reset politikalar\u0131:** `each` | `carry` | `cooldown` (bkz. `opts.cooldown_s`, vars: 60 s).
+- **Kay\u0131t s\u0131ras\u0131:** `natural` | `worst_first` | `random` (ops.). `worst_first` baz ko\u015fta belirlenen bir skora g\u00f6re s\u0131ralar.
+- **\u03bc-robust a\u011f\u0131rl\u0131kl\u0131 ve en k\u00f6t\u00fc \u00f6zetler:** \u03bc senaryolar\u0131 \u00fczerinden a\u011f\u0131rl\u0131kl\u0131 ortalama ve metrik-uygun en k\u00f6t durum (\u00f6rn. `mu_end` i\u00e7in min) hesaplan\u0131r.
+- **QC e\u015fikleri (konfig\u00fcre edilebilir):** `opts.thr = struct('dP95_max',50e6,'Qcap95_max',0.5,'cav_pct_max',0,'T_end_max',75,'mu_end_min',0.5)`.
+- **Politika k\u0131yas kural\u0131:** Baz `each/natural` ko\u015funa g\u00f6re `|\u0394PFA_w|, |\u0394IDR_w| \le 0.15 \times` baz ortalama.
+- **Zengin log + eksport:** `out/<timestamp>/` alt\u0131na `console.log`, endeks/\u00f6zet/policy CSV'leri ve geni\u015f `snapshot.mat` yaz\u0131l\u0131r.
+
+### Yeni/Genel Se\u00e7enekler (opts)
+
+- `opts.policies`: `{'each','carry','cooldown'}` alt k\u00fcmesi.
+- `opts.orders`: `{'natural','worst_first','random'}` alt k\u00fcmesi.
+- `opts.cooldown_s_list`: `cooldown` test s\u00fcreleri (\u00f6rn. `[60 180 300]`).
+- `opts.rng_seed`: `random` s\u0131ralama i\u00e7in.
+- `opts.rank_metric`: `E_orifice_win` (vars) | `pfa_top` | `idr_max` | `pfa_w`.
+- `opts.mu_factors`, `opts.mu_weights`: \u03bc taramas\u0131.
+- `opts.thr`: QC e\u015fikleri.
+- `opts.do_export`: `run_policies_windowed` i\u00e7in varsay\u0131lan `true`.
+
+### Dosyalar ve Roller
+
+- `run_one_record_windowed.m`: Tek kay\u0131t ko\u015fumlar\u0131. Yeni alanlar: `T_start`, `T_end`, `mu_end`, `clamp_hits`, `qc_all_mu`, `PFA_top`, `IDR_max`, `dP_orf_q95`, `Qcap_ratio_q95`, `cav_pct`, `t5`, `t95`, `coverage`. A\u011f\u0131rl\u0131kl\u0131/en k\u00f6t\u00fc \u00f6zetlerde `cav_pct` ve `mu_end` de kapsan\u0131r.
+- `run_batch_windowed.m`: Toplu ko\u015fum ve \u00f6zet tablo. Eklenen s\u00fctunlar: `policy`, `order`, `cooldown_s`, `PFA_w`, `IDR_w`, `PFA_worst`, `IDR_worst`, `dP95_worst`, `Qcap95_worst`, `cav_pct_worst`, `T_end_worst`, `mu_end_worst`, `qc_all_mu`, `T_start`, `T_end`, `mu_end`, `clamp_hits`, `t5`, `t95`, `coverage`, `rank_score` (`worst_first` d\u0131\u015f\u0131nda `NaN`).
+- `run_policies_windowed.m`: Policy/order/(cooldown) kombinasyonlar\u0131n\u0131 \u00e7al\u0131\u015ft\u0131r\u0131r, baz (each/natural) ile kar\u015f\u0131la\u015ft\u0131rma yapar, tek sat\u0131rl\u0131 \u00f6zetler basar ve \u00e7\u0131kt\u0131lar\u0131 d\u0131\u015fa aktar\u0131r.
+- `export_results.m`: D\u0131\u015fa aktar\u0131mlar. `scaled_index.csv` (ek kolonlar: `s_clipped`, `trimmed`), `summary.csv`, `policy_index.csv`, her kombinasyona `policy_*.csv`, ve geni\u015f `snapshot.mat` (`IM_mode`, `band_fac`, `s_bounds`, `TRIM_names`, ve m\u00fcsaitse `params_derived.C_th`).
+
+### Konsol/Log (console.log)
+
+- Ko\u015f ba\u015fl\u0131\u011f\u0131: zaman damgas\u0131, `outdir`, IM ayarlar\u0131, politikalar/s\u0131p, `cooldown_s_list`, `rng_seed`, varsa `TRIM` listesi, QC e\u015fikleri.
+- Baz sat\u0131r\u0131: `PFA_w`, `IDR_w` ort., `dP95_worst` (MPa), `Qcap95_worst`, `cav%_worst`, `T_end_worst` (C), `mu_end_worst` (min), `qc_rate=pass/total`.
+- `worst_first` s\u0131ralamas\u0131: `opts.rank_metric` ve s\u0131ral\u0131 kay\u0131t adlar\u0131.
+- Her kombinasyon i\u00e7in: `policy`, `order`, `cd`, `PFA_w` ve `IDR_w` (baz ortalamaya g\u00f6re %\u0394), `T_end_worst` (maks), `qc_rate=pass/total`, `%15` kural\u0131 i\u00e7in `OK/FAIL`. Opsiyonel: `clamp_hits` toplam\u0131 ve isim listesi.
+
+### D\u0131\u015fa Aktar\u0131mlar (out/<timestamp>/)
+
+- `console.log`: T\u00fcm \u00e7al\u0131\u015fma g\u00fcnl\u00fc\u011f\u00fc.
+- `scaled_index.csv`: `name, dt, dur, PGA, PGV, IM, scale, s_clipped, trimmed`.
+- `summary.csv`: Baseline `summary.table` (yukar\u0131daki s\u00fctunlar).
+- `policy_index.csv`: `policy, order, cooldown_s, qc_rate, PFA_w_mean, IDR_w_mean, dP95_worst_max, T_end_worst_max`.
+- `policy_<policy>_<order>_cd<sec>.csv`: Her kombinasyon i\u00e7in tam tablo.
+- `snapshot.mat`: `params, opts, scaled, P, IM_mode, band_fac, s_bounds, TRIM_names, params_derived`.
+
+### H\u0131zl\u0131 Ba\u015flang\u0131\u00e7
+
+- \u00d6nerilen ayarlar:
+  - `opts.policies = {'each','carry','cooldown'}`
+  - `opts.orders = {'natural','worst_first'}`
+  - `opts.cooldown_s_list = [60 180 300]`
+  - `opts.mu_factors = [0.75 1.00 1.25]`, `opts.mu_weights = [0.2 0.6 0.2]`
+  - `opts.rank_metric = 'E_orifice_win'`
+  - `opts.thr = struct('dP95_max',50e6,'Qcap95_max',0.5,'cav_pct_max',0,'T_end_max',75,'mu_end_min',0.5)`
+  - \u00c7al\u0131\u015ft\u0131r: `P = run_policies_windowed(scaled, params, opts);`
+
+### Ek Notlar
+
+- Fizik ve IM/Arias mant\u0131\u011f\u0131 de\u011fi\u015fmedi; t\u00fcm yenilikler orkestrasyon ve IO katmanlar\u0131ndad\u0131r.
+- `rank_score` yaln\u0131zca `order='worst_first'` i\u00e7in anlaml\u0131 olup di\u011ferlerinde `NaN` yaz\u0131l\u0131r.
+- `policy_index.csv`, kombinasyon \u00e7\u0131kt\u0131lar\u0131ndan (mean/maks) t\u00fcretilmi\u015f h\u0131zl\u0131 k\u00fcme \u00f6zetleri sa\u011flar.

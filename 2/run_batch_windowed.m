@@ -41,6 +41,7 @@ SaT1     = zeros(n,1);
 t5       = zeros(n,1);
 t95      = zeros(n,1);
 coverage = zeros(n,1);
+rank_score = nan(n,1);
 
 % policy/order info
 policy_val = getfield_default(opts,'thermal_reset','each');
@@ -73,6 +74,7 @@ which_mu_PFA = zeros(n,1);
 which_mu_IDR = zeros(n,1);
 T_end_worst  = zeros(n,1);
 mu_end_worst = zeros(n,1);
+cav_pct_worst = zeros(n,1);
 qc_all_mu    = false(n,1);
 
 T_start    = zeros(n,1);
@@ -96,6 +98,10 @@ for k = 1:n
     t5(k)       = out.win.t5;
     t95(k)      = out.win.t95;
     coverage(k) = out.win.coverage;
+    % rank score defaults to E_orifice_win; only meaningful for worst_first
+    if isfield(out,'metr') && isfield(out.metr,'E_orifice_win')
+        rank_score(k) = out.metr.E_orifice_win;
+    end
 
     T_start(k)    = out.T_start;
     T_end(k)      = out.T_end;
@@ -124,6 +130,7 @@ for k = 1:n
     which_mu_IDR(k) = m_ws.which_mu.IDR_max;
     T_end_worst(k)  = m_ws.T_oil_end;
     mu_end_worst(k) = m_ws.mu_end;
+    cav_pct_worst(k)= m_ws.cav_pct;
     qc_all_mu(k)    = out.qc_all_mu;
 
     valsPFA = arrayfun(@(s) s.metr.PFA_top, out.mu_results);
@@ -143,16 +150,21 @@ for k = 1:n
 end
 
 summary = struct();
-summary.table = table(names, scale, SaT1, t5, t95, coverage, policy_col, order_col, cooldown_col, ...
+% rank_score meaningful only when order='worst_first'
+if ~strcmpi(order_val,'worst_first')
+    rank_score(:) = NaN;
+end
+
+summary.table = table(names, scale, SaT1, t5, t95, coverage, rank_score, policy_col, order_col, cooldown_col, ...
     PFA_nom, IDR_nom, dP95_nom, Qcap95_nom, cav_nom, ...
     PFA_w, IDR_w, dP95_w, Qcap95_w, ...
-    PFA_worst, IDR_worst, dP95_worst, Qcap95_worst, ...
+    PFA_worst, IDR_worst, dP95_worst, Qcap95_worst, cav_pct_worst, ...
     which_mu_PFA, which_mu_IDR, T_end_worst, mu_end_worst, qc_all_mu, ...
     T_start, T_end, mu_end, clamp_hits, ...
-    'VariableNames', {'name','scale','SaT1','t5','t95','coverage','policy','order','cooldown_s', ...
+    'VariableNames', {'name','scale','SaT1','t5','t95','coverage','rank_score','policy','order','cooldown_s', ...
     'PFA_nom','IDR_nom','dP95_nom','Qcap95_nom','cav_nom', ...
     'PFA_w','IDR_w','dP95_w','Qcap95_w', ...
-    'PFA_worst','IDR_worst','dP95_worst','Qcap95_worst', ...
+    'PFA_worst','IDR_worst','dP95_worst','Qcap95_worst','cav_pct_worst', ...
     'which_mu_PFA','which_mu_IDR','T_end_worst','mu_end_worst','qc_all_mu', ...
     'T_start','T_end','mu_end','clamp_hits'});
 summary.all_out = all_out;

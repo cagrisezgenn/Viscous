@@ -9,9 +9,40 @@ if ~exist(outdir,'dir'), mkdir(outdir); end
 
 %% Meta/snapshot
 try
-    save(fullfile(outdir,'snapshot.mat'), 'params','opts','scaled','-v7.3');
+    % IM and trimming info  (BOŞSA BİLE DOLUYA ÇEK!)
+    IM_mode  = getfield_default(opts,'IM_mode','band');
+    if isempty(IM_mode), IM_mode = 'band'; end
+
+    band_fac = getfield_default(opts,'band_fac',[0.8 1.2]);
+    if isempty(band_fac), band_fac = [0.8 1.2]; end
+
+    s_bounds = getfield_default(opts,'s_bounds',[0.5 2.0]);
+    if isempty(s_bounds), s_bounds = [0.5 2.0]; end
+
+    TRIM_names = getfield_default(opts,'TRIM_names',{});
+    if isempty(TRIM_names), TRIM_names = {}; end
+
+    % Derived params if available
+    params_derived = struct();
+    try
+        params_derived.C_th = compute_Cth_effective(params);
+    catch
+    end
+
+    % snapshot.mat kaydı (P varsa dahil et)
+    if ~isempty(varargin)
+        P = varargin{1}; %#ok<NASGU>
+        save(fullfile(outdir,'snapshot.mat'), ...
+             'params','opts','scaled','P', ...
+             'IM_mode','band_fac','s_bounds','TRIM_names','params_derived','-v7.3');
+    else
+        save(fullfile(outdir,'snapshot.mat'), ...
+             'params','opts','scaled', ...
+             'IM_mode','band_fac','s_bounds','TRIM_names','params_derived','-v7.3');
+    end
 catch
 end
+
 try
     names = {scaled.name}';
     dt = arrayfun(@(s) getfield_default(s,'dt',NaN), scaled)';
@@ -20,8 +51,10 @@ try
     PGV = arrayfun(@(s) getfield_default(s,'PGV',NaN), scaled)';
     IM  = arrayfun(@(s) getfield_default(s,'IM',NaN), scaled)';
     sc  = arrayfun(@(s) getfield_default(s,'scale',NaN), scaled)';
-    tbl = table(names, dt, dur, PGA, PGV, IM, sc, ...
-        'VariableNames',{'name','dt','dur','PGA','PGV','IM','scale'});
+    s_cl = arrayfun(@(s) getfield_default(s,'s_clipped',0), scaled)';
+    trimmed = arrayfun(@(s) getfield_default(s,'trimmed',0), scaled)';
+    tbl = table(names, dt, dur, PGA, PGV, IM, sc, s_cl, trimmed, ...
+        'VariableNames',{'name','dt','dur','PGA','PGV','IM','scale','s_clipped','trimmed'});
     writetable(tbl, fullfile(outdir,'scaled_index.csv'));
 catch
 end
@@ -118,15 +151,13 @@ if ~isempty(varargin)
         pol = {P.policy}';
         ord = {P.order}';
         cd  = [P.cooldown_s]';
-        qc_pass = arrayfun(@(s) s.qc.pass_fraction, P)';
-        qc_n    = arrayfun(@(s) s.qc.n, P)';
-        PFA_w   = arrayfun(@(s) max(s.summary.PFA_nom), P)';
-        IDR_w   = arrayfun(@(s) max(s.summary.IDR_nom), P)';
-        PFA_ws  = arrayfun(@(s) max(s.summary.PFA_worst), P)';
-        IDR_ws  = arrayfun(@(s) max(s.summary.IDR_worst), P)';
-        idx_tbl = table(pol, ord, cd, qc_pass, qc_n, PFA_w, IDR_w, PFA_ws, IDR_ws, ...
-            'VariableNames',{'policy','order','cooldown_s','qc_pass_frac','qc_n', ...
-                             'PFA_w','IDR_w','PFA_worst','IDR_worst'});
+        qc_rate = arrayfun(@(s) s.qc.pass_fraction, P)';
+        PFA_w_mean = arrayfun(@(s) mean(s.summary.PFA_w), P)';
+        IDR_w_mean = arrayfun(@(s) mean(s.summary.IDR_w), P)';
+        dP95_worst_max = arrayfun(@(s) max(s.summary.dP95_worst), P)';
+        T_end_worst_max = arrayfun(@(s) max(s.summary.T_end_worst), P)';
+        idx_tbl = table(pol, ord, cd, qc_rate, PFA_w_mean, IDR_w_mean, dP95_worst_max, T_end_worst_max, ...
+            'VariableNames',{'policy','order','cooldown_s','qc_rate','PFA_w_mean','IDR_w_mean','dP95_worst_max','T_end_worst_max'});
         writetable(idx_tbl, fullfile(outdir,'policy_index.csv'));
         for i = 1:numel(P)
             fname = sprintf('policy_%s_%s_cd%s.csv', ...
@@ -137,4 +168,18 @@ if ~isempty(varargin)
     catch
     end
 end
+
+end % end main function export_results
+
+%% --- Helpers ---
+function Cth = compute_Cth_effective(params)
+    nStories = size(params.M,1) - 1;
+    Rvec = params.toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
+    mask = params.story_mask(:);  if numel(mask)==1, mask = mask*ones(nStories,1); end
+    ndps = params.n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
+    multi = (mask .* ndps);
+    V_oil_per = params.resFactor * (params.Ap * (2*params.Lgap));
+    m_oil_tot = sum(multi) * (params.rho * V_oil_per);
+    m_steel_tot = params.steel_to_oil_mass_ratio * m_oil_tot;
+    Cth = max(m_oil_tot*params.cp_oil + m_steel_tot*params.cp_steel, eps);
 end

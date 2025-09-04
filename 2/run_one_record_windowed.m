@@ -34,6 +34,22 @@ if isfield(opts,'thermal_reset') && strcmpi(opts.thermal_reset,'cooldown')
     opts.cooldown_s = max(opts.cooldown_s,0);
 end
 
+% QC thresholds (can be overridden via opts.thr)
+thr_default = struct('dP95_max',50e6, 'Qcap95_max',0.5, 'cav_pct_max',0, ...
+    'T_end_max',75, 'mu_end_min',0.5);
+if isfield(opts,'thr') && ~isempty(opts.thr)
+    thr_f = opts.thr;
+    fns = fieldnames(thr_default);
+    for ii=1:numel(fns)
+        if ~isfield(thr_f,fns{ii}) || isempty(thr_f.(fns{ii}))
+            thr_f.(fns{ii}) = thr_default.(fns{ii});
+        end
+    end
+    thr = thr_f;
+else
+    thr = thr_default;
+end
+
 assert(numel(opts.mu_factors)==numel(opts.mu_weights), ...
     'mu_factors and mu_weights must have same length.');
 mu_weights = opts.mu_weights(:);
@@ -152,9 +168,11 @@ for i = 1:nMu
     params_m = params; params_m.diag = diag;
     metr_i = compute_metrics_windowed(rec.t, x, a_rel, rec.ag, ts, params.story_height, win, params_m);
 
-    qc_pass = (metr_i.cav_pct==0) && (metr_i.dP_orf_q95<=50e6) && ...
-              (metr_i.Qcap_ratio_q95<0.5) && (metr_i.T_oil_end<=75) && ...
-              (metr_i.mu_end>=0.5);
+    qc_pass = (metr_i.cav_pct <= thr.cav_pct_max) && ...
+              (metr_i.dP_orf_q95 <= thr.dP95_max) && ...
+              (metr_i.Qcap_ratio_q95 <= thr.Qcap95_max) && ...
+              (metr_i.T_oil_end <= thr.T_end_max) && ...
+              (metr_i.mu_end >= thr.mu_end_min);
 
     mu_results(i).mu_factor   = f;
     mu_results(i).mu_ref_eff  = mu_ref_eff;
@@ -185,16 +203,23 @@ else
     mu_end = NaN;
 end
 
-% Weighted and worst-case summaries
-fields = {'PFA_top','IDR_max','dP_orf_q95','Qcap_ratio_q95','T_oil_end','mu_end'};
+% Weighted and worst-case summaries (metric-specific min/max where appropriate)
+fields = {'PFA_top','IDR_max','dP_orf_q95','Qcap_ratio_q95','cav_pct','T_oil_end','mu_end'};
 weighted = struct();
 worst = struct();
 worst.which_mu = struct();
-for k = 1:numel(fields)
-    fn = fields{k};
+for kf = 1:numel(fields)
+    fn = fields{kf};
     vals = arrayfun(@(s) s.metr.(fn), mu_results);
+    % weighted average for all
     weighted.(fn) = sum(mu_weights(:)'.*vals);
-    [worst.(fn),idx] = max(vals);
+    % worst-case selection rule
+    switch fn
+        case 'mu_end'
+            [worst.(fn), idx] = min(vals); % smaller viscosity is worst
+        otherwise
+            [worst.(fn), idx] = max(vals);
+    end
     worst.which_mu.(fn) = mu_results(idx).mu_factor;
 end
 
@@ -218,6 +243,13 @@ out.T_start = T_start;
 out.T_end = T_end;
 out.mu_end = mu_end;
 out.clamp_hits = clamp_hits;
+% convenience telemetry fields
+out.PFA_top = metr.PFA_top;
+out.IDR_max = metr.IDR_max;
+out.dP_orf_q95 = metr.dP_orf_q95;
+out.Qcap_ratio_q95 = metr.Qcap_ratio_q95;
+out.cav_pct = metr.cav_pct;
+out.t5 = win.t5; out.t95 = win.t95; out.coverage = win.coverage;
 end
 
 %% ---------------------------------------------------------------------
