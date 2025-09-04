@@ -10,6 +10,17 @@
 
 clear; clc; close all;
 
+%% --- Çıktı anahtarı ---
+do_export = false;      % true → sonuçları out/<timestamp>/ altına kaydet
+if do_export
+    ts = datestr(now,'yyyymmdd_HHMMSS');
+    outdir = fullfile('out', ts);
+    if ~exist(outdir,'dir'), mkdir(outdir); end
+    diary(fullfile(outdir,'console.log'));
+else
+    outdir = '';
+end
+
 %% --- Model anahtarları ---
 use_orifice = true;     % Orifis modeli aç/kapa
 use_thermal = true;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
@@ -17,6 +28,15 @@ use_thermal = true;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
 %% 1–3) Parametrelerin yüklenmesi
 % Yapı, damper ve akış/termal parametreleri ayrı bir dosyada tutulur.
 parametreler;           % T1 değeri burada hesaplanır
+
+% export için parametreleri yapılaştır
+params = struct('M',M,'C0',C0,'K',K,'k_sd',k_sd,'c_lam0',c_lam0, ...
+    'orf',orf,'rho',rho,'Ap',Ap,'A_o',A_o,'Qcap_big',Qcap_big,'mu_ref',mu_ref, ...
+    'thermal',thermal,'T0_C',T0_C,'T_ref_C',T_ref_C,'b_mu',b_mu, ...
+    'c_lam_min',c_lam_min,'c_lam_cap',c_lam_cap,'Lgap',Lgap, ...
+    'cp_oil',cp_oil,'cp_steel',cp_steel,'steel_to_oil_mass_ratio',steel_to_oil_mass_ratio, ...
+    'toggle_gain',toggle_gain,'story_mask',story_mask,'n_dampers_per_story',n_dampers_per_story, ...
+    'resFactor',resFactor,'cfg',cfg,'story_height',story_height);
 
 %% 0) Deprem girdisi (ham ivme, m/s^2)
 use_scaled = true;               % true → ölçekli kayıt, false → ham kayıt
@@ -100,6 +120,19 @@ zeta_orf = (phi1.' * C_orf * phi1) / (2*w1*normM);
 
 %% 5) Grafiklerin çizimi ve kısa özet
 grafik;
+
+% isteğe bağlı çıktıları kaydet
+if do_export
+    scaled_rec = recs(irec);
+    opts_exp = struct('use_orifice',use_orifice,'use_thermal',use_thermal);
+    out = run_one_record_windowed(scaled_rec, [], params, opts_exp);
+    summary = struct();
+    summary.table = table({out.name}', out.worst.PFA_top, out.qc_all_mu, ...
+        'VariableNames',{'name','PFA_worst','qc_all_mu'});
+    all_out = {out};
+    export_results(outdir, scaled_rec, params, opts_exp, summary, all_out);
+    diary off;
+end
 
 %% ===================== Yardımcı fonksiyonlar =====================
 function [M,K,C] = make_KCM(n,mv,kv,cv)
