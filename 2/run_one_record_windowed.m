@@ -169,6 +169,22 @@ end
 metr = mu_results(nom_idx).metr;
 diag = mu_results(nom_idx).diag;
 
+% Log thermal/viscosity end states for nominal run
+T_start = Tinit;
+if isfield(diag,'T_oil')
+    T_end = diag.T_oil(end);
+    Tmax = params.T0_C + params.thermal.dT_max;
+    clamp_hits = sum(diff(diag.T_oil >= Tmax) > 0);
+else
+    T_end = NaN;
+    clamp_hits = NaN;
+end
+if isfield(diag,'mu')
+    mu_end = diag.mu(end);
+else
+    mu_end = NaN;
+end
+
 % Weighted and worst-case summaries
 fields = {'PFA_top','IDR_max','dP_orf_q95','Qcap_ratio_q95','T_oil_end','mu_end'};
 weighted = struct();
@@ -197,6 +213,10 @@ out.mu_results = mu_results;
 out.weighted = weighted;
 out.worst = worst;
 out.qc_all_mu = all(arrayfun(@(s) s.qc.pass, mu_results));
+out.T_start = T_start;
+out.T_end = T_end;
+out.mu_end = mu_end;
+out.clamp_hits = clamp_hits;
 end
 
 %% ---------------------------------------------------------------------

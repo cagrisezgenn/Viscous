@@ -27,6 +27,16 @@ t5       = zeros(n,1);
 t95      = zeros(n,1);
 coverage = zeros(n,1);
 
+% policy/order info
+policy_col   = repmat({getfield(opts,'thermal_reset','each')}, n,1);
+order_col    = repmat({getfield(opts,'order','natural')}, n,1);
+if isfield(opts,'cooldown_s')
+    cooldown_val = opts.cooldown_s;
+else
+    cooldown_val = NaN;
+end
+cooldown_col = repmat(cooldown_val, n,1);
+
 PFA_nom    = zeros(n,1);
 IDR_nom    = zeros(n,1);
 dP95_nom   = zeros(n,1);
@@ -48,6 +58,11 @@ T_end_worst  = zeros(n,1);
 mu_end_worst = zeros(n,1);
 qc_all_mu    = false(n,1);
 
+T_start    = zeros(n,1);
+T_end      = zeros(n,1);
+mu_end     = zeros(n,1);
+clamp_hits = zeros(n,1);
+
 worstPFA = -inf; worstPFA_name = ''; worstPFA_mu = NaN;
 worstIDR = -inf; worstIDR_name = ''; worstIDR_mu = NaN;
 
@@ -64,6 +79,11 @@ for k = 1:n
     t5(k)       = out.win.t5;
     t95(k)      = out.win.t95;
     coverage(k) = out.win.coverage;
+
+    T_start(k)    = out.T_start;
+    T_end(k)      = out.T_end;
+    mu_end(k)     = out.mu_end;
+    clamp_hits(k) = out.clamp_hits;
 
     m_nom = out.metr;
     PFA_nom(k)    = m_nom.PFA_top;
@@ -106,16 +126,18 @@ for k = 1:n
 end
 
 summary = struct();
-summary.table = table(names, scale, SaT1, t5, t95, coverage, ...
+summary.table = table(names, scale, SaT1, t5, t95, coverage, policy_col, order_col, cooldown_col, ...
     PFA_nom, IDR_nom, dP95_nom, Qcap95_nom, cav_nom, ...
     PFA_w, IDR_w, dP95_w, Qcap95_w, ...
     PFA_worst, IDR_worst, dP95_worst, Qcap95_worst, ...
     which_mu_PFA, which_mu_IDR, T_end_worst, mu_end_worst, qc_all_mu, ...
-    'VariableNames', {'name','scale','SaT1','t5','t95','coverage', ...
+    T_start, T_end, mu_end, clamp_hits, ...
+    'VariableNames', {'name','scale','SaT1','t5','t95','coverage','policy','order','cooldown_s', ...
     'PFA_nom','IDR_nom','dP95_nom','Qcap95_nom','cav_nom', ...
     'PFA_w','IDR_w','dP95_w','Qcap95_w', ...
     'PFA_worst','IDR_worst','dP95_worst','Qcap95_worst', ...
-    'which_mu_PFA','which_mu_IDR','T_end_worst','mu_end_worst','qc_all_mu'});
+    'which_mu_PFA','which_mu_IDR','T_end_worst','mu_end_worst','qc_all_mu', ...
+    'T_start','T_end','mu_end','clamp_hits'});
 summary.all_out = all_out;
 
 fprintf('Worst PFA: %s, mu=%.2f\n', worstPFA_name, worstPFA_mu);
