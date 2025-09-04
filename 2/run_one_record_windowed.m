@@ -201,8 +201,8 @@ end
 %% ----------------------- Assemble output ----------------------------
 out = struct();
 out.name  = rec.name;
-out.scale = getfield(rec,'scale',1); %#ok<GFLD>
-out.SaT1  = getfield(rec,'IM',NaN); %#ok<GFLD>
+out.scale = getfield_default(rec,'scale',1);
+out.SaT1  = getfield_default(rec,'IM',NaN);
 out.win   = win;
 out.metr  = metr;
 out.metr0 = metr0;
