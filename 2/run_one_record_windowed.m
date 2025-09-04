@@ -27,6 +27,21 @@ if nargin < 4 || isempty(opts), opts = struct(); end
 if ~isfield(opts,'mu_factors'), opts.mu_factors = [0.75 1.00 1.25]; end
 if ~isfield(opts,'mu_weights'), opts.mu_weights = [0.2 0.6 0.2]; end
 
+if isfield(opts,'thermal_reset') && strcmpi(opts.thermal_reset,'cooldown')
+    if ~isfield(opts,'cooldown_s') || isempty(opts.cooldown_s) || isnan(opts.cooldown_s)
+        opts.cooldown_s = 60;
+    end
+    opts.cooldown_s = max(opts.cooldown_s,0);
+end
+
+assert(numel(opts.mu_factors)==numel(opts.mu_weights), ...
+    'mu_factors and mu_weights must have same length.');
+mu_weights = opts.mu_weights(:);
+wsum = sum(mu_weights);
+assert(wsum>0,'mu_weights sum must be > 0.');
+mu_weights = mu_weights/wsum;
+mu_factors = opts.mu_factors(:)';
+
 %% ----------------------- Arias intensity window ----------------------
 if isfield(opts,'window') && ~isempty(opts.window)
     wfields = fieldnames(opts.window);
@@ -120,8 +135,6 @@ if ~isfield(opts,'store_metr0') || opts.store_metr0
 end
 
 %% ----------------- Damper model with time series ---------------------
-mu_factors = opts.mu_factors(:)';
-mu_weights = opts.mu_weights(:)';
 nMu = numel(mu_factors);
 mu_results = struct('mu_factor',cell(1,nMu));
 
@@ -156,6 +169,22 @@ end
 metr = mu_results(nom_idx).metr;
 diag = mu_results(nom_idx).diag;
 
+% Log thermal/viscosity end states for nominal run
+T_start = Tinit;
+if isfield(diag,'T_oil')
+    T_end = diag.T_oil(end);
+    Tmax = params.T0_C + params.thermal.dT_max;
+    clamp_hits = sum(diff(diag.T_oil >= Tmax) > 0);
+else
+    T_end = NaN;
+    clamp_hits = NaN;
+end
+if isfield(diag,'mu')
+    mu_end = diag.mu(end);
+else
+    mu_end = NaN;
+end
+
 % Weighted and worst-case summaries
 fields = {'PFA_top','IDR_max','dP_orf_q95','Qcap_ratio_q95','T_oil_end','mu_end'};
 weighted = struct();
@@ -184,6 +213,10 @@ out.mu_results = mu_results;
 out.weighted = weighted;
 out.worst = worst;
 out.qc_all_mu = all(arrayfun(@(s) s.qc.pass, mu_results));
+out.T_start = T_start;
+out.T_end = T_end;
+out.mu_end = mu_end;
+out.clamp_hits = clamp_hits;
 end
 
 %% ---------------------------------------------------------------------
