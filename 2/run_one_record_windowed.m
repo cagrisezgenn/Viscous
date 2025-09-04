@@ -212,6 +212,7 @@ out.which_peak = which_peak;
 out.mu_results = mu_results;
 out.weighted = weighted;
 out.worst = worst;
+out.ts = ts;
 out.qc_all_mu = all(arrayfun(@(s) s.qc.pass, mu_results));
 out.T_start = T_start;
 out.T_end = T_end;
