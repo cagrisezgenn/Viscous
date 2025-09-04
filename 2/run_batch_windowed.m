@@ -1,9 +1,10 @@
-function summary = run_batch_windowed(scaled, params, opts)
+function [summary, all_out] = run_batch_windowed(scaled, params, opts)
 %RUN_BATCH_WINDOWED Analyse multiple records with windowed metrics.
-%   SUMMARY = RUN_BATCH_WINDOWED(SCALED, PARAMS, OPTS) processes each
-%   groundâmotion record in the struct array SCALED using
-%   RUN_ONE_RECORD_WINDOWED and returns a summary table of key metrics.
-%   PARAMS bundles structural and damper properties. OPTS are forwarded to
+%   [SUMMARY, ALL_OUT] = RUN_BATCH_WINDOWED(SCALED, PARAMS, OPTS) processes each
+%   ground-motion record in the struct array SCALED using
+%   RUN_ONE_RECORD_WINDOWED and returns a summary table of key metrics. The
+%   cell array ALL_OUT contains the full outputs for each record. PARAMS
+%   bundles structural and damper properties. OPTS are forwarded to
 %   RUN_ONE_RECORD_WINDOWED.
 %
 %   QC logs are printed for IM consistency, low Arias coverage, physical
