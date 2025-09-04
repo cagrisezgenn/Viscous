@@ -43,8 +43,10 @@ t95      = zeros(n,1);
 coverage = zeros(n,1);
 
 % policy/order info
-policy_col   = repmat({getfield(opts,'thermal_reset','each')}, n,1);
-order_col    = repmat({getfield(opts,'order','natural')}, n,1);
+policy_val = getfield_default(opts,'thermal_reset','each');
+order_val  = getfield_default(opts,'order','natural');
+policy_col = repmat({policy_val}, n,1);
+order_col  = repmat({order_val}, n,1);
 if isfield(opts,'cooldown_s')
     cooldown_val = opts.cooldown_s;
 else

@@ -14,12 +14,12 @@ catch
 end
 try
     names = {scaled.name}';
-    dt = arrayfun(@(s) getfield(s,'dt',NaN), scaled)'; %#ok<GFLD>
-    dur = arrayfun(@(s) getfield(s,'duration',NaN), scaled)'; %#ok<GFLD>
-    PGA = arrayfun(@(s) getfield(s,'PGA',NaN), scaled)'; %#ok<GFLD>
-    PGV = arrayfun(@(s) getfield(s,'PGV',NaN), scaled)'; %#ok<GFLD>
-    IM  = arrayfun(@(s) getfield(s,'IM',NaN), scaled)'; %#ok<GFLD>
-    sc  = arrayfun(@(s) getfield(s,'scale',NaN), scaled)'; %#ok<GFLD>
+    dt = arrayfun(@(s) getfield_default(s,'dt',NaN), scaled)';
+    dur = arrayfun(@(s) getfield_default(s,'duration',NaN), scaled)';
+    PGA = arrayfun(@(s) getfield_default(s,'PGA',NaN), scaled)';
+    PGV = arrayfun(@(s) getfield_default(s,'PGV',NaN), scaled)';
+    IM  = arrayfun(@(s) getfield_default(s,'IM',NaN), scaled)';
+    sc  = arrayfun(@(s) getfield_default(s,'scale',NaN), scaled)';
     tbl = table(names, dt, dur, PGA, PGV, IM, sc, ...
         'VariableNames',{'name','dt','dur','PGA','PGV','IM','scale'});
     writetable(tbl, fullfile(outdir,'scaled_index.csv'));
@@ -54,7 +54,7 @@ for k = 1:numel(all_out)
         % window.json
         try
             w = out.win;
-            win_struct = struct('t5',w.t5,'t95',w.t95,'pad',getfield(w,'pad',0), ...
+            win_struct = struct('t5',w.t5,'t95',w.t95,'pad',getfield_default(w,'pad',0), ...
                                 'coverage',w.coverage);
             writejson(win_struct, fullfile(recdir,'window.json'));
         catch
