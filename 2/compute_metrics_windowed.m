@@ -53,26 +53,30 @@ metr.Qcap_ratio_q95  = Qcap_ratio_q95(ws);
 metr.cav_pct         = cav_mean(ws);
 
 % ----------------------- Energy calculations -------------------------
-wstart = find(idx,1,'first');
-wend   = find(idx,1,'last');
+w_first = find(idx,1,'first');
+w_last  = find(idx,1,'last');
+i0 = max(w_first-1,1);
 
 metr.E_orifice_full = ts.E_orf(end);
 metr.E_struct_full  = ts.E_struct(end);
 metr.E_ratio_full   = metr.E_orifice_full / max(metr.E_struct_full, eps);
 
-metr.E_orifice_win = ts.E_orf(wend) - ts.E_orf(wstart);
-metr.E_struct_win  = ts.E_struct(wend) - ts.E_struct(wstart);
+metr.E_orifice_win = ts.E_orf(w_last) - ts.E_orf(i0);
+metr.E_struct_win  = ts.E_struct(w_last) - ts.E_struct(i0);
+if isfield(ts,'E_mech')
+    metr.E_mech_win = ts.E_mech(w_last) - ts.E_mech(i0);
+end
 metr.E_ratio_win   = metr.E_orifice_win / max(metr.E_struct_win, eps);
 metr.E_win_over_full = metr.E_orifice_win / max(metr.E_orifice_full, eps);
 
 % -------------------- Thermal/viscosity metrics ----------------------
 if isfield(params,'diag') && isfield(params.diag,'T_oil')
-    metr.T_oil_end = params.diag.T_oil(wend);
+    metr.T_oil_end = params.diag.T_oil(w_last);
 else
     metr.T_oil_end = NaN;
 end
 if isfield(params,'diag') && isfield(params.diag,'mu')
-    metr.mu_end = params.diag.mu(wend);
+    metr.mu_end = params.diag.mu(w_last);
 else
     metr.mu_end = NaN;
 end
