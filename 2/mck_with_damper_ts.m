@@ -42,8 +42,15 @@ ts.cav_mask = diag.dP_orf < 0;
 
  P_orf_per = diag.dP_orf .* diag.Q;
  ts.P_orf = sum(P_orf_per .* multi, 2);
-
- ts.P_sum = diag.P_sum;
+ if isfield(diag,'P_sum')
+     ts.P_sum = diag.P_sum;
+ else
+     if isfield(ts,'P_orf') && isfield(ts,'P_visc')
+         ts.P_sum = ts.P_orf + ts.P_visc;
+     else
+         ts.P_sum = [];
+     end
+ end
 
 % Energy accumulations
  P_struct = sum(diag.story_force .* diag.dvel, 2);

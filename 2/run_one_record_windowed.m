@@ -24,6 +24,8 @@ function out = run_one_record_windowed(rec, rec_raw, params, opts, prev_diag)
 % default arguments
 if nargin < 5, prev_diag = []; end
 if nargin < 4 || isempty(opts), opts = struct(); end
+if ~isfield(opts,'mu_factors'), opts.mu_factors = [0.75 1.00 1.25]; end
+if ~isfield(opts,'mu_weights'), opts.mu_weights = [0.2 0.6 0.2]; end
 
 %% ----------------------- Arias intensity window ----------------------
 if isfield(opts,'window') && ~isempty(opts.window)
@@ -62,6 +64,13 @@ else
     mode = 'each';
 end
 
+if strcmpi(mode,'cooldown')
+    if ~isfield(opts,'cooldown_s') || isempty(opts.cooldown_s) || isnan(opts.cooldown_s)
+        opts.cooldown_s = 60;
+    end
+    opts.cooldown_s = max(opts.cooldown_s,0);
+end
+
 % compute thermal capacity for cooldown option
 nStories = size(params.M,1) - 1;
 Rvec = params.toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
@@ -88,11 +97,7 @@ switch mode
         else
             Tprev = params.T0_C;
         end
-        if isfield(opts,'cooldown_s')
-            td = opts.cooldown_s;
-        else
-            td = 0;
-        end
+        td = opts.cooldown_s;
         hA = params.thermal.hA_W_perK;
         Tenv = params.thermal.T_env_C;
         Tinit = Tenv + (Tprev - Tenv) * exp(-hA*td / C_th);
@@ -118,15 +123,60 @@ if ~isfield(opts,'store_metr0') || opts.store_metr0
 end
 
 %% ----------------- Damper model with time series ---------------------
-[x,a_rel,ts,diag] = mck_with_damper_ts(rec.t, rec.ag, params.M, params.C0, params.K, ...
-    params.k_sd, params.c_lam0, opts.use_orifice, params.orf, params.rho, params.Ap, ...
-    params.A_o, params.Qcap_big, params.mu_ref, opts.use_thermal, params.thermal, Tinit, ...
-    params.T_ref_C, params.b_mu, params.c_lam_min, params.c_lam_cap, params.Lgap, ...
-    params.cp_oil, params.cp_steel, params.steel_to_oil_mass_ratio, params.toggle_gain, ...
-    params.story_mask, params.n_dampers_per_story, params.resFactor, params.cfg);
+mu_factors = opts.mu_factors(:)';
+mu_weights = opts.mu_weights(:)';
+assert(numel(mu_factors)==numel(mu_weights), ...
+    'mu_factors and mu_weights must have same length.');
+w = mu_weights(:);
+wsum = sum(w);
+assert(wsum>0,'mu_weights sum must be > 0.');
+mu_weights = (w./wsum)';
+nMu = numel(mu_factors);
+mu_results = struct('mu_factor',cell(1,nMu));
 
-params_m = params; params_m.diag = diag;
-metr = compute_metrics_windowed(rec.t, x, a_rel, rec.ag, ts, params.story_height, win, params_m);
+for i = 1:nMu
+    f = mu_factors(i);
+    mu_ref_eff   = params.mu_ref  * f;
+    c_lam0_eff   = params.c_lam0  * f;
+    [x,a_rel,ts,diag] = mck_with_damper_ts(rec.t, rec.ag, params.M, params.C0, params.K, ...
+        params.k_sd, c_lam0_eff, opts.use_orifice, params.orf, params.rho, params.Ap, ...
+        params.A_o, params.Qcap_big, mu_ref_eff, opts.use_thermal, params.thermal, Tinit, ...
+        params.T_ref_C, params.b_mu, params.c_lam_min, params.c_lam_cap, params.Lgap, ...
+        params.cp_oil, params.cp_steel, params.steel_to_oil_mass_ratio, params.toggle_gain, ...
+        params.story_mask, params.n_dampers_per_story, params.resFactor, params.cfg);
+
+    params_m = params; params_m.diag = diag;
+    metr_i = compute_metrics_windowed(rec.t, x, a_rel, rec.ag, ts, params.story_height, win, params_m);
+
+    qc_pass = (metr_i.cav_pct==0) && (metr_i.dP_orf_q95<=50e6) && ...
+              (metr_i.Qcap_ratio_q95<0.5) && (metr_i.T_oil_end<=75) && ...
+              (metr_i.mu_end>=0.5);
+
+    mu_results(i).mu_factor   = f;
+    mu_results(i).mu_ref_eff  = mu_ref_eff;
+    mu_results(i).c_lam0_eff  = c_lam0_eff;
+    mu_results(i).metr        = metr_i;
+    mu_results(i).diag        = diag;
+    mu_results(i).qc.pass     = qc_pass;
+end
+
+% Nominal metrics (f=1)
+[~,nom_idx] = min(abs(mu_factors-1));
+metr = mu_results(nom_idx).metr;
+diag = mu_results(nom_idx).diag;
+
+% Weighted and worst-case summaries
+fields = {'PFA_top','IDR_max','dP_orf_q95','Qcap_ratio_q95','T_oil_end','mu_end'};
+weighted = struct();
+worst = struct();
+worst.which_mu = struct();
+for k = 1:numel(fields)
+    fn = fields{k};
+    vals = arrayfun(@(s) s.metr.(fn), mu_results);
+    weighted.(fn) = sum(mu_weights(:)'.*vals);
+    [worst.(fn),idx] = max(vals);
+    worst.which_mu.(fn) = mu_results(idx).mu_factor;
+end
 
 %% ----------------------- Assemble output ----------------------------
 out = struct();
@@ -139,6 +189,10 @@ out.metr0 = metr0;
 out.diag  = diag;
 out.flags = flags;
 out.which_peak = which_peak;
+out.mu_results = mu_results;
+out.weighted = weighted;
+out.worst = worst;
+out.qc_all_mu = all(arrayfun(@(s) s.qc.pass, mu_results));
 end
 
 %% ---------------------------------------------------------------------
