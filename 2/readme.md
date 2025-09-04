@@ -57,3 +57,14 @@ Orifis ve termal etkiler **açık** iken damper modelini çalıştırarak her ka
 - `load_ground_motions.m`, Signal Processing Toolbox yoksa yalnızca ortalama ve trend giderme işlemleri uygular.
 - Termal döngü ve orifis etkilerini etkinleştirmek veya devre dışı bırakmak için `use_orifice` ve `use_thermal` anahtarları ayarlanabilir.
 - Özellikler ve fonksiyonlar hakkında ayrıntılı açıklamalar için ilgili `.m` dosyalarındaki yorumlara bakın.
+
+## \u03bc-Robustluk (Adım 4)
+Bu klasördeki `run_one_record_windowed.m` ve `run_batch_windowed.m` betikleri, s\u00f6n\u00fcmler ve yağ viskozitesindeki belirsizlikleri hesaba katan yeni bir \u03bc tarama yetene\u011fi ile g\u00fcncellendi.
+
+- **\u03bc taramas\u0131:** `opts.mu_factors` ve `opts.mu_weights` se\u00e7enekleri ile \u03bc katsay\u0131s\u0131 \u00e7arpanlar\u0131 ve a\u011f\u0131rl\u0131klar\u0131 tan\u0131mlanabilir. Varsay\u0131lan de\u011ferler s\u0131ras\u0131yla `[0.75 1.00 1.25]` ve `[0.2 0.6 0.2]`'dir.
+- **Tek pencereli \u00e7\u00f6z\u00fcm:** Arias penceresi sadece bir kez olu\u015fturulur ve t\u00fcm \u03bc senaryolar\u0131 i\u00e7in yeniden kullan\u0131l\u0131r.
+- **Metrik \u00f6zetleri:** Her \u03bc senaryosu i\u00e7in pencere-i\u00e7i metrikler hesaplan\u0131r; a\u011f\u0131rl\u0131kl\u0131 ve en k\u00f6t\u00fc durum \u00f6zetleri elde edilir.
+- **QC kontrolleri:** Cavitation, bas\u0131n\e7 ve s\u0131cakl\u0131k e\u015fikleri her \u03bc senaryosu i\u00e7in ayr\u0131 ayr\u0131 do\u011frulan\u0131r ve toplam sonu\u00e7 `qc_all_mu` alan\u0131nda raporlan\u0131r.
+- **Toplu analiz:** `run_batch_windowed` art\u0131k nominal, a\u011f\u0131rl\u0131kl\u0131 ve en k\u00f6t\u00fc durum metriklerini i\u00e7eren geni\u015f bir \u00f6zet tablosu (`summary.table`) d\u00f6nd\u00fcr\u00fcr ve en k\u00f6t PFA/IDR de\u011ferlerinin hangi kay\u0131t ve \u03bc de\u011ferine ait oldu\u011funu g\u00fcnl\u00fc\u011fe yazar.
+
+Bu eklemeler, damper tasar\u0131m\u0131n\u0131 viskozite sapmalar\u0131 kar\u015f\u0131s\u0131nda daha g\u00fc\u00e7l\u00fc hale getirmek i\u00e7in \u00f6ng\u00f6r\u00fclm\u00fc\u015f t\u00fcm senaryolar\u0131n birlikte de\u011ferlendirilmesini sa\u011flar.
