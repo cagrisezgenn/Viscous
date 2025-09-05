@@ -58,6 +58,36 @@ Orifis ve termal etkiler **açık** iken damper modelini çalıştırarak her ka
 - Termal döngü ve orifis etkilerini etkinleştirmek veya devre dışı bırakmak için `use_orifice` ve `use_thermal` anahtarları ayarlanabilir.
 - Özellikler ve fonksiyonlar hakkında ayrıntılı açıklamalar için ilgili `.m` dosyalarındaki yorumlara bakın.
 
+**Sessiz Mod (quiet) ve Dışa Aktarım (do_export)**
+- **quiet:** Konsol çıktıları `opts.quiet=true` iken bastırılır. `run_batch_windowed.m` ve `run_policies_windowed.m` bu bayrağı destekler.
+- **do_export:** Değer `false` olduğunda dosya yazımları/`diary`/figür üretimi yapılmaz. GA değerlendirmeleri bu modu kullanır.
+
+**Hızlı GA Sürücüsü**
+- **Amaç:** Çoklu yer hareketi ve µ-ağırlıklı özet üzerinde sönümleyici tasarımını NSGA-II (`gamultiobj`) ile hızlıca optimize etmek.
+- **Kaba Izgara:** Karar değişkenleri endüstriyel olarak makul adımlara “snap” edilir; `n_orf` tam sayıdır.
+- **Hafif Değerlendirme:** Her değerlendirmede çizim/CSV/snapshot/diary yazımı yapılmaz; tekrar eden tasarımlar önbellekten gelir.
+
+**Karar Vektörü ve Izgaralar**
+- **x:** `[d_o_mm, n_orf, g_lo, g_mid, g_hi, PF_tau, PF_gain]`
+- **Adımlar:** `d_o_mm:0.1`, `n_orf:integer(2..6)`, `g_*:0.05`, `PF_tau:0.1 s`, `PF_gain:0.02`.
+
+**Yeni Dosyalar**
+- `quantize_step.m:1`: Bir skaler/vektörü `step*round(x/step)` ile ızgaraya oturtur.
+- `decode_params_from_x.m:1`: `params` kopyalar; `x`’e göre `P.orf.d_o`, `P.n_orf`, `P.A_o`, `P.Qcap_big`, 3-bölge `P.toggle_gain` ve varsa `P.cfg.PF.(tau,gain)` günceller.
+- `eval_design_fast.m:1`: GA amaç sarmalayıcı; değişkenleri kuantalize eder, `run_batch_windowed`’i `do_export=false, quiet=true` ile çağırır, µ-ağırlıklı `PFA_w` ve `IDR_w` ortalamalarını amaç yapar, QC eşiklerine yumuşak ceza ekler, sonuçları `containers.Map` ile önbellekler.
+- `run_ga_driver.m:1`: NSGA-II sürücüsü; `IntCon=2`, paralel açık, çizim yok. Yalnız `out/ga_*/ga_front.(csv|mat)` yazar.
+
+**Çalıştırma**
+- **Önkoşul:** MATLAB/Global Opt. Toolbox; yol ekli: `addpath(genpath(pwd))` veya `setup`.
+- **Komut:** `[X,F] = run_ga_driver(scaled, params);`
+- **Çıktılar:** `out/ga_YYYYMMDD_HHMMSS/ga_front.csv` ve `ga_front.mat`.
+
+**Kabul Kriterleri**
+- **Kuantizasyon:** Belirtilen adımlara “snap”; `n_orf` tam sayı.
+- **Sessizlik:** GA değerlendirmelerinde figür/CSV/diary üretilmez.
+- **Önbellek:** Aynı `x` tekrar hesaplanmaz.
+- **Paralel:** `gamultiobj` paralel çalışır.
+
 ## \u03bc-Robustluk (Adım 4)
 Bu klasördeki `run_one_record_windowed.m` ve `run_batch_windowed.m` betikleri, s\u00f6n\u00fcmler ve yağ viskozitesindeki belirsizlikleri hesaba katan yeni bir \u03bc tarama yetene\u011fi ile g\u00fcncellendi.
 

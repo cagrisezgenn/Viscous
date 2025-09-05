@@ -169,8 +169,10 @@ summary.table = table(names, scale, SaT1, t5, t95, coverage, rank_score, policy_
     'T_start','T_end','mu_end','clamp_hits'});
 summary.all_out = all_out;
 
-fprintf('Worst PFA: %s, mu=%.2f\n', worstPFA_name, worstPFA_mu);
-fprintf('Worst IDR: %s, mu=%.2f\n', worstIDR_name, worstIDR_mu);
+if ~isfield(opts,'quiet') || ~opts.quiet
+    fprintf('Worst PFA: %s, mu=%.2f\n', worstPFA_name, worstPFA_mu);
+    fprintf('Worst IDR: %s, mu=%.2f\n', worstIDR_name, worstIDR_mu);
+end
 
 if do_export
     export_results(outdir, scaled, params, opts, summary, all_out);

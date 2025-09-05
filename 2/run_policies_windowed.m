@@ -42,28 +42,34 @@ else
     end
 end
 
-% Always create outdir and start diary for this run
-ts = datestr(now,'yyyymmdd_HHMMSS'); outdir = fullfile('out', ts);
-if ~exist(outdir,'dir'), mkdir(outdir); end
-diary(fullfile(outdir,'console.log'));
-
+% Quiet/export flags and output dir
+quiet = isfield(opts,'quiet') && opts.quiet;
 % Default to exporting results for policy runs unless explicitly disabled
 do_export = ~isfield(opts,'do_export') || opts.do_export;
+ts = datestr(now,'yyyymmdd_HHMMSS'); outdir = fullfile('out', ts);
+if do_export && ~quiet
+    if ~exist(outdir,'dir'), mkdir(outdir); end
+    diary(fullfile(outdir,'console.log'));
+else
+    if ~exist(outdir,'dir'), mkdir(outdir); end
+end
 
 % Console header
 try
     imode = getfield_default(opts,'IM_mode','');
     band  = getfield_default(opts,'band_fac',[NaN NaN]);
     sb    = getfield_default(opts,'s_bounds',[NaN NaN]);
-    fprintf('Run @ %s | outdir=%s\n', ts, outdir);
-    fprintf('IM_mode=%s, band=[%.3g,%.3g], s_bounds=[%.2f,%.2f]\n', imode, band(1), band(2), sb(1), sb(2));
-    fprintf('policies=%s | orders=%s | cooldown_s_list=%s | rng_seed=%d\n', ...
-        strjoin(opts.policies,','), strjoin(opts.orders,','), sprintf('%d ', opts.cooldown_s_list), opts.rng_seed);
-    if isfield(opts,'TRIM_names') && ~isempty(opts.TRIM_names)
-        fprintf('TRIM: %s\n', strjoin(opts.TRIM_names,', '));
+    if ~quiet
+        fprintf('Run @ %s | outdir=%s\n', ts, outdir);
+        fprintf('IM_mode=%s, band=[%.3g,%.3g], s_bounds=[%.2f,%.2f]\n', imode, band(1), band(2), sb(1), sb(2));
+        fprintf('policies=%s | orders=%s | cooldown_s_list=%s | rng_seed=%d\n', ...
+            strjoin(opts.policies,','), strjoin(opts.orders,','), sprintf('%d ', opts.cooldown_s_list), opts.rng_seed);
+        if isfield(opts,'TRIM_names') && ~isempty(opts.TRIM_names)
+            fprintf('TRIM: %s\n', strjoin(opts.TRIM_names,', '));
+        end
+        fprintf('QC thr: dP95<=%.1f MPa, Qcap95<%.2f, cav%%=%g, T_end<=%g C, mu_end>=%0.2f Pa*s\n', ...
+            opts.thr.dP95_max/1e6, opts.thr.Qcap95_max, opts.thr.cav_pct_max*100, opts.thr.T_end_max, opts.thr.mu_end_min);
     end
-    fprintf('QC thr: dP95<=%.1f MPa, Qcap95<%.2f, cav%%=%g, T_end<=%g C, mu_end>=%0.2f Pa*s\n', ...
-        opts.thr.dP95_max/1e6, opts.thr.Qcap95_max, opts.thr.cav_pct_max*100, opts.thr.T_end_max, opts.thr.mu_end_min);
 catch
 end
 
@@ -77,8 +83,10 @@ try
     resFactor = getfield_default(params,'resFactor',NaN);
     tg = getfield_default(params,'toggle_gain',NaN);
     tgv = tg(:); tgmin = min(tgv); tgmed = median(tgv); tgmax = max(tgv);
-    fprintf('Hydraulics: n_orf=%g, d_o~=%g m, A_o=%s, Qcap_big=%g, hA=%g, resFactor=%g, toggle_gain[min/med/max]=[%g %g %g]\n', ...
-        n_orf, d_o, mat2str(size(A_o)), Qcap_big, hA, resFactor, tgmin, tgmed, tgmax);
+    if ~quiet
+        fprintf('Hydraulics: n_orf=%g, d_o~=%g m, A_o=%s, Qcap_big=%g, hA=%g, resFactor=%g, toggle_gain[min/med/max]=[%g %g %g]\n', ...
+            n_orf, d_o, mat2str(size(A_o)), Qcap_big, hA, resFactor, tgmin, tgmed, tgmax);
+    end
 catch
 end
 
@@ -98,9 +106,11 @@ base_cav_worst_max = max(base_summary.table.cav_pct_worst);
 base_mu_end_worst_min = min(base_summary.table.mu_end_worst);
 base_qc_pass = sum(base_summary.table.qc_all_mu);
 base_qc_n = height(base_summary.table);
-fprintf(['BASE (each/natural): PFA_w=%.3g, IDR_w=%.3g, dP95_worst=%.3g MPa, Qcap95_worst=%.2f, ' ...
-        'cav%%_worst=%.1f, T_end_worst=%.1f C, mu_end_worst=%.2f, qc_rate=%d/%d\n'], ...
-    basePFA_w_mean, baseIDR_w_mean, base_dP95_worst_max/1e6, base_Qcap95_worst_max, base_cav_worst_max*100, baseTend_worst, base_mu_end_worst_min, base_qc_pass, base_qc_n);
+if ~quiet
+    fprintf(['BASE (each/natural): PFA_w=%.3g, IDR_w=%.3g, dP95_worst=%.3g MPa, Qcap95_worst=%.2f, ' ...
+            'cav%%_worst=%.1f, T_end_worst=%.1f C, mu_end_worst=%.2f, qc_rate=%d/%d\n'], ...
+        basePFA_w_mean, baseIDR_w_mean, base_dP95_worst_max/1e6, base_Qcap95_worst_max, base_cav_worst_max*100, baseTend_worst, base_mu_end_worst_min, base_qc_pass, base_qc_n);
+end
 
 % Pre-compute orders
 orders_struct.natural = 1:nRec;
@@ -165,29 +175,33 @@ for ip = 1:numel(opts.policies)
             [worstPFA, idxP] = max(summary.table.PFA_worst);
             nP = summary.table.name{idxP};
             muP = summary.table.which_mu_PFA(idxP);
-            fprintf('Worst PFA (%s,%s,mu=%.2f): %s\n', pol, ord, muP, nP);
+            if ~quiet, fprintf('Worst PFA (%s,%s,mu=%.2f): %s\n', pol, ord, muP, nP); end
             [worstIDR, idxI] = max(summary.table.IDR_worst); %#ok<NASGU>
             nI = summary.table.name{idxI};
             muI = summary.table.which_mu_IDR(idxI);
-            fprintf('Worst IDR (%s,%s,mu=%.2f): %s\n', pol, ord, muI, nI);
+            if ~quiet, fprintf('Worst IDR (%s,%s,mu=%.2f): %s\n', pol, ord, muI, nI); end
 
             % policy comparison rule logging against baseline each/natural
             tolPFA = 0.15 * basePFA_w_mean;
             tolIDR = 0.15 * baseIDR_w_mean;
             passPFA = abs(deltas.PFA_w) <= tolPFA;
             passIDR = abs(deltas.IDR_w) <= tolIDR;
-            fprintf('Delta vs base: dPFA_w=%.4g (|d|<=%.4g? %d), dIDR_w=%.4g (|d|<=%.4g? %d), qc_rate=%.2f\n', ...
-                deltas.PFA_w, tolPFA, passPFA, deltas.IDR_w, tolIDR, passIDR, qc.pass_fraction);
+            if ~quiet
+                fprintf('Delta vs base: dPFA_w=%.4g (|d|<=%.4g? %d), dIDR_w=%.4g (|d|<=%.4g? %d), qc_rate=%.2f\n', ...
+                    deltas.PFA_w, tolPFA, passPFA, deltas.IDR_w, tolIDR, passIDR, qc.pass_fraction);
+            end
 
             % Single-line summary for this combination
             n_pass = sum(summary.table.qc_all_mu);
             n_tot  = height(summary.table);
             PFAw   = curPFA_w_mean; IDRw = curIDR_w_mean; T_end_worst_max = curTend_worst;
             pass_flag_15pct = 'OK'; if ~(passPFA && passIDR), pass_flag_15pct = 'FAIL'; end
-            fprintf(['policy=%s | order=%s | cd=%ds | PFA_w=%.3g (d=%+.2f%%) | IDR_w=%.3g (d=%+.2f%%) | ' ...
-                    'T_end_worst=%.1f C | qc_rate=%d/%d %s\n'], ...
-                pol, ord, cdval, PFAw, 100*(PFAw-basePFA_w_mean)/max(basePFA_w_mean,eps), ...
-                IDRw, 100*(IDRw-baseIDR_w_mean)/max(baseIDR_w_mean,eps), T_end_worst_max, n_pass, n_tot, pass_flag_15pct);
+            if ~quiet
+                fprintf(['policy=%s | order=%s | cd=%ds | PFA_w=%.3g (d=%+.2f%%) | IDR_w=%.3g (d=%+.2f%%) | ' ...
+                        'T_end_worst=%.1f C | qc_rate=%d/%d %s\n'], ...
+                    pol, ord, cdval, PFAw, 100*(PFAw-basePFA_w_mean)/max(basePFA_w_mean,eps), ...
+                    IDRw, 100*(IDRw-baseIDR_w_mean)/max(baseIDR_w_mean,eps), T_end_worst_max, n_pass, n_tot, pass_flag_15pct);
+            end
 
             % Optional clamp summary
             try
@@ -212,6 +226,6 @@ end
 if do_export
     export_results(outdir, scaled, params, opts, base_summary, base_all, P);
 end
-fprintf('Saved to %s\n', outdir);
-diary off;
+if ~quiet, fprintf('Saved to %s\n', outdir); end
+if do_export && ~quiet, diary off; end
 end
