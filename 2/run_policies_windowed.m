@@ -201,6 +201,17 @@ for ip = 1:numel(opts.policies)
                         'T_end_worst=%.1f C | qc_rate=%d/%d %s\n'], ...
                     pol, ord, cdval, PFAw, 100*(PFAw-basePFA_w_mean)/max(basePFA_w_mean,eps), ...
                     IDRw, 100*(IDRw-baseIDR_w_mean)/max(baseIDR_w_mean,eps), T_end_worst_max, n_pass, n_tot, pass_flag_15pct);
+                % Echo worst two records by PFA_worst
+                try
+                    kshow = min(2, height(summary.table));
+                    [~,ix] = maxk(summary.table.PFA_worst, kshow);
+                    if kshow==2
+                        fprintf('  worst2(PFA): %s | %s\n', summary.table.name{ix(1)}, summary.table.name{ix(2)});
+                    elseif kshow==1
+                        fprintf('  worst2(PFA): %s | -\n', summary.table.name{ix(1)});
+                    end
+                catch
+                end
             end
 
             % Optional clamp summary

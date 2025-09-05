@@ -58,12 +58,14 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     w_pf_vec = pf_weight(t, cfg) * cfg.PF.gain;
     F_p = k_sd*drift_p + (w_pf_vec .* dp_pf) * Ap;
 
-    F_story = F_p .* (Rvec .* multi);
+    % Apply geometry scaling R only once (embedded via drift_p/dvel_p); here use count only
+    F_story = F_p .* (multi);
     P_visc_per = c_lam * (dvel_p.^2);
     P_sum = sum( (P_visc_per + P_orf_per) .* multi, 2 );
     energy = cumtrapz(t,P_sum);
     P_orf_tot = sum(P_orf_per .* multi, 2);
-    P_struct_tot = sum(F_story .* dvel .* multi, 2);
+    % Structural power uses story total force; avoid extra multi factor
+    P_struct_tot = sum(F_story .* dvel, 2);
     E_orifice = trapz(t, P_orf_tot);
     E_struct = trapz(t, P_struct_tot);
     P_mech = mean(P_struct_tot);
@@ -121,7 +123,8 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         end
         w_pf = pf_weight(tt,cfg) * cfg.PF.gain;
         F_p_ = k_sd*drift_p_ + (w_pf .* dp_pf_) * Ap;
-        F_story_ = F_p_ .* (Rcol .* multicol);
+        % Apply R scaling only once; here use damper count only
+        F_story_ = F_p_ .* (multicol);
         Fd = zeros(n,1);
     Fd(Nvec) = Fd(Nvec) - F_story_;
     Fd(Mvec) = Fd(Mvec) + F_story_;

@@ -105,9 +105,12 @@ for k = 1:numel(all_out)
         % metrics_win.csv
         try
             m = out.metr;
+            mu_mode = getfield_default(out,'mu_mode','nominal');   % label only
+            mu_used = getfield_default(out,'mu_used',1.0);
             mstruct = struct('PFA_top',m.PFA_top,'IDR_max',m.IDR_max, ...
                              'dP95',m.dP_orf_q95,'Qcap95',m.Qcap_ratio_q95, ...
                              'cav_pct',m.cav_pct,'T_end',out.T_end,'mu_end',out.mu_end);
+            mstruct.mu_mode = mu_mode; mstruct.mu_used = mu_used;
             if isfield(m,'E_orifice_win'), mstruct.E_orf_win = m.E_orifice_win; end
             if isfield(m,'E_struct_win'), mstruct.E_struct_win = m.E_struct_win; end
             metr_tbl = struct2table(mstruct);

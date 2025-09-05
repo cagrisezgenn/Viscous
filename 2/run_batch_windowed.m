@@ -169,6 +169,42 @@ summary.table = table(names, scale, SaT1, t5, t95, coverage, rank_score, policy_
     'T_start','T_end','mu_end','clamp_hits'});
 summary.all_out = all_out;
 
+% --- QC flags and reason codes for summary.csv consumers ---
+% Use thresholds from opts if provided, else defaults consistent with runners
+thr_default = struct('dP95_max',50e6,'Qcap95_max',0.5,'cav_pct_max',0,'T_end_max',75,'mu_end_min',0.5);
+if isfield(opts,'thr') && ~isempty(opts.thr)
+    thr = opts.thr;
+    fns = fieldnames(thr_default);
+    for ii=1:numel(fns)
+        if ~isfield(thr,fns{ii}) || isempty(thr.(fns{ii}))
+            thr.(fns{ii}) = thr_default.(fns{ii});
+        end
+    end
+else
+    thr = thr_default;
+end
+ok_T    = summary.table.T_end_worst   <= thr.T_end_max;
+ok_mu   = summary.table.mu_end_worst  >= thr.mu_end_min;
+ok_dP   = summary.table.dP95_worst    <= thr.dP95_max;
+ok_Qcap = summary.table.Qcap95_worst  <  thr.Qcap95_max;
+ok_cav  = summary.table.cav_pct_worst == 0;
+qc_reason = strings(height(summary.table),1);
+for r = 1:height(summary.table)
+    bad = {};
+    if ~ok_T(r),    bad{end+1}='T';  end %#ok<AGROW>
+    if ~ok_mu(r),   bad{end+1}='mu'; end %#ok<AGROW>
+    if ~ok_dP(r),   bad{end+1}='dP'; end %#ok<AGROW>
+    if ~ok_Qcap(r), bad{end+1}='Qcap'; end %#ok<AGROW>
+    if ~ok_cav(r),  bad{end+1}='cav'; end %#ok<AGROW>
+    qc_reason(r) = strjoin(bad,',');
+end
+summary.table.ok_T = ok_T;
+summary.table.ok_mu = ok_mu;
+summary.table.ok_dP = ok_dP;
+summary.table.ok_Qcap = ok_Qcap;
+summary.table.ok_cav = ok_cav;
+summary.table.qc_reason = qc_reason;
+
 if ~isfield(opts,'quiet') || ~opts.quiet
     fprintf('Worst PFA: %s, mu=%.2f\n', worstPFA_name, worstPFA_mu);
     fprintf('Worst IDR: %s, mu=%.2f\n', worstIDR_name, worstIDR_mu);
