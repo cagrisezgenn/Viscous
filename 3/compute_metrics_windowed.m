@@ -94,8 +94,9 @@ if all(isfield(params,req_fields)) && isfield(params,'diag') && isfield(params.d
     Cadd = zeros(size(M));
     for i=1:nStories
         idx2 = [i i+1];
-        k_eq = k_sd * (Rvec(i)^2) * multi(i);
-        c_eq = c_lam * (Rvec(i)^2) * multi(i);
+        % Use linear R scaling (R), not squared (R^2)
+        k_eq = k_sd * Rvec(i) * multi(i);
+        c_eq = c_lam * Rvec(i) * multi(i);
         kM = k_eq * [1 -1; -1 1];
         cM = c_eq * [1 -1; -1 1];
         Kadd(idx2,idx2) = Kadd(idx2,idx2) + kM;

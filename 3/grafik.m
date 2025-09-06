@@ -42,18 +42,16 @@ grid on; xlabel('Kat'); ylabel('Maks IDR [Delta x/h]');
 legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
 
 %% Kısa özet metni
-fprintf('x10_max  (dampersiz)   = %.4g m\n', max(abs(x10_0)));
-fprintf('x10_max  (lineer)      = %.4g m\n', max(abs(x10_lin)));
-if exist('diag_lin','var') && isstruct(diag_lin)
-    fprintf('Lineer diag: c_lam(final)=%.3e N·s/m\n', diag_lin.c_lam);
-end
-if use_thermal
-    suffix = '+termal';
-else
-    suffix = '';
-end
-fprintf('x10_max  (orifisli%s)  = %.4g m\n', suffix, max(abs(x10_orf)));
-if exist('diag_orf','var') && isstruct(diag_orf) && isfield(diag_orf,'dT_est')
-    fprintf('Termal döngü: ΔT_est=%.2f K | c_lam(final)=%.3e N·s/m\n', diag_orf.dT_est, diag_orf.c_lam);
-end
-fprintf('Not: orifis modelini kapatmak için use_orifice=false; termali kapatmak için use_thermal=false.\n');
+zeta0 = (phi1.' * C0 * phi1) / (2*w1*normM);
+zeta_d = (phi1.' * (C0 + Co_add) * phi1) / (2*w1*normM);
+
+x10_max_0    = max(abs(x10_0));
+x10_max_d    = max(abs(x10_orf));
+a10abs_max_0 = max(abs(a10_0));
+a10abs_max_d = max(abs(a10_orf));
+
+fprintf('Self-check zeta1: %.3f %% (dampersiz) vs %.3f %% (damperli)\n', 100*zeta0, 100*zeta_d);
+fprintf('x10_max  (dampersiz)   = %.4g m\n', x10_max_0);
+fprintf('x10_max  (damperli)    = %.4g m\n', x10_max_d);
+fprintf('a10abs_max  (dampersiz)= %.4g m/s^2\n', a10abs_max_0);
+fprintf('a10abs_max  (damperli) = %.4g m/s^2\n', a10abs_max_d);

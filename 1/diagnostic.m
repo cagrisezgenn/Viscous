@@ -56,7 +56,7 @@ writetable(T,'out/diagnostic.csv');
 %% ---------------------------------------------------------------
 %% Damper model with diagnostics
 function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
-    use_thermal, thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
+    ~, thermal, T0_C,T_ref_C,b_mu, ~,~,Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
     n_dampers_per_story, resFactor)
 
@@ -67,9 +67,9 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
 
     % Story vectors
     nStories = n-1;
-    Rvec = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
-    mask = story_mask(:);  if numel(mask)==1,  mask  = mask *ones(nStories,1); end
-    ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
+    Rvec = toggle_gain(:); if isscalar(Rvec), Rvec = Rvec*ones(nStories,1); end
+    mask = story_mask(:);  if isscalar(mask),  mask  = mask *ones(nStories,1); end
+    ndps = n_dampers_per_story(:); if isscalar(ndps), ndps = ndps*ones(nStories,1); end
     multi= (mask .* ndps).';
     Rvec = Rvec.';
     Nvec = 1:nStories; Mvec = 2:n;
@@ -126,8 +126,8 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     dtv = diff(t);
     for k=1:numel(t)-1
         Pk = 0.5*(P_sum(k)+P_sum(k+1));
-        Tser(k+1) = Tser(k) + dtv(k)*( Pk/C_th - (thermal.hA_W_perK/C_th)*(Tser(k)-thermal.T_env_C) );
-        Tser(k+1) = min(max(Tser(k+1), T0_C), T0_C + thermal.dT_max);
+        hA_tot = thermal.hA_W_perK * nDtot;
+Tser(k+1) = Tser(k) + dtv(k) * ( Pk/C_th - (hA_tot/C_th)*(Tser(k) - thermal.T_env_C) );
     end
     mu = mu_ref*exp(b_mu*(Tser - T_ref_C));
 

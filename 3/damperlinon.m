@@ -10,27 +10,48 @@
 
 clear; clc; close all;
 
+%% --- Çıktı anahtarı ---
+do_export = true;      % true → sonuçları out/<timestamp>/ altına kaydet
+if do_export
+    ts = datestr(now,'yyyymmdd_HHMMSS');
+    outdir = fullfile('out', ts);
+    if ~exist(outdir,'dir'), mkdir(outdir); end
+    diary(fullfile(outdir,'console.log'));
+else
+    outdir = '';
+end
+
 %% --- Model anahtarları ---
 use_orifice = true;     % Orifis modeli aç/kapa
 use_thermal = true;     % Termal döngü (ΔT ve c_lam(T)) aç/kapa
 
-%% 0) Deprem girdisi (ham ivme, m/s^2)
-S  = load('acc_matrix.mat','acc_matrix7');   % gerekirse path'i değiştirin
-t  = S.acc_matrix7(:,1);
-ag = S.acc_matrix7(:,2);
+%% 1–3) Parametrelerin yüklenmesi
+% Yapı, damper ve akış/termal parametreleri ayrı bir dosyada tutulur.
+parametreler;           % T1 değeri burada hesaplanır
+fprintf('hA=%g, resFactor=%g\n', thermal.hA_W_perK, resFactor);
+% export için parametreleri yapılaştır
+params = struct('M',M,'C0',C0,'K',K,'k_sd',k_sd,'c_lam0',c_lam0, ...
+    'orf',orf,'rho',rho,'Ap',Ap,'A_o',A_o,'Qcap_big',Qcap_big,'mu_ref',mu_ref, ...
+    'thermal',thermal,'T0_C',T0_C,'T_ref_C',T_ref_C,'b_mu',b_mu, ...
+    'c_lam_min',c_lam_min,'c_lam_cap',c_lam_cap,'Lgap',Lgap, ...
+    'cp_oil',cp_oil,'cp_steel',cp_steel,'steel_to_oil_mass_ratio',steel_to_oil_mass_ratio, ...
+    'toggle_gain',toggle_gain,'story_mask',story_mask,'n_dampers_per_story',n_dampers_per_story, ...
+    'resFactor',resFactor,'cfg',cfg,'story_height',story_height);
 
-% tekilleştir + eş-adımlı küçük düzeltme
-[t,iu] = unique(t,'stable'); ag = ag(iu);
-dt  = median(diff(t));
-t   = (t(1):dt:t(end)).';
-ag  = interp1(S.acc_matrix7(:,1), S.acc_matrix7(:,2), t, 'linear');
+%% 0) Deprem girdisi (ham ivme, m/s^2)
+use_scaled = true;               % true → ölçekli kayıt, false → ham kayıt
+if use_scaled
+    [recs_raw, recs] = load_ground_motions(T1);   % kayıtları yükle ve ölçekle
+else
+    [recs_raw, ~] = load_ground_motions();        % sadece ham kayıtları yükle
+    recs = recs_raw;
+end
+irec = 1;                        % kullanılacak kayıt indeksi
+t    = recs(irec).t;
+ag   = recs(irec).ag;
 
 % (Sadece gösterim) Arias %5–%95 penceresi
 [t5,t95] = arias_win(t,ag,0.05,0.95);
-
-%% 1–3) Parametrelerin yüklenmesi
-% Yapı, damper ve akış/termal parametreleri ayrı bir dosyada tutulur.
-parametreler;
 
 %% 4) Çözümler
 [x0,a0]    = lin_MCK(t,ag,M,C0,K);  % dampersiz
@@ -40,14 +61,14 @@ parametreler;
     t,ag,M,C0,K, k_sd, c_lam0, false, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
     false, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
     cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
-    n_dampers_per_story, resFactor);
+    n_dampers_per_story, resFactor, cfg);
 
 % Orifisli (+ termal anahtarına göre)
 [x_orf,a_orf,diag_orf] = mck_with_damper( ...
     t,ag,M,C0,K, k_sd, c_lam0, use_orifice, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
     use_thermal, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
     cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
-    n_dampers_per_story, resFactor);
+    n_dampers_per_story, resFactor, cfg);
 
 x10_0   = x0(:,10);
 x10_lin = x_lin(:,10);
@@ -62,9 +83,9 @@ a10_orf = a_orf(:,10)+ ag;
 % Toggle ve damper çoğulluğu dikkate alınarak, lineer ve orifis/termal
 % senaryoları için birinci mod sönüm oranını hesapla.
 nStories = n - 1;
-Rvec = toggle_gain(:); if isscalar(Rvec), Rvec = Rvec*ones(nStories,1); end
-mask = story_mask(:); if isscalar(mask), mask = mask*ones(nStories,1); end
-ndps = n_dampers_per_story(:); if isscalar(ndps), ndps = ndps*ones(nStories,1); end
+Rvec = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
+mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
+ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
 multi = mask .* ndps;                % sütun vektörü
 
 % Damper kaynaklı katkı matrisleri
@@ -73,9 +94,10 @@ Cl_add = zeros(n);
 Co_add = zeros(n);
 for i = 1:nStories
     idx = [i, i+1];
-    k_eq  = k_sd * (Rvec(i)^2) * multi(i);
-    c_eq_l = diag_lin.c_lam * (Rvec(i)^2) * multi(i);
-    c_eq_o = diag_orf.c_lam * (Rvec(i)^2) * multi(i);
+    % Linear R scaling (R), not R^2
+    k_eq   = k_sd               * Rvec(i) * multi(i);
+c_eq_l = diag_lin.c_lam     * Rvec(i) * multi(i);
+c_eq_o = diag_orf.c_lam     * Rvec(i) * multi(i);
     kM = k_eq  * [1 -1; -1 1];
     cM_l = c_eq_l * [1 -1; -1 1];
     cM_o = c_eq_o * [1 -1; -1 1];
@@ -97,11 +119,21 @@ normM = phi1.' * M * phi1;
 zeta_lin = (phi1.' * C_lin * phi1) / (2*w1*normM);
 zeta_orf = (phi1.' * C_orf * phi1) / (2*w1*normM);
 
-fprintf('Self-check zeta1: %.3f %% (linear) vs %.3f %% (orifice/thermal)\n', ...
-    100*zeta_lin, 100*zeta_orf);
-
 %% 5) Grafiklerin çizimi ve kısa özet
 grafik;
+
+% isteğe bağlı çıktıları kaydet
+if do_export
+    scaled_rec = recs(irec);
+    opts_exp = struct('use_orifice',use_orifice,'use_thermal',use_thermal);
+    out = run_one_record_windowed(scaled_rec, [], params, opts_exp);
+    summary = struct();
+    summary.table = table({out.name}', out.worst.PFA_top, out.qc_all_mu, ...
+        'VariableNames',{'name','PFA_worst','qc_all_mu'});
+    all_out = {out};
+    export_results(outdir, scaled_rec, params, opts_exp, summary, all_out);
+    diary off;
+end
 
 %% ===================== Yardımcı fonksiyonlar =====================
 function [M,K,C] = make_KCM(n,mv,kv,cv)
@@ -133,7 +165,7 @@ function [x,a,diag] = mck_with_damper( ...
     t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
     use_thermal, thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap, Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
-    n_dampers_per_story, resFactor)
+    n_dampers_per_story, resFactor, cfg)
 
     n = size(M,1); r = ones(n,1);
     agf = griddedInterpolant(t,ag,'linear','nearest');
@@ -142,9 +174,9 @@ function [x,a,diag] = mck_with_damper( ...
 
     % --- Toggle ve damper çoğulluğu vektörleri ---
     nStories = n-1;
-    Rvec  = toggle_gain(:); if isscalar(Rvec), Rvec = Rvec*ones(nStories,1); end
-    mask  = story_mask(:);  if isscalar(mask),  mask  = mask *ones(nStories,1); end
-    ndps  = n_dampers_per_story(:); if isscalar(ndps), ndps = ndps*ones(nStories,1); end
+    Rvec  = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
+    mask  = story_mask(:);  if numel(mask)==1,  mask  = mask *ones(nStories,1); end
+    ndps  = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
     multi = (mask .* ndps).';           % satır vektörü
     Rvec  = Rvec.';                     % satır vektörü
     Nvec  = 1:nStories;                 % alt düğümler
@@ -165,7 +197,7 @@ function [x,a,diag] = mck_with_damper( ...
         c_lam    = min(max(c_raw, c_lam_min), c_lam_cap);
 
         % ---- ODE çöz ----
-        odef = @(tt,z) rhs(tt,z,c_lam,mu_abs);
+        odef = @(tt,z) rhs(tt,z,c_lam,mu_abs,cfg);
         sol  = ode15s(odef,[t(1) t(end)],z0,opts);
         z    = deval(sol,t).';
         x    = z(:,1:n); v = z(:,n+1:end);
@@ -240,30 +272,31 @@ function [x,a,diag] = mck_with_damper( ...
     end
 
     % Son ivme
-    a = ( -(M\(C*v.' + K*x.' + dev_force(x,v,k_sd,c_lam,use_orf,orf,rho,Ap,Ao,Qcap,mu_abs,toggle_gain,story_mask,n_dampers_per_story))).' ...
+    a = ( -(M\(C*v.' + K*x.' + dev_force(t,x,v,k_sd,c_lam,use_orf,orf,rho,Ap,Ao,Qcap,mu_abs,toggle_gain,story_mask,n_dampers_per_story,cfg))).' ...
           - ag.*r.' );
 % Diag
     diag = struct('dT_est',dT_est,'c_lam',c_lam);
     
     % ----- iç yardımcılar -----
-    function dz = rhs(tt,zz,c_lam_loc,mu_abs_loc)
+    function dz = rhs(tt,zz,c_lam_loc,mu_abs_loc,cfg)
         x_ = zz(1:n); v_ = zz(n+1:end);
-        Fd = dev_force(x_,v_, k_sd,c_lam_loc, use_orf,orf,rho,Ap,Ao,Qcap,mu_abs_loc,toggle_gain,story_mask,n_dampers_per_story);
+        Fd = dev_force(tt,x_,v_, k_sd,c_lam_loc, use_orf,orf,rho,Ap,Ao,Qcap,mu_abs_loc,toggle_gain,story_mask,n_dampers_per_story,cfg);
         dv = M \ ( -C*v_ - K*x_ - Fd - M*r*agf(tt) );
         dz = [v_; dv];
     end
 end
 
-function F = dev_force(x,v, k_sd,c_lam, use_orf,orf,rho,Ap,Ao,Qcap,mu_abs,toggle_gain,story_mask,n_dampers_per_story)
+function F = dev_force(tt,x,v, k_sd,c_lam, use_orf,orf,rho,Ap,Ao,Qcap,mu_abs,toggle_gain,story_mask,n_dampers_per_story,cfg)
+    % tt: zaman (skaler veya vektör)
     % x,v: (n x 1) veya (Nt x n) olabilir → çıktı (n x 1) veya (n x Nt)
     singleVec = isvector(x);
-    if singleVec, x=x(:).'; v=v(:).'; end
+    if singleVec, x=x(:).'; v=v(:).'; tt = tt(:); end
     Nt = size(x,1); n = size(x,2);
 
     nStories = n-1;
     Nvec = 1:nStories; Mvec = 2:n;
-    Rvec  = toggle_gain(:); if isscalar(Rvec), Rvec = Rvec*ones(nStories,1); end
-    mask  = story_mask(:);  if isscalar(mask),  mask  = mask *ones(nStories,1); end
+    Rvec  = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
+    mask  = story_mask(:);  if numel(mask)==1,  mask  = mask *ones(nStories,1); end
     ndps  = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
     multi = (mask .* ndps).';           % satır vektörü
     Rvec  = Rvec.';                     % satır vektörü
@@ -279,6 +312,7 @@ function F = dev_force(x,v, k_sd,c_lam, use_orf,orf,rho,Ap,Ao,Qcap,mu_abs,toggle
     F_lin_p = k_sd*drift_p + c_lam*dvel_p; % (Nt x n-1)
 
     if ~use_orf
+        F_orf_p = 0*dvel_p;
         F_p = F_lin_p;
     else
         % Akış büyüklüğü (satürasyonlu, yumuşatılmış hız)
@@ -309,6 +343,15 @@ function F = dev_force(x,v, k_sd,c_lam, use_orf,orf,rho,Ap,Ao,Qcap,mu_abs,toggle
         F_p = F_lin_p + F_orf_p;
     end
 
+    % PF filtresi: sadece rezistif bileşen
+    dp_pf = (c_lam*dvel_p + F_orf_p) ./ Ap;
+    if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
+        s = tanh(20*dvel_p);
+        dp_pf = s .* max(0, s .* dp_pf);
+    end
+    w_pf = pf_weight(tt, cfg) * cfg.PF.gain;    % Nt x 1
+    F_p = k_sd*drift_p + (w_pf .* dp_pf) * Ap;
+
     % Piston kuvveti → hikâye kuvveti (toggle & çoğulluk)
     F_story = F_p .* (Rvec .* multi);
 
@@ -321,8 +364,12 @@ function F = dev_force(x,v, k_sd,c_lam, use_orf,orf,rho,Ap,Ao,Qcap,mu_abs,toggle
     if singleVec, F = F(:,1); end
 end
 
+function w = pf_weight(t, cfg)
+    w = cfg.on.pressure_force * (1 - exp(-max(t - cfg.PF.t_on, 0) ./ max(cfg.PF.tau, 1e-6)));
+end
+
 function y = softmin(a,b,epsm)
-    % C2-sürekli yaklaşık min(a,b)  
+    % C2-sürekli yaklaşık min(a,b)
     y = 0.5*(a + b - sqrt((a - b).^2 + epsm.^2));
 end
 

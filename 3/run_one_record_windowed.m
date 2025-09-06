@@ -252,8 +252,22 @@ out.cav_pct = metr.cav_pct;
 out.t5 = win.t5; out.t95 = win.t95; out.coverage = win.coverage;
 % chosen PF ramp onset (if set)
 try
-    if isfield(params,'cfg') && isfield(params.cfg,'PF') && isfield(params.cfg.PF,'t_on')
-        out.PF_t_on = params.cfg.PF.t_on;
+    if isfield(params,'cfg') && isfield(params.cfg,'PF')
+        if isfield(params.cfg.PF,'t_on')
+            out.PF_t_on = params.cfg.PF.t_on;
+        end
+        if isfield(params.cfg.PF,'tau')
+            out.PF_tau = params.cfg.PF.tau;
+        end
+        if isfield(params.cfg.PF,'gain')
+            out.PF_gain = params.cfg.PF.gain;
+        end
+        if isfield(params.cfg.PF,'mode')
+            out.PF_mode = params.cfg.PF.mode;
+        end
+        if isfield(params.cfg.PF,'auto_t_on')
+            out.PF_auto_t_on = logical(params.cfg.PF.auto_t_on);
+        end
     end
 catch
 end

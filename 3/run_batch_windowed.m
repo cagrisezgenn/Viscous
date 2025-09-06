@@ -355,7 +355,9 @@ if any(strcmp(opts.orders,'worst_first'))
     orders_struct.worst_first = idx;
     try
         rank_names = {scaled(idx).name};
-        fprintf('worst_first ranking by %s: %s\n', opts.rank_metric, strjoin(rank_names, ', '));
+        if ~quiet
+            fprintf('worst_first ranking by %s: %s\n', opts.rank_metric, strjoin(rank_names, ', '));
+        end
     catch, end
 end
 
@@ -438,13 +440,15 @@ for ip = 1:numel(opts.policies)
 
             % Optional clamp summary
             try
-                tot_clamps = sum(summary.table.clamp_hits);
-                nz_idx = find(summary.table.clamp_hits>0);
-                nz_names = summary.table.name(nz_idx);
-                if ~isempty(nz_names)
-                    fprintf('clamp_hits total=%d | records: %s\n', tot_clamps, strjoin(nz_names.', ', '));
-                else
-                    fprintf('clamp_hits total=%d\n', tot_clamps);
+                if ~quiet
+                    tot_clamps = sum(summary.table.clamp_hits);
+                    nz_idx = find(summary.table.clamp_hits>0);
+                    nz_names = summary.table.name(nz_idx);
+                    if ~isempty(nz_names)
+                        fprintf('clamp_hits total=%d | records: %s\n', tot_clamps, strjoin(nz_names.', ', '));
+                    else
+                        fprintf('clamp_hits total=%d\n', tot_clamps);
+                    end
                 end
             catch
             end

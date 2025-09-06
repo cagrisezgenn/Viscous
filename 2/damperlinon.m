@@ -39,7 +39,7 @@ params = struct('M',M,'C0',C0,'K',K,'k_sd',k_sd,'c_lam0',c_lam0, ...
     'resFactor',resFactor,'cfg',cfg,'story_height',story_height);
 
 %% 0) Deprem girdisi (ham ivme, m/s^2)
-use_scaled = true;               % true → ölçekli kayıt, false → ham kayıt
+use_scaled = false;               % true → ölçekli kayıt, false → ham kayıt
 if use_scaled
     [recs_raw, recs] = load_ground_motions(T1);   % kayıtları yükle ve ölçekle
 else

@@ -122,10 +122,12 @@ for k = 1:numel(all_out)
             mstruct = struct('PFA_top',m.PFA_top,'IDR_max',m.IDR_max, ...
                              'dP95',m.dP_orf_q95,'Qcap95',m.Qcap_ratio_q95, ...
                              'cav_pct',m.cav_pct,'T_end',out.T_end,'mu_end',out.mu_end);
-            % append PF_t_on if present in OUT
-            if isfield(out,'PF_t_on')
-                mstruct.PF_t_on = out.PF_t_on;
-            end
+            % append PF meta if present in OUT
+            if isfield(out,'PF_t_on'),       mstruct.PF_t_on = out.PF_t_on; end
+            if isfield(out,'PF_tau'),        mstruct.PF_tau = out.PF_tau; end
+            if isfield(out,'PF_gain'),       mstruct.PF_gain = out.PF_gain; end
+            if isfield(out,'PF_mode'),       mstruct.PF_mode = out.PF_mode; end
+            if isfield(out,'PF_auto_t_on'),  mstruct.PF_auto_t_on = out.PF_auto_t_on; end
             mstruct.mu_mode = mu_mode; mstruct.mu_used = mu_used;
             if isfield(m,'E_orifice_win'), mstruct.E_orf_win = m.E_orifice_win; end
             if isfield(m,'E_struct_win'), mstruct.E_struct_win = m.E_struct_win; end

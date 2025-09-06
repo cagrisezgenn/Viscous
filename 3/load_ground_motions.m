@@ -1,4 +1,4 @@
-function [records, scaled] = load_ground_motions(T1, opts)
+function [records, scaled, meta] = load_ground_motions(T1, opts)
 %LOAD_GROUND_MOTIONS Load and preprocess multiple ground-motion records.
 %   R = LOAD_GROUND_MOTIONS() loads all ground-motion time histories from
 %   <acc_matrix.mat> whose variables follow the pattern acc_matrix1,
@@ -90,6 +90,7 @@ for k = 1:numel(records)
 end
 
 scaled = [];
+meta = struct();
 if nargin >= 1 && ~isempty(T1)
     zeta = 0.05;
 
@@ -140,6 +141,12 @@ if ~isempty(dropped)
     fprintf('TRIM: dropped outliers = %s\n', strjoin(dropped,', '));
 end
 % Sonra targetIM = min(max(median(IM), IM_low), IM_high) ile devam...
+% TRIM sonrasi hedef ve clip durumunu guncelle
+IM_low  = max(s_bounds(1)*IM);
+IM_high = min(s_bounds(2)*IM);
+targetIM0 = median(IM);
+targetIM  = min(max(targetIM0, IM_low), IM_high);
+doClip = (IM_low > IM_high);
 
 
     % --- 2C) Ölçekle ve (opsiyonel) clip’i raporla ---
@@ -189,8 +196,16 @@ fprintf('Target IM = %.3f (%s). Max error = %.2f%% | feasible=[%.3f, %.3f] | s_m
 
 if doClip
     fprintf(' | CLIPPED=%d', n_clipped);
+else
+    fprintf(' | CLIPPED=0');
 end
 fprintf('\n');
+
+% meta bilgileri (opsiyonel 3. cikti)
+meta.IM_mode    = IM_mode;
+meta.band_fac   = band_fac;
+meta.s_bounds   = s_bounds;
+if exist('dropped','var'), meta.TRIM_names = dropped; else, meta.TRIM_names = {}; end
 
 
 end

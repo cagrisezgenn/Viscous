@@ -9,14 +9,13 @@
 %    3) Orifis ve termal modele ilişkin katsayılar
 %% ================================================================
 
-% --- 1) Yapı (10 kat) ---
-n  = 10;
-m  = 360e3 * ones(n,1);
-k  = 6.5e8 * ones(n,1);
-c  = 6.2e6 * ones(n,1);      % (artık sadece referans; C0'ı Rayleigh ile kuracağız)
-story_height = 3.0;
-
-% Kütle, rijitlik ve "geçici" C0 matrisi (C0'ı az sonra Rayleigh ile değiştireceğiz)
+%% --- 1) Yapı (10 kat) ---
+n  = 10;                               % Kat sayısı
+m  = 360e3 * ones(n,1);                % Kat kütleleri [kg]
+k  = 6.5e8 * ones(n,1);                % Kat rijitlikleri [N/m]
+c  = 6.2e6 * ones(n,1);                % Rayleigh eşdeğeri sönüm [N·s/m]
+story_height = 3.0;                    % Kat yüksekliği [m]
+% --- Kütle, rijitlik ve sönüm matrisleri ---
 M  = diag(m);
 K  = zeros(n); C0 = zeros(n);
 for i = 1:n
@@ -26,36 +25,14 @@ for i = 1:n
     else
         kU = 0;    cU = 0;
     end
-    K(i,i)   = kL + kU;
-    % C0 burada kurulu ama birazdan Rayleigh ile ÜZERİNE YAZILACAK
-    C0(i,i)  = cL + cU;
+    K(i,i)   = kL + kU;   C0(i,i)   = cL + cU;
     if i > 1
-        K(i,i-1)  = -kL;
-        C0(i,i-1) = -cL;
+        K(i,i-1) = -kL;  C0(i,i-1) = -cL;
     end
     if i < n
-        K(i,i+1)  = -kU;
-        C0(i,i+1) = -cU;
+        K(i,i+1) = -kU;  C0(i,i+1) = -cU;
     end
 end
-
-% Birinci doğal periyot (dampersiz referans)
-[VV,DD] = eig(K,M);
-ww  = sqrt(sort(diag(DD),'ascend'));
-w1  = ww(1);               % rad/s
-T1  = 2*pi/w1;
-
-% ================= Rayleigh sönümünü burada kur =================
-% hedef: ζ ≈1% @ ω1, ≈4–5% @ 4·ω1
-whf = 4*w1;  z1 = 0.01;  zhf = 0.05;
-A = [1/(2*w1)  ,  w1/2;
-     1/(2*whf) ,  whf/2];
-ab    = A \ [z1; zhf];
-alpha = ab(1);
-beta  = ab(2);
-
-% Yapısal sönüm matrisi: Rayleigh
-C0 = alpha*M + beta*K;
 
 % Birinci doğal periyot (dampersiz referans)
 [~,D] = eig(K,M);
@@ -87,7 +64,7 @@ c_lam0 = 12*mu_ref*Lori*Ap^2/d_o^4;   % Laminer eşdeğer sönüm (T0)
 
 %% --- 3) Orifis ve termal parametreleri ---
 rho   = 850;       % Yağ yoğunluğu [kg/m^3]
-n_orf = 4;         % Kat başına orifis sayısı
+n_orf = 2;         % Kat başına orifis sayısı
 A_o   = n_orf * (pi*d_o^2/4);     % Toplam orifis alanı [m^2]
 
 % Orifis katsayıları
@@ -118,13 +95,13 @@ thermal.relax     = 0.5;             % Relaxation katsayısı
 thermal.dT_max    = 80;              % Maksimum izin verilen ΔT [K]
 
 % Ek kütle/kapasite verileri
-steel_to_oil_mass_ratio = 1.5;                           % Çelik/yağ kütle oranı
-toggle_gain = [3.2 3.2 3.2 3.4 3.4 3.4 3.4 3.6 3.6].';  % Toggle kazancı (skaler veya (n-1)x1 vektör)
-n_dampers_per_story = 1*ones(n-1,1);                    % Kat başına damper adedi (skaler veya (n-1)x1 vektör)
-story_mask = ones(n-1,1);                               % Kat maskesi; 1=aktif, 0=damper yok
-cp_oil   = 1800;                                         % Yağın özgül ısısı [J/(kg·K)]
-cp_steel = 500;                                          % Çeliğin özgül ısısı [J/(kg·K)]
-resFactor = 5;                                            % Hacim/kapasite ölçeği
+steel_to_oil_mass_ratio = 1.5;       % Çelik/yağ kütle oranı
+n_dampers_per_story    = 1;          % Kat başına damper adedi (skaler veya (n-1)x1 vektör)
+toggle_gain            = 3.4n_;        % Toggle kazancı (skaler veya (n-1)x1 vektör)
+story_mask             = ones(n-1,1);% Kat maskesi; 1=aktif, 0=damper yok
+cp_oil   = 1800;                     % Yağın özgül ısısı [J/(kg·K)]
+cp_steel = 500;                      % Çeliğin özgül ısısı [J/(kg·K)]
+resFactor = 3;                       % Hacim/kapasite ölçeği
 
 % c_lam(T) sınırları
 c_lam_cap      = 2e7;                % Üst sınır (cap)
