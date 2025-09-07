@@ -11,7 +11,7 @@ end
 %     A) Snapshot: run_ga_driver('out/<ts>/snapshot.mat', params?, ...)
 %        Loads 'scaled' (and params if not provided).
 %     B) In-memory: run_ga_driver(scaled, params, ...)
-%   Fitness evaluations have no IO/plots; no re-scaling is performed.
+%   Fitness evaluations have no IO; no re-scaling is performed.
 
     % ---------- Zero-arg convenience: pull from base workspace ----------
     % Avoid referencing missing input args when nargin==0/1 by using locals.
@@ -119,8 +119,6 @@ end
     if ~isfield(optsEval,'mu_factors'), optsEval.mu_factors = meta.mu_factors; end
     if ~isfield(optsEval,'mu_weights'), optsEval.mu_weights = meta.mu_weights; end
     if ~isfield(optsEval,'thr'),        optsEval.thr        = meta.thr; end
-    if ~isfield(optsEval,'export'),     optsEval.export     = struct('plots',false,'ds',inf); end
-    if ~isfield(optsEval,'debug'), optsEval.debug = true; end
 
 
     % ---------- GA options and objective ----------
@@ -132,16 +130,10 @@ end
     ub = [3.60, 6, 4.00, 4.00, 3.60, 1.10, 0.90];
     IntCon = 2;  % n_orf only
 
-    % Pass GA population size into eval for debug windowing
-    try, optsEval.popsize = Utils.getfield_default(optsGA,'PopulationSize',48); catch, end
-    if ~isfield(optsEval,'debug') || isempty(optsEval.debug), optsEval.debug = false; end
-    % Provide dataset signature for memo/debug keys
+    % Provide dataset signature for memo keys
     try, dsig = sum([scaled.IM]) + sum([scaled.PGA]); catch, dsig = 0; end
     optsEval.dsig = dsig;
     obj = @(x) eval_design_fast(x, scaled, params, optsEval); % quantize/clamp inside
-
-    % OutputFcn for generation-level debug reporting (works with parallel)
-    outfun = @(options,state,flag) ga_output_debug(options,state,flag, params, optsEval);
 
     options = optimoptions('gamultiobj', ...
        'PopulationSize',    Utils.getfield_default(optsGA,'PopulationSize',16), ...
@@ -152,8 +144,7 @@ end
        'StallGenLimit',     Utils.getfield_default(optsGA,'StallGenLimit',10), ...
        'DistanceMeasureFcn','distancecrowding', ...
        'UseParallel',       Utils.getfield_default(optsGA,'UseParallel',true), ...
-       'Display','iter','PlotFcn',[], 'FunctionTolerance',1e-3, ...
-       'OutputFcn', outfun);
+       'Display','iter','PlotFcn',[], 'FunctionTolerance',1e-3);
 
     % Provide grid-aligned initial population if none supplied (sparser grid + seeds)
     try
@@ -487,91 +478,6 @@ end
     catch
     end
 
-    % ---------- Optional plots for best design (grafik.m equivalent) ----------
-    try
-        % Determine best design x (knee). T includes baseline in first row.
-        if exist('kidx','var') && kidx >= 2
-            x_best = X(kidx-1,:);
-        else
-            x_best = X(1,:);
-        end
-        x_best = quant_clamp_x(x_best);
-        Pbest  = decode_params_from_x(params, x_best);
-        % Choose record with worst PFA under best design
-        Oplt = struct('do_export',false,'quiet',true,'thermal_reset','each','order','natural', ...
-                      'use_orifice',true,'use_thermal',true, ...
-                      'mu_factors', meta.mu_factors, 'mu_weights', meta.mu_weights, 'thr', meta.thr);
-        [Sbest, ~] = run_batch_windowed(scaled, Pbest, Oplt);
-        [~,krec] = max(Sbest.table.PFA_worst);
-        if ~(isfinite(krec) && krec>=1 && krec<=numel(scaled)), krec = 1; end
-        rec = scaled(krec);
-        t = rec.t; ag = rec.ag; n = size(Pbest.M,1); story_height = Pbest.story_height;
-        % Dampersiz (linear MCK)
-        [x0,a0] = Utils.lin_MCK(t, ag, Pbest.M, Pbest.C0, Pbest.K);
-        % Lineer damper (use_orf=false, thermal off)
-        [x_lin,a_lin] = mck_with_damper(t, ag, Pbest.M, Pbest.C0, Pbest.K, Pbest.k_sd, Pbest.c_lam0, ...
-            false, Pbest.orf, Pbest.rho, Pbest.Ap, Pbest.A_o, Pbest.Qcap_big, Pbest.mu_ref, ...
-            false, Pbest.thermal, Pbest.T0_C, Pbest.T_ref_C, Pbest.b_mu, Pbest.c_lam_min, Pbest.c_lam_cap, Pbest.Lgap, ...
-            Pbest.cp_oil, Pbest.cp_steel, Pbest.steel_to_oil_mass_ratio, Pbest.toggle_gain, Pbest.story_mask, Pbest.n_dampers_per_story, Pbest.resFactor, Pbest.cfg);
-        % Orifisli damper (+thermal)
-        [x_orf,a_orf] = mck_with_damper(t, ag, Pbest.M, Pbest.C0, Pbest.K, Pbest.k_sd, Pbest.c_lam0, ...
-            true, Pbest.orf, Pbest.rho, Pbest.Ap, Pbest.A_o, Pbest.Qcap_big, Pbest.mu_ref, ...
-            true, Pbest.thermal, Pbest.T0_C, Pbest.T_ref_C, Pbest.b_mu, Pbest.c_lam_min, Pbest.c_lam_cap, Pbest.Lgap, ...
-            Pbest.cp_oil, Pbest.cp_steel, Pbest.steel_to_oil_mass_ratio, Pbest.toggle_gain, Pbest.story_mask, Pbest.n_dampers_per_story, Pbest.resFactor, Pbest.cfg);
-        % 10th story signals
-        idx10 = min(10, n);
-        x10_0   = x0(:,idx10);
-        x10_lin = x_lin(:,idx10);
-        x10_orf = x_orf(:,idx10);
-        a10_0   = a0(:,idx10)   + ag;  % absolute
-        a10_lin = a_lin(:,idx10)+ ag;
-        a10_orf = a_orf(:,idx10)+ ag;
-        % Arias window
-        win = Utils.make_arias_window(t, ag);
-        t5 = win.t5; t95 = win.t95;
-        % First-mode period for title
-        try
-            [~,D] = eig(Pbest.K, Pbest.M); w = sqrt(sort(diag(D),'ascend')); T1p = 2*pi/w(1);
-        catch
-            T1p = NaN;
-        end
-        % Plot 1: displacement at top
-        f1h = figure('Name','10. Kat yer degistirme (GA best)','Color','w');
-        plot(t, x10_0,'k','LineWidth',1.4); hold on;
-        plot(t, x10_lin,'b','LineWidth',1.1);
-        plot(t, x10_orf,'r','LineWidth',1.0);
-        yl = ylim; plot([t5 t5],yl,'k--','HandleVisibility','off'); plot([t95 t95],yl,'k--','HandleVisibility','off');
-        grid on; xlabel('t [s]'); ylabel(sprintf('x_{%d}(t) [m]', idx10));
-        title(sprintf('T1=%.3f s | Arias [%.3f, %.3f] s | rec=%s', T1p, t5, t95, char(Utils.getfield_default(rec,'name','1'))));
-        legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
-        % Plot 2: absolute acceleration at top
-        f2h = figure('Name','10. Kat mutlak ivme (GA best)','Color','w');
-        plot(t, a10_0,'k','LineWidth',1.4); hold on;
-        plot(t, a10_lin,'b','LineWidth',1.1);
-        plot(t, a10_orf,'r','LineWidth',1.0);
-        yl = ylim; plot([t5 t5],yl,'k--','HandleVisibility','off'); plot([t95 t95],yl,'k--','HandleVisibility','off');
-        grid on; xlabel('t [s]'); ylabel(sprintf('a_{%d,abs}(t) [m/s^2]', idx10)); legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
-        % Plot 3: max IDR per story
-        drift0    = x0(:,2:end)    - x0(:,1:end-1);
-        drift_lin = x_lin(:,2:end) - x_lin(:,1:end-1);
-        drift_orf = x_orf(:,2:end) - x_orf(:,1:end-1);
-        IDR0    = max(abs(drift0))./story_height;
-        IDR_lin = max(abs(drift_lin))./story_height;
-        IDR_orf = max(abs(drift_orf))./story_height;
-        stories = 1:(n-1);
-        f3h = figure('Name','Maksimum IDR (GA best)','Color','w');
-        plot(stories, IDR0,'k-o','LineWidth',1.4); hold on;
-        plot(stories, IDR_lin,'b-s','LineWidth',1.1);
-        plot(stories, IDR_orf,'r-d','LineWidth',1.0);
-        grid on; xlabel('Kat'); ylabel('Maks IDR [Δx/h]'); legend('Dampersiz','Lineer damper','Orifisli damper','Location','best');
-        drawnow;
-    catch ME
-        try
-            warning('[run_ga_driver] GA-best plotting failed: %s', ME.message);
-        catch
-        end
-    end
-
     % Decode top-K designs without running sims
     K = min(10, size(X,1));
     if K > 0
@@ -611,57 +517,6 @@ end
     end
 end
 
-function [state, options, optchanged] = ga_output_debug(options, state, flag, params, optsEval)
-%GA_OUTPUT_DEBUG OutputFcn to report unique designs per generation.
-    optchanged = false;
-    try
-        if ~isfield(state,'Population') || isempty(state.Population)
-            return;
-        end
-        if ~(strcmpi(flag,'iter') || strcmpi(flag,'done'))
-            return;
-        end
-        X = state.Population;
-        n = size(X,1);
-        Xq = nan(n,7);
-        for i = 1:n
-            Xq(i,:) = quant_clamp_x(X(i,:));
-        end
-        % derive params signatures: [xq, A_o, Qcap_big]
-        d_o_m = Xq(:,1) * 1e-3;
-        n_orf = round(Xq(:,2));
-        Ao = n_orf .* (pi * (d_o_m.^2) / 4);
-        Qcap_big = max(params.orf.CdInf .* Ao, 1e-9) .* sqrt(2 * 1.0e9 / params.rho);
-        Pmat = [Xq Ao Qcap_big];
-        % unique counts
-        uX = unique(Xq, 'rows');
-        uP = unique(Pmat, 'rows');
-        ucnt_x = size(uX,1);
-        ucnt_p = size(uP,1);
-        popsz = n;
-        % Diversity threshold and penalty share
-        thr = 10; if isstruct(optsEval) && isfield(optsEval,'uniq_thr') && ~isempty(optsEval.uniq_thr), thr = optsEval.uniq_thr; end
-        dsig = 0; if isstruct(optsEval) && isfield(optsEval,'dsig'), dsig = optsEval.dsig; end
-        share_thr = 0.5; if isstruct(optsEval) && isfield(optsEval,'pen_share_thr') && ~isempty(optsEval.pen_share_thr), share_thr = optsEval.pen_share_thr; end
-        pen_hi = 0;
-        for i = 1:n
-            key_i = jsonencode([Xq(i,:), dsig]);
-            mi = memo_store('get', key_i);
-            if ~isempty(mi)
-                share_i = Utils.getfield_default(mi,'pen',NaN);
-                if isfinite(share_i) && (share_i > share_thr)
-                    pen_hi = pen_hi + 1;
-                end
-            end
-        end
-        pen_rate = pen_hi / max(popsz,1);
-        flagLow = (ucnt_p < thr);
-        fprintf('[GA dbg/of] gen=%d | unique x=%d/%d, unique params=%d/%d | high-pen-rate=%.0f%% (thr=%.2f)%s\n', ...
-            state.Generation, ucnt_x, popsz, ucnt_p, popsz, 100*pen_rate, share_thr, tern(flagLow,'  <-- LOW DIVERSITY',''));
-    catch
-    end
-end
-
 function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
     % snap to grids
     x = x(:)';
@@ -698,7 +553,6 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
     O = struct();
     if nargin >= 4 && ~isempty(optsEval), O = optsEval; end
     O.do_export = false;
-    O.export = struct('plots', true, 'ds', inf);
     O.quiet  = true;
     O.thermal_reset = 'each';
     O.order = 'natural';
@@ -856,73 +710,10 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
     catch
     end
 
-    % ---------------- Debug/pilot logging: uniqueness and penalty share ----------------
-    try
-        dbg_enabled = false;
-        if nargin >= 4 && ~isempty(optsEval) && isstruct(optsEval)
-            dbg_enabled = isfield(optsEval,'debug') && logical(optsEval.debug);
-        end
-        if dbg_enabled
-            % Build signatures:
-            %  - x_sig: quantized/clamped decision vector (x)
-            %  - p_sig: used param tuple [x, P.A_o, P.Qcap_big]
-            x_sig = mat2str(x, 6);
-            try
-                p_sig_vec = [x(1:7) P.A_o P.Qcap_big];
-            catch
-                p_sig_vec = [x(1:7) NaN NaN];
-            end
-            p_sig = mat2str(p_sig_vec, 6);
-            % Persistent state across calls
-            persistent DBG;
-            if isempty(DBG)
-                DBG = struct();
-                DBG.popsize = Utils.getfield_default(optsEval,'popsize',24);
-                DBG.count = 0;                % total eval calls since last reset
-                DBG.sigset_x = containers.Map(); % signatures (x) in current generation window
-                DBG.sigset_p = containers.Map(); % signatures (params) in current generation window
-                DBG.pen_hi = 0;               % high-penalty counter in window
-                DBG.share_thr = Utils.getfield_default(optsEval,'pen_share_thr',0.5);
-            end
-            % Start of a generation window?
-            if mod(DBG.count, DBG.popsize) == 0
-                DBG.sigset_x = containers.Map();
-                DBG.sigset_p = containers.Map();
-                DBG.pen_hi = 0;
-            end
-            % Add signature
-            if ~isKey(DBG.sigset_x, x_sig)
-                DBG.sigset_x(x_sig) = 1;
-            else
-                DBG.sigset_x(x_sig) = DBG.sigset_x(x_sig) + 1;
-            end
-            if ~isKey(DBG.sigset_p, p_sig)
-                DBG.sigset_p(p_sig) = 1;
-            else
-                DBG.sigset_p(p_sig) = DBG.sigset_p(p_sig) + 1;
-            end
-            % Penalty share (use multiplicative share lambda*pen)
-            share = lambda * pen;
-            if (share > DBG.share_thr)
-                DBG.pen_hi = DBG.pen_hi + 1;
-            end
-            DBG.count = DBG.count + 1;
-            % End of generation window -> print summary
-            if mod(DBG.count, DBG.popsize) == 0
-                genIdx = DBG.count / DBG.popsize;
-                try, uniq_x = DBG.sigset_x.Count; catch, uniq_x = numel(keys(DBG.sigset_x)); end
-                try, uniq_p = DBG.sigset_p.Count; catch, uniq_p = numel(keys(DBG.sigset_p)); end
-                pen_rate = DBG.pen_hi / max(DBG.popsize,1);
-                fprintf('[GA dbg] gen=%d | unique x=%d/%d, unique params=%d/%d | high-pen-rate=%.0f%% (thr=%.2f)\n', ...
-                    genIdx, uniq_x, DBG.popsize, uniq_p, DBG.popsize, 100*pen_rate, DBG.share_thr);
-            end
-        end
-    catch
-    end
     memo(key) = meta;
     try, memo_store('set', key, meta); catch, end
 
-end
+    end
 
 function xq = quant_clamp_x(x)
     % Apply the same quantization/clamps as in eval
