@@ -1,27 +1,28 @@
 function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, opts)
-%MAKE_SIZING_CASE Deterministic sizing pass after GA gains/PF are fixed.
-%   [SIZING, P_SIZED, S_WORST] = MAKE_SIZING_CASE(SCALED, PARAMS, GAINSPF, OPTS)
-%   freezes {g_lo,g_mid,g_hi, PF_tau, PF_gain} and derives
-%   {d_o, n_orf, L_orif, Cd, A_o, Qcap_big} using simple rules consistent
-%   with the ODE model and constraints used during GA.
+%% DETERMİNİSTİK BOYUTLANDIRMA
+% GA sonrasında elde edilen kazançlar ve PF parametreleri sabitlenerek
+% damper orifisinin boyutlandırılması yapılır. Hesaplamalar, GA sırasında
+% kullanılan ODE modeline uyumlu basit kurallara dayanır.
 %
-% Inputs
-%   scaled  - ground motion set used in GA
-%   params  - struct with structural + damper base parameters
-%   gainsPF - struct with fields: g_lo, g_mid, g_hi, PF_tau, PF_gain
-%   opts    - optional settings:
-%               dp_allow_frac (default 0.60)
-%               alpha_lam     (default 0.15)
-%               n_orf_set     (default [5 6])
-%               dmm_step      (default 0.05 mm)
-%               Cd_init       (default params.orf.CdInf or 0.70)
-%               mu_nom        (default params.mu_ref)
+% Girdiler
+%   scaled  - GA'da kullanılan ölçeklenmiş yer hareketleri
+%   params  - yapı + damper temel parametre yapısı
+%   gainsPF - {g_lo,g_mid,g_hi, PF_tau, PF_gain} alanlarını içeren yapı
+%   opts    - isteğe bağlı ayarlar:
+%               dp_allow_frac (varsayılan 0.60)
+%               alpha_lam     (varsayılan 0.15)
+%               n_orf_set     (varsayılan [5 6])
+%               dmm_step      (varsayılan 0.05 mm)
+%               Cd_init       (varsayılan params.orf.CdInf ya da 0.70)
+%               mu_nom        (varsayılan params.mu_ref)
 %
-% Outputs
-%   sizing  - derived quantities (Q95_worst, Ao, d_o, n_orf, Cd, Lori, ...)
-%   P_sized - params with {n_orf, orf.d_o, A_o, Qcap_big} updated and
-%             gains/PF frozen according to gainsPF
-%   S_worst - output of run_batch_windowed(scaled, P_sized, O) for reporting
+% Çıktılar
+%   sizing  - türetilen büyüklükler (Q95_worst, Ao, d_o, n_orf, Cd, Lori, ...)
+%   P_sized - {n_orf, orf.d_o, A_o, Qcap_big} alanları güncellenmiş parametre
+%             yapısı, kazançlar/PF sabitlenmiş
+%   S_worst - run_batch_windowed(scaled, P_sized, O) sonucu rapor yapısı
+%
+% -------------------------------------------------------------------------
 
     % 0-arg/low-arg convenience: try to pull from workspace and latest GA CSVs
     if nargin < 3 || isempty(scaled) || isempty(params) || isempty(gainsPF)
@@ -78,36 +79,36 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
         end
     end
 
-    % Defaults
+    %% Varsayılan Ayarların Çekilmesi
     dp_allow_frac = getopt(opts,'dp_allow_frac',0.60);   % Δp_kv,target = 0.6*Δp_cap
-    alpha_lam     = getopt(opts,'alpha_lam',0.15);       % laminer / türbülans oran hedefi
+    alpha_lam     = getopt(opts,'alpha_lam',0.15);       % laminer/türbülans oran hedefi
     n_orf_set     = getopt(opts,'n_orf_set',[5 6]);      % izinli delik sayıları
-    dmm_step      = getopt(opts,'dmm_step',0.05);        % d_o kuantizasyon (mm)
+    dmm_step      = getopt(opts,'dmm_step',0.05);        % d_o kuantizasyon adımı (mm)
     Cd_init       = getopt(opts,'Cd_init',getopt(getopt(params,'orf',struct()),'CdInf',0.70));
-    mu_nom        = getopt(opts,'mu_nom',getopt(params,'mu_ref',0.9));  % Pa·s (nominal)
+    mu_nom        = getopt(opts,'mu_nom',getopt(params,'mu_ref',0.9));  % Pa·s
 
-    % 1) PF ve geometry gains’i sabitle
+    %% Adım 1: PF ve Geometri Kazançlarını Sabitleme
     P = params;
-    % gains → toggle_gain (alt 3, orta, üst 2)
+    % kazançlar -> toggle_gain (alt 3, orta, üst 2 kat)
     nStories = size(P.M,1)-1;
     tg = ones(nStories,1) * gainsPF.g_mid;
     loN = min(3,nStories); if loN>0, tg(1:loN) = gainsPF.g_lo; end
     hiN = min(2,nStories); if hiN>0, tg(end-hiN+1:end) = gainsPF.g_hi; end
     P.toggle_gain = tg;
-    % PF
+    % PF parametreleri
     if isfield(P,'cfg') && isfield(P.cfg,'PF')
         P.cfg.PF.tau  = gainsPF.PF_tau;
         P.cfg.PF.gain = gainsPF.PF_gain;
     end
 
-    % 2) Fixed-gain değerlendirme (IO kapalı)
+    %% Adım 2: Sabit Kazançlarla Sistem Değerlendirmesi
     O = struct('do_export',false,'quiet',true,'thermal_reset','each','order','natural', ...
                'use_orifice',true,'use_thermal',true, ...
                'mu_factors',[0.75 1.00 1.25], 'mu_weights',[0.2 0.6 0.2], 'thr', []);
     S_worst = run_batch_windowed(scaled, P, O);
 
-    % 3) Q95 (worst) ve Δp_cap → Δp_kv,target
-    % Pull from summary table (aggregate across records)
+    %% Adım 3: Q95 ve Basınç Sınırlarının Belirlenmesi
+    % Özet tablo üzerinden en kötü %95 debiyi çek
     Q95_worst = NaN;
     try
         vars = S_worst.table.Properties.VariableNames;
@@ -128,11 +129,11 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
     end
     dp_kv_target = dp_allow_frac * dp_cap;
 
-    % 4) Türbülans baskın → Ao_req (Cd≈Cd_init) ve {n_orf, d_o}
+    %% Adım 4: Türbülans Baskın Koşuldan Orifis Alanı
     rho = P.rho;
     Ao_req = abs(Q95_worst) / max(Cd_init,eps) * sqrt(rho / max(2*dp_kv_target,eps));  % m^2
     % n_orf adayları üzerinde en yakın kuantize d_o seç
-    dgrid = @(dmm) (dmm_step * round(dmm./max(dmm_step,eps))); % mm grid
+    dgrid = @(dmm) (dmm_step * round(dmm./max(dmm_step,eps))); % mm ızgara
     best = struct('n_orf',NaN,'d_o',NaN,'A_o',NaN,'Cd',Cd_init,'Lori',NaN);
     best_err = inf;
     for n_orf = n_orf_set(:).'
@@ -146,12 +147,12 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
         end
     end
 
-    % 5) Laminer kol: L_orif öyle ki Δp_lam(Q95) ≤ α·Δp_kv,target
+    %% Adım 5: Laminer Kol Uzunluğunun Hesabı
     % R_lam,tot = (128 μ L / (π d^4)) / n_orf ; Δp_lam = R_lam,tot * Q
     L_orif = alpha_lam * dp_kv_target * (pi * best.d_o^4) * best.n_orf / max(128*mu_nom*abs(Q95_worst),eps);
     best.Lori = L_orif;
 
-    % 6) Re→Cd(Re) 1–2 iterasyon ve Ao_req güncelle (delik başına Q)
+    %% Adım 6: Reynolds Sayısı ve Cd Güncellemesi
     Cd = Cd_init; Re = NaN; %#ok<NASGU>
     for it = 1:2
         Q_hole = Q95_worst / max(best.n_orf,1);
@@ -164,17 +165,17 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
     end
     best.Cd = Cd;
 
-    % 7) Qcap_big (emniyetli)
+    %% Adım 7: Debi Üst Sınırının Belirlenmesi
     Qcap_big = 1.2 * abs(Q95_worst);
 
-    % 8) P_sized üret (params üzerine yaz)
+    %% Adım 8: Parametre Yapısının Güncellenmesi
     P_sized = P;
     P_sized.n_orf    = best.n_orf;
     P_sized.orf.d_o  = best.d_o;
     P_sized.A_o      = best.A_o;
     P_sized.Qcap_big = Qcap_big;
 
-    % 9) Sizing paketi (rapor)
+    %% Adım 9: Boyutlandırma Paketinin Derlenmesi
     sizing = struct();
     sizing.Q95_worst   = Q95_worst;
     sizing.dp_cap      = dp_cap;
@@ -188,16 +189,178 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
     sizing.alpha_lam   = alpha_lam;
     sizing.notes       = 'Deterministic sizing pass; PF/gains fixed.';
 
-    % --- rapor: parametre.m içinde hangi satırlar değişecek?
-try
-    [updates, T] = sizing_param_diff(params, P_sized, gainsPF, sizing); %#ok<NASGU>
-    % İstersen otomatik patch için konsola hazır satırları da yaz:
-    fprintf('parametre.m için önerilen satırlar:\n');
-    for i=1:numel(updates.lines)
-        fprintf('  %s\n', updates.lines{i});
+    %% Adım 10: Parametre Farklarının Raporlanması
+    try
+        [updates, T] = sizing_param_diff(params, P_sized, gainsPF, sizing); %#ok<NASGU>
+        % Otomatik yamaya hazır satırlar
+        fprintf('parametre.m için önerilen satırlar:\n');
+        for i=1:numel(updates.lines)
+            fprintf('  %s\n', updates.lines{i});
+        end
+        fprintf('  %% toggle_gain vektörü:\n  toggle_gain = %s;  %% (n-1)x1\n', mat2str(updates.toggle_gain_vec,3));
+    catch ME
+        warning('sizing_param_diff failed: %s', ME.message);
     end
-    fprintf('  %% toggle_gain vektörü:\n  toggle_gain = %s;  %% (n-1)x1\n', mat2str(updates.toggle_gain_vec,3));
-catch ME
-    warning('sizing_param_diff failed: %s', ME.message);
 end
+
+%% ============================================================
+% ALT FONKSİYON: sizing_param_diff
+% Parametre dosyasındaki değişiklikleri özetler ve raporlar.
+%% ============================================================
+function [updates, T] = sizing_param_diff(P_old, P_sized, gainsPF, sizing)
+% Raporda sadece değişen parametreler (eski -> yeni) gösterilir.
+
+    % --- güvenli getter -------------------------------------------------
+    function v = getf(s,f,def)
+        if nargin<3, def = []; end
+        if isstruct(s) && isfield(s,f) && ~isempty(s.(f))
+            v = s.(f);
+        else
+            v = def;
+        end
+    end
+
+    % --- Eski değerleri topla -------------------------------------------
+    old_d_o   = getf(P_old,'d_o',  getf(getf(P_old,'orf',struct()),'d_o',NaN));
+    old_Lori  = getf(P_old,'Lori', getf(getf(P_old,'orf',struct()),'L_orif',NaN));
+    old_n_orf = getf(P_old,'n_orf',NaN);
+    % Eksik GA anlık görüntülerinde Lori ve n_orf tahmini
+    if ~isfinite(old_n_orf)
+        old_Ao_tmp = getf(P_old,'A_o',NaN);
+        if isfinite(old_Ao_tmp) && isfinite(old_d_o)
+            old_n_orf = old_Ao_tmp / (pi*(old_d_o^2)/4);
+        end
+    end
+    if ~isfinite(old_Lori)
+        c_lam0 = getf(P_old,'c_lam0',NaN);
+        mu_ref = getf(P_old,'mu_ref',NaN);
+        Ap     = getf(P_old,'Ap',NaN);
+        if all(isfinite([c_lam0 mu_ref Ap old_d_o]))
+            old_Lori = c_lam0*(old_d_o^4)/(12*mu_ref*(Ap^2));
+        end
+    end
+    if isfinite(old_n_orf) && isfinite(old_d_o)
+        old_Ao = old_n_orf*pi*(old_d_o^2)/4;
+    else
+        old_Ao = getf(P_old,'A_o',NaN);
+    end
+    old_Qcap  = getf(P_old,'Qcap_big',NaN);
+    old_tau   = getf(getf(getf(P_old,'cfg',struct()),'PF',struct()),'tau',NaN);
+    old_gain  = getf(getf(getf(P_old,'cfg',struct()),'PF',struct()),'gain',NaN);
+    old_tg    = getf(P_old,'toggle_gain',[]);
+
+    % --- Yeni/önerilen değerleri topla ---------------------------------
+    new_d_o   = getf(getf(P_sized,'orf',struct()),'d_o', getf(P_sized,'d_o',NaN));
+    new_Lori  = getf(getf(P_sized,'orf',struct()),'L_orif', getf(P_sized,'Lori', getf(sizing,'L_orif',NaN)));
+    new_n_orf = getf(P_sized,'n_orf',NaN);
+    if isfinite(new_n_orf) && isfinite(new_d_o)
+        new_Ao = new_n_orf*pi*(new_d_o^2)/4;
+    else
+        new_Ao = getf(P_sized,'A_o',NaN);
+    end
+    new_Qcap  = getf(P_sized,'Qcap_big',NaN);
+    new_tau   = getf(gainsPF,'PF_tau',NaN);
+    new_gain  = getf(gainsPF,'PF_gain',NaN);
+
+    % --- toggle_gain vektörü (alt=3, üst=2 kat) -------------------------
+    try
+        nStories = size(P_old.M,1)-1;
+    catch
+        nStories = numel(old_tg); if isempty(nStories) || nStories==0, nStories = 10; end
+    end
+    old_tg = old_tg(:);
+    if isempty(old_tg)
+        old_tg = ones(nStories,1)*getf(gainsPF,'g_mid',1);
+    elseif isscalar(old_tg)
+        old_tg = repmat(old_tg,nStories,1);
+    end
+    tg = ones(nStories,1)*getf(gainsPF,'g_mid',1);
+    loN = min(3,nStories); if loN>0, tg(1:loN) = getf(gainsPF,'g_lo',1); end
+    hiN = min(2,nStories); if hiN>0, tg(end-hiN+1:end) = getf(gainsPF,'g_hi',1); end
+    new_tg = tg;
+
+    % --- Skaler eşitlik denetimi ---------------------------------------
+    function tf = eqnum(a,b)
+        if ~(isnumeric(a) && isnumeric(b)) || isempty(a) || isempty(b)
+            tf = false; return;
+        end
+        a1 = a(1); b1 = b(1); % skalerleştir
+        if ~(isfinite(a1) && isfinite(b1))
+            tf = false; return;
+        end
+        tol = max(1e-12, 1e-6*max(1, max(abs([a1 b1]))));
+        tf  = abs(a1-b1) <= tol;
+    end
+
+    changed = @(oldv,newv) ~( (isnumeric(oldv)&&isnumeric(newv)&&eqnum(oldv,newv)) || isequal(oldv,newv) );
+
+    rows = {
+     'd_o (m)',           old_d_o,   new_d_o,   'd_o = %.6g;';
+     'Lori (m)',          old_Lori,  new_Lori,  'Lori = %.6g;';
+     'n_orf (-)',         old_n_orf, new_n_orf, 'n_orf = %d;';
+     'A_o (m^2)',         old_Ao,    new_Ao,    'A_o = %.6g;';
+     'Qcap_big (m^3/s)',  old_Qcap,  new_Qcap,  'Qcap_big = %.6g;';
+     'cfg.PF.tau (s)',    old_tau,   new_tau,   'cfg.PF.tau = %.6g;';
+     'cfg.PF.gain (-)',   old_gain,  new_gain,  'cfg.PF.gain = %.6g'
+    };
+
+    Name = {}; Old = {}; New = {}; Template = {};
+    for i=1:size(rows,1)
+        if changed(rows{i,2}, rows{i,3})
+            Name{end+1,1} = rows{i,1}; %#ok<AGROW>
+            if contains(rows{i,1},"n_orf")
+                Old{end+1,1} = sprintf('%d', round(rows{i,2})); %#ok<AGROW>
+                New{end+1,1} = sprintf('%d', round(rows{i,3})); %#ok<AGROW>
+            else
+                Old{end+1,1} = sprintf('%.6g', rows{i,2}); %#ok<AGROW>
+                New{end+1,1} = sprintf('%.6g', rows{i,3}); %#ok<AGROW>
+            end
+            Template{end+1,1} = rows{i,4}; %#ok<AGROW>
+        end
+    end
+    T = table(Name, Old, New, Template);
+
+    % --- toggle_gain farkı ----------------------------------------------
+    tg_changed = numel(old_tg)~=numel(new_tg) || any(abs(old_tg(:)-new_tg(:))>1e-6);
+    if tg_changed
+        T = [T; table({"toggle_gain ((n-1)x1)"}, {mat2str(old_tg,3)}, {mat2str(new_tg,3)}, {''}, 'VariableNames', T.Properties.VariableNames)];
+        fprintf('\n[update] toggle_gain:\n  old: %s\n  new: %s\n', mat2str(old_tg,3), mat2str(new_tg,3));
+    end
+
+    % --- konsol çıktısı -------------------------------------------------
+    fprintf('\n=== PARAMETRE GÜNCELLEME ÖNERİLERİ (sadece değişenler) ===\n');
+    for i=1:height(T)
+        nm = string(T.Name{i});
+        if T.Template{i}~=""
+            if contains(nm,"n_orf")
+                fprintf(' - %-18s : %s  -->  %s   (parametre.m: %s)\n', nm, T.Old{i}, T.New{i}, sprintf(T.Template{i}, round(str2double(T.New{i}))));
+            else
+                fprintf(' - %-18s : %s  -->  %s   (parametre.m: %s)\n', nm, T.Old{i}, T.New{i}, sprintf(T.Template{i}, str2double(T.New{i})));
+            end
+        else
+            fprintf(' - %-18s : %s  -->  %s   (vektör)\n', nm, T.Old{i}, T.New{i});
+        end
+    end
+    fprintf('===========================================================\n\n');
+
+    % --- CSV yazımı -----------------------------------------------------
+    try
+        outdir = fullfile('out'); if ~exist(outdir,'dir'), mkdir(outdir); end
+        writetable(T, fullfile(outdir,'sizing_updates.csv'));
+    catch
+    end
+
+    % --- parametre.m'e yapıştırmalık satırlar --------------------------
+    updates = struct(); updates.lines = {};
+    for i=1:height(T)
+        if T.Template{i}~=""
+            if contains(T.Name{i},"n_orf")
+                updates.lines{end+1} = sprintf(T.Template{i}, round(str2double(T.New{i}))); %#ok<AGROW>
+            else
+                updates.lines{end+1} = sprintf(T.Template{i}, str2double(T.New{i})); %#ok<AGROW>
+            end
+        end
+    end
+    updates.toggle_gain_vec = new_tg;
 end
+
