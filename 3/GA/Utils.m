@@ -144,5 +144,19 @@ classdef Utils
                 P(:,i) = vals;
             end
         end
+
+        function thr = default_qc_thresholds(opts)
+            if nargin < 1 || isempty(opts)
+                opts = struct();
+            end
+            thr = struct('dP95_max',50e6, 'Qcap95_max',0.5, ...
+                         'cav_pct_max',0, 'T_end_max',75, 'mu_end_min',0.5);
+            fns = fieldnames(thr);
+            for ii = 1:numel(fns)
+                if isfield(opts, fns{ii}) && ~isempty(opts.(fns{ii}))
+                    thr.(fns{ii}) = opts.(fns{ii});
+                end
+            end
+        end
     end
 end
