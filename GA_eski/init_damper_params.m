@@ -30,13 +30,13 @@ if nargin < 3 || ~isstruct(hyd),   hyd   = struct(); end
 if nargin < 4 || ~isstruct(therm), therm = struct(); end
 
 % --- Orifice defaults ---
-orf.n_orf  = getfield_default(orf, 'n_orf',  2);
-orf.Cd0    = getfield_default(orf, 'Cd0',    0.6);
-orf.CdInf  = getfield_default(orf, 'CdInf',  0.82);
+orf.n_orf  = getfield_default(orf, 'n_orf',  6);
+orf.Cd0    = getfield_default(orf, 'Cd0',    0.61);
+orf.CdInf  = getfield_default(orf, 'CdInf',  0.8);
 orf.Rec    = getfield_default(orf, 'Rec',    3000);
-orf.p_exp  = getfield_default(orf, 'p_exp',  1.2);
-orf.p_amb  = getfield_default(orf, 'p_amb',  1.0e3);
-orf.cav_sf = getfield_default(orf, 'cav_sf', 0.85);
+orf.p_exp  = getfield_default(orf, 'p_exp',  1.1);
+orf.p_amb  = getfield_default(orf, 'p_amb',  1.0e5);
+orf.cav_sf = getfield_default(orf, 'cav_sf', 0.9);
 
 % --- Thermal defaults ---
 therm.antoine_A = getfield_default(therm,'antoine_A',5.0);

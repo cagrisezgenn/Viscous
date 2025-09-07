@@ -1,0 +1,9 @@
+Constraint,Ratio,Flag
+spring_tau,0,OK
+spring_slender,0,OK
+stroke,0,OK
+force_cap,0,OK
+dp_quant,0,OK
+thermal_dT,0,OK
+cav_frac,0,OK
+qsat_margin,0,OK
