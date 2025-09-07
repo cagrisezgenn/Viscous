@@ -147,20 +147,6 @@ for k = 1:numel(all_out)
             catch
             end
         end
-        % optional plots
-        if isfield(opts,'export') && isfield(opts.export,'plots') && opts.export.plots
-            try
-                figdir = fullfile(recdir,'figures');
-                if ~exist(figdir,'dir'), mkdir(figdir); end
-                f = figure('Visible','off');
-                bar(out.metr.IDR_max); title('IDR_{max}');
-                saveas(f, fullfile(figdir,'IDR_max.png')); close(f);
-                f = figure('Visible','off');
-                bar(out.metr.PFA_top); title('PFA_{top}');
-                saveas(f, fullfile(figdir,'PFA_top.png')); close(f);
-            catch
-            end
-        end
     catch
     end
 end

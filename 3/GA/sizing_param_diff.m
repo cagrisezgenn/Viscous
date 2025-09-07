@@ -92,26 +92,9 @@ if ~isempty(old_tg) && numel(old_tg)==numel(new_tg)
 end
 if tg_changed
     T = [T; table({"toggle_gain ((n-1)x1)"}, NaN, NaN, {''}, 'VariableNames', T.Properties.VariableNames)];
-    OldS = mat2str(old_tg,3); if isempty(OldS), OldS = '[]'; end
-    NewS = mat2str(new_tg,3);
-    fprintf('\n[update] toggle_gain:\n  old: %s\n  new: %s\n', OldS, NewS);
 end
 
-% --- konsol çıktısı ---
-fprintf('\n=== PARAMETRE GÜNCELLEME ÖNERİLERİ (sadece değişenler) ===\n');
-for i=1:height(T)
-    nm = string(T.Name{i});
-    if T.Template{i}~=""
-        if contains(nm,"n_orf")
-            fprintf(' - %-18s : %g  -->  %g   (parametre.m: %s)\n', nm, T.Old(i), T.New(i), sprintf(T.Template{i}, round(T.New(i))));
-        else
-            fprintf(' - %-18s : %.6g  -->  %.6g   (parametre.m: %s)\n', nm, T.Old(i), T.New(i), sprintf(T.Template{i}, T.New(i)));
-        end
-    else
-        fprintf(' - %-18s : (vektör değişti; üstteki bloktan yeni vektörü kopyalayın)\n', nm);
-    end
-end
-fprintf('===========================================================\n\n');
+
 
 % --- CSV ---
 try

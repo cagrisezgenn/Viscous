@@ -191,13 +191,6 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
     % --- rapor: parametre.m içinde hangi satırlar değişecek?
 try
     [updates, T] = sizing_param_diff(params, P_sized, gainsPF, sizing); %#ok<NASGU>
-    % İstersen otomatik patch için konsola hazır satırları da yaz:
-    fprintf('parametre.m için önerilen satırlar:\n');
-    for i=1:numel(updates.lines)
-        fprintf('  %s\n', updates.lines{i});
-    end
-    fprintf('  %% toggle_gain vektörü:\n  toggle_gain = %s;  %% (n-1)x1\n', mat2str(updates.toggle_gain_vec,3));
-catch ME
-    warning('sizing_param_diff failed: %s', ME.message);
+catch
 end
 end

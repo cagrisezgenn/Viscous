@@ -15,12 +15,11 @@ function parpool_hard_reset(nWorkers)
             pctRunOnAll setenv('OMP_NUM_THREADS','1');
             pctRunOnAll setenv('MKL_NUM_THREADS','1');
         catch, end
-    catch ME
-        warning('[parpool_hard_reset] %s', ME.message);
-        try
-            p = gcp('nocreate'); if ~isempty(p), return; end
-            parpool('Threads');
-        catch, end
-    end
+catch
+    try
+        p = gcp('nocreate'); if ~isempty(p), return; end
+        parpool('Threads');
+    catch, end
+end
 end
 

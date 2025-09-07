@@ -81,13 +81,6 @@ for k = 1:numel(fn)
                             'IM', [], 'scale', 1); %#ok<AGROW>
 end
 
-% Print a quick summary table
-fprintf('Loaded %d ground-motion records:\n', numel(records));
-for k = 1:numel(records)
-    r = records(k);
-    fprintf('%2d) %-12s dt=%6.4f s dur=%6.2f s PGA=%7.3f PGV=%7.3f\n', ...
-        k, r.name, r.dt, r.duration, r.PGA, r.PGV);
-end
 
 scaled = [];
 meta = struct();
@@ -136,9 +129,6 @@ for it = 1:max_iter
     dropped{end+1} = records(idx).name; %#ok<AGROW>
     records(idx) = [];   % kaydı at
     IM(idx) = [];
-end
-if ~isempty(dropped)
-    fprintf('TRIM: dropped outliers = %s\n', strjoin(dropped,', '));
 end
 % Sonra targetIM = min(max(median(IM), IM_low), IM_high) ile devam...
 % TRIM sonrasi hedef ve clip durumunu guncelle
@@ -191,15 +181,7 @@ else
     modeStr = 'PSA@T1';
 end
 
-fprintf('Target IM = %.3f (%s). Max error = %.2f%% | feasible=[%.3f, %.3f] | s_min=%.2f s_max=%.2f', ...
-    targetIM, modeStr, max(err), IM_low, IM_high, min(s_all), max(s_all));
 
-if doClip
-    fprintf(' | CLIPPED=%d', n_clipped);
-else
-    fprintf(' | CLIPPED=0');
-end
-fprintf('\n');
 
 % meta bilgileri (opsiyonel 3. cikti)
 meta.IM_mode    = IM_mode;
