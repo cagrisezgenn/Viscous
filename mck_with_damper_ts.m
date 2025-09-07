@@ -27,6 +27,7 @@ ts.t = t;
 ts.drift = diag.drift;
 ts.dvel = diag.dvel;
 ts.story_force = diag.story_force;
+ts.PF = diag.PF;
 ts.Q = diag.Q;
 ts.dP_orf = diag.dP_orf;
 ts.Qcap_ratio = abs(diag.Q) ./ Qcap;

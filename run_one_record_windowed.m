@@ -36,8 +36,21 @@ if isfield(opts,'thermal_reset') && strcmpi(opts.thermal_reset,'cooldown')
     opts.cooldown_s = max(opts.cooldown_s,0);
 end
 
-% QC thresholds
-thr = Utils.default_qc_thresholds(Utils.getfield_default(opts,'thr',struct()));
+% QC thresholds (can be overridden via opts.thr)
+thr_default = struct('dP95_max',50e6, 'Qcap95_max',0.5, 'cav_pct_max',0, ...
+    'T_end_max',75, 'mu_end_min',0.5);
+if isfield(opts,'thr') && ~isempty(opts.thr)
+    thr_f = opts.thr;
+    fns = fieldnames(thr_default);
+    for ii=1:numel(fns)
+        if ~isfield(thr_f,fns{ii}) || isempty(thr_f.(fns{ii}))
+            thr_f.(fns{ii}) = thr_default.(fns{ii});
+        end
+    end
+    thr = thr_f;
+else
+    thr = thr_default;
+end
 
 assert(numel(opts.mu_factors)==numel(opts.mu_weights), ...
     'mu_factors and mu_weights must have same length.');
@@ -239,22 +252,8 @@ out.cav_pct = metr.cav_pct;
 out.t5 = win.t5; out.t95 = win.t95; out.coverage = win.coverage;
 % chosen PF ramp onset (if set)
 try
-    if isfield(params,'cfg') && isfield(params.cfg,'PF')
-        if isfield(params.cfg.PF,'t_on')
-            out.PF_t_on = params.cfg.PF.t_on;
-        end
-        if isfield(params.cfg.PF,'tau')
-            out.PF_tau = params.cfg.PF.tau;
-        end
-        if isfield(params.cfg.PF,'gain')
-            out.PF_gain = params.cfg.PF.gain;
-        end
-        if isfield(params.cfg.PF,'mode')
-            out.PF_mode = params.cfg.PF.mode;
-        end
-        if isfield(params.cfg.PF,'auto_t_on')
-            out.PF_auto_t_on = logical(params.cfg.PF.auto_t_on);
-        end
+    if isfield(params,'cfg') && isfield(params.cfg,'PF') && isfield(params.cfg.PF,'t_on')
+        out.PF_t_on = params.cfg.PF.t_on;
     end
 catch
 end
