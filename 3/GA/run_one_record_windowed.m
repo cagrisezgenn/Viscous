@@ -1,3 +1,4 @@
+%% Kayıt Analiz Fonksiyonu
 function out = run_one_record_windowed(rec, params, opts, prev_diag)
 %RUN_ONE_RECORD_WINDOWED Pencereli metriklerle tek yer hareketini analiz eder.
 %   OUT = RUN_ONE_RECORD_WINDOWED(REC, PARAMS, OPTS, PREV_DIAG) ölçekli kayıt
@@ -56,7 +57,7 @@ assert(wsum>0,'mu_weights sum must be > 0.');
 mu_weights = mu_weights/wsum;
 mu_factors = opts.mu_factors(:)';
 
-%% ----------------------- Arias yoğunluğu penceresi ----------------------
+%% Arias Penceresi
 if isfield(opts,'window') && ~isempty(opts.window)
     wfields = fieldnames(opts.window);
     wargs = cell(1,2*numel(wfields));
@@ -89,7 +90,7 @@ end
 
 % ham ve ölçekli kayıt karşılaştırması kaldırıldı (üst seviyede kullanılmıyor)
 
-%% -------------------- Termal sıfırlama işlemleri -------------------------
+%% Termal Sıfırlama
 Tinit = params.T0_C;
 if isfield(opts,'thermal_reset')
     mode = opts.thermal_reset;
@@ -135,21 +136,11 @@ switch mode
         Tinit = params.T0_C;
 end
 
-%% ---------------------- Sönümleyicisiz çözüm -------------------------
+%% Çözücüler
+% Sönümleyicisiz çözüm
 [x0,a_rel0] = Utils.lin_MCK(rec.t, rec.ag, params.M, params.C0, params.K);
-ts0 = struct('dP_orf',zeros(numel(rec.t),nStories), ...
-             'Q',zeros(numel(rec.t),nStories), ...
-             'Qcap_ratio',zeros(numel(rec.t),nStories), ...
-             'story_force',zeros(numel(rec.t),nStories), ...
-             'cav_mask',false(numel(rec.t),nStories), ...
-             'E_orf',zeros(numel(rec.t),1), ...
-             'E_struct',zeros(numel(rec.t),1));
-params0 = params; params0.diag = struct('T_oil',zeros(numel(rec.t),1), ...
-                                       'mu',zeros(numel(rec.t),1), ...
-                                       'c_lam',0);
-% store_metr0 kaldırıldı (üst seviyede kullanılmıyor)
 
-%% ----------------- Zaman serili sönümleyici modeli ---------------------
+% Zaman serili sönümleyici modeli
 nMu = numel(mu_factors);
 mu_results = struct('mu_factor',cell(1,nMu));
 
@@ -224,7 +215,7 @@ for kf = 1:numel(fields)
     worst.which_mu.(fn) = mu_results(idx).mu_factor;
 end
 
-%% ----------------------- Çıktıların derlenmesi ----------------------------
+%% Çıktıların Derlenmesi
 out = struct();
 out.name  = rec.name;
 out.scale = Utils.getfield_default(rec,'scale',1);
