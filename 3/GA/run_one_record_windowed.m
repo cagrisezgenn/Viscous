@@ -84,8 +84,9 @@ try
             params.cfg.PF.t_on = t5v + 0.5;
         end
     end
-catch
-    % ignore errors; leave params unchanged
+catch ME
+    warning('PF auto_t_on failed: %s', ME.message);
+    % leave params unchanged
 end
 
 % ham ve ölçekli kayıt karşılaştırması kaldırıldı (üst seviyede kullanılmıyor)
@@ -258,7 +259,8 @@ try
             out.PF_auto_t_on = logical(params.cfg.PF.auto_t_on);
         end
     end
-catch
+catch ME
+    warning('PF telemetry capture failed: %s', ME.message);
 end
 end
 
