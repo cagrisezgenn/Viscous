@@ -336,7 +336,8 @@ try
         fprintf('QC thr: dP95<=%.1f MPa, Qcap95<%.2f, cav%%=%g, T_end<=%g C, mu_end>=%0.2f Pa*s\n', ...
             opts.thr.dP95_max/1e6, opts.thr.Qcap95_max, opts.thr.cav_pct_max*100, opts.thr.T_end_max, opts.thr.mu_end_min);
     end
-catch
+catch ME
+    warning('run_batch_windowed header: %s', ME.message);
 end
 
 % Echo hydraulic/thermal key params
@@ -353,7 +354,8 @@ try
         fprintf('Hydraulics: n_orf=%g, d_o~=%g m, A_o=%s, Qcap_big=%g, hA=%g, resFactor=%g, toggle_gain[min/med/max]=[%g %g %g]\n', ...
             n_orf, d_o, mat2str(size(A_o)), Qcap_big, hA, resFactor, tgmin, tgmed, tgmax);
     end
-catch
+catch ME
+    warning('run_batch_windowed echo params: %s', ME.message);
 end
 
 nRec = numel(scaled);
@@ -402,7 +404,9 @@ if any(strcmp(opts.orders,'worst_first'))
         if ~quiet
             fprintf('worst_first ranking by %s: %s\n', opts.rank_metric, strjoin(rank_names, ', '));
         end
-    catch, end
+    catch ME
+        warning('run_batch_windowed ranking: %s', ME.message);
+    end
 end
 
 % Iterate combinations
@@ -478,7 +482,8 @@ for ip = 1:numel(opts.policies)
                     elseif kshow==1
                         fprintf('  worst2(PFA): %s | -\n', summary.table.name{ix(1)});
                     end
-                catch
+                catch ME
+                    warning('run_batch_windowed worst2: %s', ME.message);
                 end
             end
 
@@ -494,7 +499,8 @@ for ip = 1:numel(opts.policies)
                         fprintf('clamp_hits total=%d\n', tot_clamps);
                     end
                 end
-            catch
+            catch ME
+                warning('run_batch_windowed clamp summary: %s', ME.message);
             end
 
             P(end+1) = struct('policy',pol,'order',ord,'cooldown_s',cdval, ...

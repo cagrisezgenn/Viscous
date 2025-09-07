@@ -183,11 +183,13 @@ end
                         end
                     end
                 end
-            catch
+            catch ME
+                warning('Seed population from prior Pareto failed: %s', ME.message);
             end
             options = optimoptions(options,'InitialPopulationMatrix', P0);
         end
-    catch
+    catch ME
+        warning('Initial population setup failed: %s', ME.message);
     end
 
     [X,F,exitflag,output,population,scores] = gamultiobj(obj, numel(lb), [],[],[],[], lb, ub, [], IntCon, options);
@@ -310,173 +312,12 @@ end
 
     % === BASELINE (pre-GA) ROW: params başlangıcıyla tek koşu, ilk satır ===
     try
-        % Build X0 from params (with sensible fallbacks)
-        X0 = nan(1,7);
-        % d_o_mm and n_orf
-        try
-            if isfield(params,'orf') && isfield(params.orf,'d_o') && ~isempty(params.orf.d_o)
-                X0(1) = 1e3 * params.orf.d_o;
-            else
-                X0(1) = 3.00;
-            end
-        catch, X0(1) = 3.00; end
-        try
-            if isfield(params,'n_orf') && ~isempty(params.n_orf)
-                X0(2) = params.n_orf;
-            else
-                X0(2) = 5;
-            end
-        catch, X0(2) = 5; end
-        % g_lo, g_mid, g_hi from toggle_gain if available
-        try
-            if isfield(params,'toggle_gain') && ~isempty(params.toggle_gain)
-                tg = params.toggle_gain(:);
-                nStories = numel(tg);
-                loN = min(3, nStories); hiN = min(2, nStories);
-                midIdx = (loN+1) : max(nStories-hiN, loN+1);
-                if isempty(midIdx), midIdx = round(nStories/2); end
-                X0(3) = mean(tg(1:loN));
-                X0(4) = mean(tg(midIdx));
-                X0(5) = mean(tg(end-hiN+1:end));
-            else
-                X0(3:5) = [3.90 3.95 1.50];
-            end
-        catch, X0(3:5) = [3.90 3.95 1.50]; end
-        % PF parameters
-        try
-            if isfield(params,'cfg') && isfield(params.cfg,'PF')
-                X0(6) = Utils.getfield_default(params.cfg.PF,'tau',0.97);
-                X0(7) = Utils.getfield_default(params.cfg.PF,'gain',0.90);
-            else
-                X0(6:7) = [0.97 0.90];
-            end
-        catch, X0(6:7) = [0.97 0.90]; end
-
-        % Simulate baseline with same post-eval options
-        X0 = quant_clamp_x(X0);
-        P0    = decode_params_from_x(params, X0);
-        S0    = run_batch_windowed(scaled, P0, Opost);
-        T0bl  = S0.table;
-        % Objectives
-        f0 = [NaN NaN];
-        try
-            [f0, ~] = eval_design_fast(X0, scaled, params, Opost);
-        catch
-        end
-        % Penalty parts (same formula)
-        dP95_0   = max(T0bl.dP95_worst);
-        Qcap95_0 = max(T0bl.Qcap95_worst);
-        cavW_0   = max(T0bl.cav_pct_worst);
-        Tend_0   = max(T0bl.T_end_worst);
-        muend_0  = min(T0bl.mu_end_worst);
-        pen_dP_0   = rel(dP95_0,  Opost.thr.dP95_max);
-        pen_Qcap_0 = rel(Qcap95_0,Opost.thr.Qcap95_max);
-        if Opost.thr.cav_pct_max<=0, pen_cav_0 = max(0,cavW_0).^pwr; else, pen_cav_0 = rel(cavW_0,Opost.thr.cav_pct_max); end
-        pen_T_0    = rel(Tend_0,  Opost.thr.T_end_max);
-        pen_mu_0   = rev(muend_0, Opost.thr.mu_end_min);
-        pen_0      = lambda*(W.dP*pen_dP_0 + W.Qcap*pen_Qcap_0 + W.cav*pen_cav_0 + W.T*pen_T_0 + W.mu*pen_mu_0);
-
-        % Build baseline row T0 with same columns as T
-        vn = T.Properties.VariableNames;
-        T0 = cell2table(cell(1,numel(vn)), 'VariableNames', vn);
-        % decision variables
-        T0.d_o_mm = X0(1); T0.n_orf = X0(2); T0.g_lo = X0(3); T0.g_mid = X0(4); T0.g_hi = X0(5);
-        T0.PF_tau = X0(6); T0.PF_gain = X0(7);
-        % objectives
-        T0.f1 = f0(1); T0.f2 = f0(2);
-        % penalties
-        T0.pen = pen_0; T0.pen_dP = pen_dP_0; T0.pen_Qcap = pen_Qcap_0; T0.pen_cav = pen_cav_0; T0.pen_T = pen_T_0; T0.pen_mu = pen_mu_0;
-        % damper peak
-        try
-            if ismember('x10_max_damperli', vn)
-                T0.x10_max_damperli = max(T0bl.x10_max_D_worst);
-            end
-            if ismember('a10abs_max_damperli', vn)
-                T0.a10abs_max_damperli = max(T0bl.a10abs_max_D_worst);
-            end
-        catch
-        end
-        % other diagnostics if present
-        try
-            if ismember('dP95_worst', vn),        T0.dP95_worst        = max(T0bl.dP95_worst); end
-            if ismember('Qcap95_worst', vn),      T0.Qcap95_worst      = max(T0bl.Qcap95_worst); end
-            if ismember('cav_pct_worst', vn),     T0.cav_pct_worst     = max(T0bl.cav_pct_worst); end
-            if ismember('T_end_worst', vn),       T0.T_end_worst       = max(T0bl.T_end_worst); end
-            if ismember('mu_end_worst', vn),      T0.mu_end_worst      = min(T0bl.mu_end_worst); end
-            if ismember('PF_p95_worst', vn) && ismember('PF_p95_worst', T0bl.Properties.VariableNames)
-                T0.PF_p95_worst = max(T0bl.PF_p95_worst);
-            end
-            if ismember('Q_q50_worst', vn) && ismember('Q_q50_worst', T0bl.Properties.VariableNames)
-                T0.Q_q50_worst = max(T0bl.Q_q50_worst);
-            end
-            if ismember('Q_q95_worst', vn) && ismember('Q_q95_worst', T0bl.Properties.VariableNames)
-                T0.Q_q95_worst = max(T0bl.Q_q95_worst);
-            end
-            if ismember('dP_orf_q50_worst', vn) && ismember('dP_orf_q50_worst', T0bl.Properties.VariableNames)
-                T0.dP_orf_q50_worst = max(T0bl.dP_orf_q50_worst);
-            end
-            if ismember('dP_orf_q95_worst', vn)
-                if ismember('dP_orf_q95_worst', T0bl.Properties.VariableNames)
-                    T0.dP_orf_q95_worst = max(T0bl.dP_orf_q95_worst);
-                else
-                    T0.dP_orf_q95_worst = max(T0bl.dP95_worst);
-                end
-            end
-            if ismember('T_oil_end_worst', vn) && ismember('T_oil_end_worst', T0bl.Properties.VariableNames)
-                T0.T_oil_end_worst = max(T0bl.T_oil_end_worst);
-            end
-            if ismember('T_steel_end_worst', vn) && ismember('T_steel_end_worst', T0bl.Properties.VariableNames)
-                T0.T_steel_end_worst = max(T0bl.T_steel_end_worst);
-            end
-            if ismember('E_orifice_sum', vn) && ismember('E_orifice_sum', T0bl.Properties.VariableNames)
-                T0.E_orifice_sum = sum(T0bl.E_orifice_sum);
-            end
-            if ismember('E_struct_sum', vn) && ismember('E_struct_sum', T0bl.Properties.VariableNames)
-                T0.E_struct_sum = sum(T0bl.E_struct_sum);
-            end
-            if ismember('energy_tot_sum', vn)
-                if ismember('energy_tot_sum', T0bl.Properties.VariableNames)
-                    T0.energy_tot_sum = sum(T0bl.energy_tot_sum);
-                else
-                    try
-                        T0.energy_tot_sum = T0.E_orifice_sum + T0.E_struct_sum;
-                    catch, T0.energy_tot_sum = 0; end
-                end
-            end
-            if ismember('E_ratio', vn)
-                try
-                    T0.E_ratio = (T0.E_struct_sum>0) * (T0.E_orifice_sum / max(T0.E_struct_sum, eps));
-                catch, T0.E_ratio = 0; end
-            end
-            if ismember('P_mech_sum', vn) && ismember('P_mech_sum', T0bl.Properties.VariableNames)
-                T0.P_mech_sum = sum(T0bl.P_mech_sum);
-            end
-        catch
-        end
-
-        % Prepend baseline row
-        T = [T0; T];
-    catch
+        T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W);
+    catch ME
+        warning('Baseline row generation failed: %s', ME.message);
     end
 
-    writetable(T, fullfile(outdir,'ga_front.csv'));
-
-    % Knee-point (min distance to ideal after min-max normalization) with full columns
-    try
-        f1v = T.f1; f2v = T.f2;
-        f1n = (f1v - min(f1v)) / max(eps, (max(f1v)-min(f1v)));
-        f2n = (f2v - min(f2v)) / max(eps, (max(f2v)-min(f2v)));
-        d   = hypot(f1n, f2n);
-        [~,kidx] = min(d);
-        Tknee = T(kidx,:);
-        try
-            Tknee_full = [T(1,:); Tknee]; % assume T(1,:) is baseline just prepended
-            writetable(Tknee_full, fullfile(outdir,'ga_knee.csv'));
-        catch
-            writetable(Tknee, fullfile(outdir,'ga_knee.csv'));
-        end
-    catch
-    end
+    write_pareto_results(T, outdir);
 
     % Decode top-K designs without running sims
     K = min(10, size(X,1));
@@ -714,6 +555,185 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
     try, memo_store('set', key, meta); catch, end
 
     end
+
+function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
+    rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
+    rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
+    try
+        % Build X0 from params (with sensible fallbacks)
+        X0 = nan(1,7);
+        % d_o_mm and n_orf
+        try
+            if isfield(params,'orf') && isfield(params.orf,'d_o') && ~isempty(params.orf.d_o)
+                X0(1) = 1e3 * params.orf.d_o;
+            else
+                X0(1) = 3.00;
+            end
+        catch, X0(1) = 3.00; end
+        try
+            if isfield(params,'n_orf') && ~isempty(params.n_orf)
+                X0(2) = params.n_orf;
+            else
+                X0(2) = 5;
+            end
+        catch, X0(2) = 5; end
+        % g_lo, g_mid, g_hi from toggle_gain if available
+        try
+            if isfield(params,'toggle_gain') && ~isempty(params.toggle_gain)
+                tg = params.toggle_gain(:);
+                nStories = numel(tg);
+                loN = min(3, nStories); hiN = min(2, nStories);
+                midIdx = (loN+1) : max(nStories-hiN, loN+1);
+                if isempty(midIdx), midIdx = round(nStories/2); end
+                X0(3) = mean(tg(1:loN));
+                X0(4) = mean(tg(midIdx));
+                X0(5) = mean(tg(end-hiN+1:end));
+            else
+                X0(3:5) = [3.90 3.95 1.50];
+            end
+        catch, X0(3:5) = [3.90 3.95 1.50]; end
+        % PF parameters
+        try
+            if isfield(params,'cfg') && isfield(params.cfg,'PF')
+                X0(6) = Utils.getfield_default(params.cfg.PF,'tau',0.97);
+                X0(7) = Utils.getfield_default(params.cfg.PF,'gain',0.90);
+            else
+                X0(6:7) = [0.97 0.90];
+            end
+        catch, X0(6:7) = [0.97 0.90]; end
+
+        % Simulate baseline with same post-eval options
+        X0 = quant_clamp_x(X0);
+        P0    = decode_params_from_x(params, X0);
+        S0    = run_batch_windowed(scaled, P0, Opost);
+        T0bl  = S0.table;
+        % Objectives
+        f0 = [NaN NaN];
+        try
+            [f0, ~] = eval_design_fast(X0, scaled, params, Opost);
+        catch ME
+            warning('eval_design_fast baseline: %s', ME.message);
+        end
+        % Penalty parts (same formula)
+        dP95_0   = max(T0bl.dP95_worst);
+        Qcap95_0 = max(T0bl.Qcap95_worst);
+        cavW_0   = max(T0bl.cav_pct_worst);
+        Tend_0   = max(T0bl.T_end_worst);
+        muend_0  = min(T0bl.mu_end_worst);
+        pen_dP_0   = rel(dP95_0,  Opost.thr.dP95_max);
+        pen_Qcap_0 = rel(Qcap95_0,Opost.thr.Qcap95_max);
+        if Opost.thr.cav_pct_max<=0, pen_cav_0 = max(0,cavW_0).^pwr; else, pen_cav_0 = rel(cavW_0,Opost.thr.cav_pct_max); end
+        pen_T_0    = rel(Tend_0,  Opost.thr.T_end_max);
+        pen_mu_0   = rev(muend_0, Opost.thr.mu_end_min);
+        pen_0      = lambda*(W.dP*pen_dP_0 + W.Qcap*pen_Qcap_0 + W.cav*pen_cav_0 + W.T*pen_T_0 + W.mu*pen_mu_0);
+
+        % Build baseline row T0 with same columns as T
+        vn = T.Properties.VariableNames;
+        T0 = cell2table(cell(1,numel(vn)), 'VariableNames', vn);
+        % decision variables
+        T0.d_o_mm = X0(1); T0.n_orf = X0(2); T0.g_lo = X0(3); T0.g_mid = X0(4); T0.g_hi = X0(5);
+        T0.PF_tau = X0(6); T0.PF_gain = X0(7);
+        % objectives
+        T0.f1 = f0(1); T0.f2 = f0(2);
+        % penalties
+        T0.pen = pen_0; T0.pen_dP = pen_dP_0; T0.pen_Qcap = pen_Qcap_0; T0.pen_cav = pen_cav_0; T0.pen_T = pen_T_0; T0.pen_mu = pen_mu_0;
+        % damper peak
+        try
+            if ismember('x10_max_damperli', vn)
+                T0.x10_max_damperli = max(T0bl.x10_max_D_worst);
+            end
+            if ismember('a10abs_max_damperli', vn)
+                T0.a10abs_max_damperli = max(T0bl.a10abs_max_D_worst);
+            end
+        catch ME
+            warning('Baseline damper peak failed: %s', ME.message);
+        end
+        % other diagnostics if present
+        try
+            if ismember('dP95_worst', vn),        T0.dP95_worst        = max(T0bl.dP95_worst); end
+            if ismember('Qcap95_worst', vn),      T0.Qcap95_worst      = max(T0bl.Qcap95_worst); end
+            if ismember('cav_pct_worst', vn),     T0.cav_pct_worst     = max(T0bl.cav_pct_worst); end
+            if ismember('T_end_worst', vn),       T0.T_end_worst       = max(T0bl.T_end_worst); end
+            if ismember('mu_end_worst', vn),      T0.mu_end_worst      = min(T0bl.mu_end_worst); end
+            if ismember('PF_p95_worst', vn) && ismember('PF_p95_worst', T0bl.Properties.VariableNames)
+                T0.PF_p95_worst = max(T0bl.PF_p95_worst);
+            end
+            if ismember('Q_q50_worst', vn) && ismember('Q_q50_worst', T0bl.Properties.VariableNames)
+                T0.Q_q50_worst = max(T0bl.Q_q50_worst);
+            end
+            if ismember('Q_q95_worst', vn) && ismember('Q_q95_worst', T0bl.Properties.VariableNames)
+                T0.Q_q95_worst = max(T0bl.Q_q95_worst);
+            end
+            if ismember('dP_orf_q50_worst', vn) && ismember('dP_orf_q50_worst', T0bl.Properties.VariableNames)
+                T0.dP_orf_q50_worst = max(T0bl.dP_orf_q50_worst);
+            end
+            if ismember('dP_orf_q95_worst', vn)
+                if ismember('dP_orf_q95_worst', T0bl.Properties.VariableNames)
+                    T0.dP_orf_q95_worst = max(T0bl.dP_orf_q95_worst);
+                else
+                    T0.dP_orf_q95_worst = max(T0bl.dP95_worst);
+                end
+            end
+            if ismember('T_oil_end_worst', vn) && ismember('T_oil_end_worst', T0bl.Properties.VariableNames)
+                T0.T_oil_end_worst = max(T0bl.T_oil_end_worst);
+            end
+            if ismember('T_steel_end_worst', vn) && ismember('T_steel_end_worst', T0bl.Properties.VariableNames)
+                T0.T_steel_end_worst = max(T0bl.T_steel_end_worst);
+            end
+            if ismember('E_orifice_sum', vn) && ismember('E_orifice_sum', T0bl.Properties.VariableNames)
+                T0.E_orifice_sum = sum(T0bl.E_orifice_sum);
+            end
+            if ismember('E_struct_sum', vn) && ismember('E_struct_sum', T0bl.Properties.VariableNames)
+                T0.E_struct_sum = sum(T0bl.E_struct_sum);
+            end
+            if ismember('energy_tot_sum', vn)
+                if ismember('energy_tot_sum', T0bl.Properties.VariableNames)
+                    T0.energy_tot_sum = sum(T0bl.energy_tot_sum);
+                else
+                    try
+                        T0.energy_tot_sum = T0.E_orifice_sum + T0.E_struct_sum;
+                    catch, T0.energy_tot_sum = 0; end
+                end
+            end
+            if ismember('E_ratio', vn)
+                try
+                    T0.E_ratio = (T0.E_struct_sum>0) * (T0.E_orifice_sum / max(T0.E_struct_sum, eps));
+                catch, T0.E_ratio = 0; end
+            end
+            if ismember('P_mech_sum', vn) && ismember('P_mech_sum', T0bl.Properties.VariableNames)
+                T0.P_mech_sum = sum(T0bl.P_mech_sum);
+            end
+        catch ME
+            warning('Baseline diagnostics failed: %s', ME.message);
+        end
+
+        % Prepend baseline row
+        T = [T0; T];
+    catch ME
+        warning('prepend_baseline_row: %s', ME.message);
+    end
+end
+
+function write_pareto_results(T, outdir)
+    writetable(T, fullfile(outdir,'ga_front.csv'));
+    try
+        f1v = T.f1; f2v = T.f2;
+        f1n = (f1v - min(f1v)) / max(eps, (max(f1v)-min(f1v)));
+        f2n = (f2v - min(f2v)) / max(eps, (max(f2v)-min(f2v)));
+        d   = hypot(f1n, f2n);
+        [~,kidx] = min(d);
+        Tknee = T(kidx,:);
+        try
+            Tknee_full = [T(1,:); Tknee]; % assume T(1,:) is baseline just prepended
+            writetable(Tknee_full, fullfile(outdir,'ga_knee.csv'));
+        catch ME
+            warning('write_pareto_results (knee export): %s', ME.message);
+            writetable(Tknee, fullfile(outdir,'ga_knee.csv'));
+        end
+    catch ME
+        warning('write_pareto_results (knee compute): %s', ME.message);
+    end
+end
 
 function xq = quant_clamp_x(x)
     % Apply the same quantization/clamps as in eval
