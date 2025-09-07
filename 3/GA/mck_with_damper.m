@@ -33,18 +33,10 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     F_lin = k_sd*drift + c_lam*dvel;
 
     if use_orf
-        qmag = Qcap * tanh( (Ap/Qcap) * sqrt(dvel.^2 + orf.veps^2) );
-        Re   = (rho .* qmag ./ max(Ao*mu_abs,1e-9)) .* max(orf.d_o,1e-9);
-        Cd   = orf.CdInf - (orf.CdInf - orf.Cd0) ./ (1 + (Re./orf.Rec).^orf.p_exp);
-        dP_calc = 0.5*rho .* ( qmag ./ max(Cd.*Ao,1e-9) ).^2;
-        p_up   = orf.p_amb + abs(F_lin)./max(Ap,1e-12);
-        dP_cav = max( (p_up - orf.p_cav_eff).*orf.cav_sf, 0 );
-        dP_orf = Utils.softmin(dP_calc,dP_cav,1e5);
-        sgn = dvel ./ sqrt(dvel.^2 + orf.veps^2);
-        F_orf = dP_orf .* Ap .* sgn;
+        params = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
+                        'Ao',Ao,'mu',mu_abs,'F_lin',F_lin);
+        [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params);
         F_p = F_lin + F_orf;
-        Q = Ap * sqrt(dvel.^2 + orf.veps^2);
-        P_orf_per = dP_orf .* Q;
     else
         F_p = F_lin; Q = 0*dvel; dP_orf = 0*dvel; P_orf_per = 0*dvel;
     end
@@ -103,15 +95,9 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         if ~use_orf
             F_orf_ = 0*dvel_;
         else
-            qmag_ = Qcap * tanh( (Ap/Qcap) * sqrt(dvel_.^2 + orf.veps^2) );
-            Re_   = (rho .* qmag_ ./ max(Ao*mu_abs_loc,1e-9)) .* max(orf.d_o,1e-9);
-            Cd_   = orf.CdInf - (orf.CdInf - orf.Cd0) ./ (1 + (Re_./orf.Rec).^orf.p_exp);
-            dP_calc_ = 0.5*rho .* ( qmag_ ./ max(Cd_.*Ao,1e-9) ).^2;
-            p_up_   = orf.p_amb + abs(F_lin_)./max(Ap,1e-12);
-            dP_cav_ = max( (p_up_ - orf.p_cav_eff).*orf.cav_sf, 0 );
-            dP_orf_ = Utils.softmin(dP_calc_,dP_cav_,1e5);
-            sgn_ = dvel_ ./ sqrt(dvel_.^2 + orf.veps^2);
-            F_orf_ = dP_orf_ .* Ap .* sgn_;
+            params = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
+                            'Ao',Ao,'mu',mu_abs_loc,'F_lin',F_lin_);
+            F_orf_ = calc_orifice_force(dvel_, params);
         end
         dp_pf_ = (c_lam_loc*dvel_ + F_orf_) ./ Ap;
         if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
@@ -123,7 +109,21 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         % Apply R scaling only once; at assembly (R*multi)
         F_story_ = F_p_ .* (Rcol .* multicol);
         Fd = zeros(n,1);
-    Fd(Nvec) = Fd(Nvec) - F_story_;
-    Fd(Mvec) = Fd(Mvec) + F_story_;
+        Fd(Nvec) = Fd(Nvec) - F_story_;
+        Fd(Mvec) = Fd(Mvec) + F_story_;
+    end
+
+    function [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params)
+        qmag = params.Qcap * tanh( (params.Ap/params.Qcap) * sqrt(dvel.^2 + params.orf.veps^2) );
+        Re   = (params.rho .* qmag ./ max(params.Ao*params.mu,1e-9)) .* max(params.orf.d_o,1e-9);
+        Cd   = params.orf.CdInf - (params.orf.CdInf - params.orf.Cd0) ./ (1 + (Re./params.orf.Rec).^params.orf.p_exp);
+        dP_calc = 0.5*params.rho .* ( qmag ./ max(Cd.*params.Ao,1e-9) ).^2;
+        p_up   = params.orf.p_amb + abs(params.F_lin)./max(params.Ap,1e-12);
+        dP_cav = max( (p_up - params.orf.p_cav_eff).*params.orf.cav_sf, 0 );
+        dP_orf = Utils.softmin(dP_calc,dP_cav,1e5);
+        sgn = dvel ./ sqrt(dvel.^2 + params.orf.veps^2);
+        F_orf = dP_orf .* params.Ap .* sgn;
+        Q = params.Ap * sqrt(dvel.^2 + params.orf.veps^2);
+        P_orf_per = dP_orf .* Q;
     end
 end
