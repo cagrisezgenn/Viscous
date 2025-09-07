@@ -15,6 +15,21 @@ end
 old_d_o   = getf(P_old,'d_o',  getf(getf(P_old,'orf',struct()),'d_o',NaN));
 old_Lori  = getf(P_old,'Lori', getf(getf(P_old,'orf',struct()),'L_orif',NaN));
 old_n_orf = getf(P_old,'n_orf',NaN);
+% Some GA snapshots omit Lori and n_orf; attempt to reconstruct if missing
+if ~isfinite(old_n_orf)
+    old_Ao_tmp = getf(P_old,'A_o',NaN);
+    if isfinite(old_Ao_tmp) && isfinite(old_d_o)
+        old_n_orf = old_Ao_tmp / (pi*(old_d_o^2)/4);
+    end
+end
+if ~isfinite(old_Lori)
+    c_lam0 = getf(P_old,'c_lam0',NaN);
+    mu_ref = getf(P_old,'mu_ref',NaN);
+    Ap     = getf(P_old,'Ap',NaN);
+    if all(isfinite([c_lam0 mu_ref Ap old_d_o]))
+        old_Lori = c_lam0*(old_d_o^4)/(12*mu_ref*(Ap^2));
+    end
+end
 if isfinite(old_n_orf) && isfinite(old_d_o)
     old_Ao = old_n_orf*pi*(old_d_o^2)/4;
 else
@@ -43,6 +58,12 @@ try
     nStories = size(P_old.M,1)-1;
 catch
     nStories = numel(old_tg); if isempty(nStories) || nStories==0, nStories = 10; end
+end
+old_tg = old_tg(:);
+if isempty(old_tg)
+    old_tg = ones(nStories,1)*getf(gainsPF,'g_mid',1);
+elseif isscalar(old_tg)
+    old_tg = repmat(old_tg,nStories,1);
 end
 tg = ones(nStories,1)*getf(gainsPF,'g_mid',1);
 loN = min(3,nStories); if loN>0, tg(1:loN) = getf(gainsPF,'g_lo',1); end
@@ -74,27 +95,27 @@ rows = {
  'cfg.PF.gain (-)',   old_gain,  new_gain,  'cfg.PF.gain = %.6g;'
 };
 
-Name = {}; Old = []; New = []; Template = {};
+Name = {}; Old = {}; New = {}; Template = {};
 for i=1:size(rows,1)
     if changed(rows{i,2}, rows{i,3})
         Name{end+1,1} = rows{i,1}; %#ok<AGROW>
-        Old(end+1,1)  = rows{i,2}; %#ok<AGROW>
-        New(end+1,1)  = rows{i,3}; %#ok<AGROW>
+        if contains(rows{i,1},"n_orf")
+            Old{end+1,1} = sprintf('%d', round(rows{i,2})); %#ok<AGROW>
+            New{end+1,1} = sprintf('%d', round(rows{i,3})); %#ok<AGROW>
+        else
+            Old{end+1,1} = sprintf('%.6g', rows{i,2}); %#ok<AGROW>
+            New{end+1,1} = sprintf('%.6g', rows{i,3}); %#ok<AGROW>
+        end
         Template{end+1,1} = rows{i,4}; %#ok<AGROW>
     end
 end
 T = table(Name, Old, New, Template);
 
 % --- toggle_gain farkı ---
-tg_changed = true;
-if ~isempty(old_tg) && numel(old_tg)==numel(new_tg)
-    tg_changed = any(abs(old_tg(:)-new_tg(:))>1e-6);
-end
+tg_changed = numel(old_tg)~=numel(new_tg) || any(abs(old_tg(:)-new_tg(:))>1e-6);
 if tg_changed
-    T = [T; table({"toggle_gain ((n-1)x1)"}, NaN, NaN, {''}, 'VariableNames', T.Properties.VariableNames)];
-    OldS = mat2str(old_tg,3); if isempty(OldS), OldS = '[]'; end
-    NewS = mat2str(new_tg,3);
-    fprintf('\n[update] toggle_gain:\n  old: %s\n  new: %s\n', OldS, NewS);
+    T = [T; table({"toggle_gain ((n-1)x1)"}, {mat2str(old_tg,3)}, {mat2str(new_tg,3)}, {''}, 'VariableNames', T.Properties.VariableNames)];
+    fprintf('\n[update] toggle_gain:\n  old: %s\n  new: %s\n', mat2str(old_tg,3), mat2str(new_tg,3));
 end
 
 % --- konsol çıktısı ---
@@ -103,12 +124,12 @@ for i=1:height(T)
     nm = string(T.Name{i});
     if T.Template{i}~=""
         if contains(nm,"n_orf")
-            fprintf(' - %-18s : %g  -->  %g   (parametre.m: %s)\n', nm, T.Old(i), T.New(i), sprintf(T.Template{i}, round(T.New(i))));
+            fprintf(' - %-18s : %s  -->  %s   (parametre.m: %s)\n', nm, T.Old{i}, T.New{i}, sprintf(T.Template{i}, round(str2double(T.New{i}))));
         else
-            fprintf(' - %-18s : %.6g  -->  %.6g   (parametre.m: %s)\n', nm, T.Old(i), T.New(i), sprintf(T.Template{i}, T.New(i)));
+            fprintf(' - %-18s : %s  -->  %s   (parametre.m: %s)\n', nm, T.Old{i}, T.New{i}, sprintf(T.Template{i}, str2double(T.New{i})));
         end
     else
-        fprintf(' - %-18s : (vektör değişti; üstteki bloktan yeni vektörü kopyalayın)\n', nm);
+        fprintf(' - %-18s : %s  -->  %s   (vektör)\n', nm, T.Old{i}, T.New{i});
     end
 end
 fprintf('===========================================================\n\n');
@@ -125,9 +146,9 @@ updates = struct(); updates.lines = {};
 for i=1:height(T)
     if T.Template{i}~=""
         if contains(T.Name{i},"n_orf")
-            updates.lines{end+1} = sprintf(T.Template{i}, round(T.New(i))); %#ok<AGROW>
+            updates.lines{end+1} = sprintf(T.Template{i}, round(str2double(T.New{i}))); %#ok<AGROW>
         else
-            updates.lines{end+1} = sprintf(T.Template{i}, T.New(i)); %#ok<AGROW>
+            updates.lines{end+1} = sprintf(T.Template{i}, str2double(T.New{i})); %#ok<AGROW>
         end
     end
 end
