@@ -104,7 +104,7 @@ worstIDR = -inf; worstIDR_name = ''; worstIDR_mu = NaN;
 prev_diag = [];
 for k = 1:n
     rec = scaled(k);
-    out = run_one_record_windowed(rec, [], params, opts, prev_diag);
+    out = run_one_record_windowed(rec, params, opts, prev_diag);
     prev_diag = out.diag;
     all_out{k} = out; %#ok<AGROW>
 
