@@ -1,5 +1,6 @@
 function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, opts)
 %MAKE_SIZING_CASE GA sonrası sabitlenen kazancı ve PF ayarlarını
+% Not: Bu sürüm ana dal ile çakışmalar çözülerek güncellenmiştir.
 % kullanarak deterministik boyutlandırma yapar ve parametre farklarını
 % raporlar.
 %
