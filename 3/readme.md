@@ -68,8 +68,8 @@ Orifis ve termal etkiler **açık** iken damper modelini çalıştırarak her ka
 - **Hafif Değerlendirme:** Her değerlendirmede çizim/CSV/snapshot/diary yazımı yapılmaz; tekrar eden tasarımlar önbellekten gelir.
 
 **Karar Vektörü ve Izgaralar**
-- **x:** `[d_o_mm, n_orf, g_lo, g_mid, g_hi, PF_tau, PF_gain]`
-- **Adımlar:** `d_o_mm:0.1`, `n_orf:integer(2..6)`, `g_*:0.05`, `PF_tau:0.1 s`, `PF_gain:0.02`.
+- **x:** `[d_o_mm, n_orf, PF_tau, PF_gain, Cd0, CdInf, p_exp, Lori_mm, hA_W_perK, Dp_mm, d_w_mm, D_m_mm, n_turn, mu_ref]`
+- **Adımlar:** `d_o_mm:0.1`, `n_orf:integer`, `PF_tau:0.01`, `PF_gain:0.02`, `Cd0/CdInf:0.01`, `p_exp:0.05`, `Lori_mm:1`, `hA_W_perK:25`, `Dp_mm:1`, `d_w_mm:0.5`, `D_m_mm:5`, `n_turn:integer`, `mu_ref:0.05`.
 
 **Yeni Dosyalar**
 - `quantize_step.m:1`: Bir skaler/vektörü `step*round(x/step)` ile ızgaraya oturtur.
