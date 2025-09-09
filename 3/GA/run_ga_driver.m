@@ -213,7 +213,8 @@ end
     outdir = fullfile('out', ['ga_' datestr(now,'yyyymmdd_HHMMSS_FFF')]);
     if ~exist(outdir,'dir'), mkdir(outdir); end
     opts_ga = options; date_str = datestr(now);
-    save(fullfile(outdir,'ga_front.mat'),'X','F','opts_ga','meta','date_str','-v7.3');
+    front = struct('X',X,'F',F,'opts_ga',opts_ga,'meta',meta,'date_str',date_str);
+    safe_write(front, fullfile(outdir,'ga_front.mat'), @(d,f) save(f,'-struct','d','-v7.3'));
 
     % === Re-evaluate Pareto designs to collect metrics per-row ===
     nF = size(X,1);
@@ -341,7 +342,7 @@ end
         for i = 1:numel(idx)
             params_list{i} = decode_params_from_x(params, X(idx(i),:)); %#ok<AGROW>
         end
-        save(fullfile(outdir,'ga_front.mat'),'params_list','-append');
+        safe_write(struct('params_list',{params_list}), fullfile(outdir,'ga_front.mat'), @(d,f) save(f,'-struct','d','-append'));
 
         % ga_topK.csv with key decoded fields
         top = table();
@@ -353,7 +354,7 @@ end
                 {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','A_o','Qcap_big'});
             top = [top; row]; %#ok<AGROW>
         end
-        safe_write(top, fullfile(outdir,'ga_topK.csv'));
+        safe_write(top, fullfile(outdir,'ga_topK.csv'), @writetable);
     end
 
     % Minimal README
@@ -736,7 +737,7 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
 end
 
 function write_pareto_results(T, outdir)
-    safe_write(T, fullfile(outdir,'ga_front.csv'));
+    safe_write(T, fullfile(outdir,'ga_front.csv'), @writetable);
     try
         f1v = T.f1; f2v = T.f2;
         f1n = (f1v - min(f1v)) / max(eps, (max(f1v)-min(f1v)));
@@ -746,10 +747,10 @@ function write_pareto_results(T, outdir)
         Tknee = T(kidx,:);
         try
             Tknee_full = [T(1,:); Tknee]; % assume T(1,:) is baseline just prepended
-            safe_write(Tknee_full, fullfile(outdir,'ga_knee.csv'));
+            safe_write(Tknee_full, fullfile(outdir,'ga_knee.csv'), @writetable);
         catch ME
             warning('write_pareto_results (knee dışa aktarım) hatası: %s', ME.message);
-            safe_write(Tknee, fullfile(outdir,'ga_knee.csv'));
+            safe_write(Tknee, fullfile(outdir,'ga_knee.csv'), @writetable);
         end
     catch ME
         warning('write_pareto_results (knee hesaplama) hatası: %s', ME.message);
@@ -811,15 +812,11 @@ function P = decode_params_from_x(params0_, x_)
     end
 end
 
-function safe_write(data, filepath)
+function safe_write(obj, filepath, writeFcn)
+% Verilen yazma fonksiyonunu hataya karşı korumalı olarak çağırır
     try
-        [~,~,ext] = fileparts(filepath);
-        if strcmpi(ext,'.json')
-            Utils.writejson(data, filepath);
-        else
-            writetable(data, filepath);
-        end
+        writeFcn(obj, filepath);
     catch ME
-        warning('safe_write dosya yazımı başarısız: %s', ME.message);
+        warning('Yazma hatası (%s): %s', filepath, ME.message);
     end
 end
