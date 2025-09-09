@@ -34,7 +34,8 @@ if isfield(opts,'thermal_reset') && strcmpi(opts.thermal_reset,'cooldown')
 end
 
 % QC eşikleri (eksik alanlar varsayılanlarla doldurulur)
-opts.thr = Utils.default_qc_thresholds(Utils.getfield_default(opts,'thr', struct()));
+if ~isfield(opts,'thr'), opts.thr = struct(); end
+opts.thr = Utils.default_qc_thresholds(opts.thr);
 thr = opts.thr;
 
 assert(numel(opts.mu_factors)==numel(opts.mu_weights), ...
