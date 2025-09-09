@@ -166,9 +166,9 @@ end
 
 end
 
-function q = local_quantile(data, p)
-%LOCAL_QUANTILE Belirtilen verinin p yüzdelik değerini hesaplar.
-%   DATA matrisi ve 0-1 aralığındaki P yüzdelik değeri verilerek, bu
-%   yardımcı fonksiyon MATLAB'in QUANTILE fonksiyonunu kullanır.
-q = quantile(data, p);
+function q = local_quantile(A, p)
+%LOCAL_QUANTILE Verilen verinin p yüzdelik değerini hesaplar.
+%   A matrisi ve 0-1 aralığındaki p değeri ile bu yardımcı fonksiyon
+%   MATLAB'in QUANTILE fonksiyonunu çağırarak yüzdelik değeri döndürür.
+q = quantile(A, p);
 end
