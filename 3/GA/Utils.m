@@ -16,6 +16,45 @@ classdef Utils
             w = cfg.on.pressure_force * (1 - exp(-max(t - cfg.PF.t_on, 0) ./ max(cfg.PF.tau, 1e-6)));
         end
 
+        %% Damper Sabitlerini Güncelle
+        function params = recompute_damper_params(params)
+            %RECOMPUTE_DAMPER_PARAMS Türetilmiş damper sabitlerini günceller.
+            %   PARAMS = RECOMPUTE_DAMPER_PARAMS(PARAMS) yapısı içindeki
+            %   temel geometrik ve malzeme parametrelerine (Dp, d_w, D_m,
+            %   n_turn, mu_ref vb.) göre Ap, k_p, k_sd ve c_lam0 gibi
+            %   türetilmiş sabitleri yeniden hesaplar. Eksik alanlar
+            %   bulunduğunda mevcut değerler korunur.
+
+            if ~isstruct(params), return; end
+
+            % mm cinsinden verilen değerleri metreye çevir
+            if isfield(params,'Dp_mm'),    params.Dp    = params.Dp_mm/1000; end
+            if isfield(params,'d_w_mm'),   params.d_w   = params.d_w_mm/1000; end
+            if isfield(params,'D_m_mm'),   params.D_m   = params.D_m_mm/1000; end
+            if isfield(params,'Lori_mm'),  params.Lori  = params.Lori_mm/1000; end
+            if isfield(params,'orf') && isfield(params.orf,'d_o_mm')
+                params.orf.d_o = params.orf.d_o_mm/1000;
+            end
+
+            req = {'Dp','d_w','D_m','n_turn','mu_ref','Lori','Lgap','Kd','Ebody','Gsh'};
+            if ~all(isfield(params,req)) || ~isfield(params,'orf') || ~isfield(params.orf,'d_o')
+                return; % eksik alanlar varsa hesaplama yapma
+            end
+
+            Ap = pi * params.Dp^2 / 4;
+            k_h = params.Kd * Ap^2 / params.Lgap;
+            k_s = params.Ebody * Ap / params.Lgap;
+            k_hyd = 1 / (1/k_h + 1/k_s);
+            k_p = params.Gsh * params.d_w^4 / (8 * params.n_turn * params.D_m^3);
+            k_sd = k_hyd + k_p;
+            c_lam0 = 12 * params.mu_ref * params.Lori * Ap^2 / (params.orf.d_o^4);
+
+            params.Ap = Ap;
+            params.k_p = k_p;
+            params.k_sd = k_sd;
+            params.c_lam0 = c_lam0;
+        end
+
         %% Lineer MCK Çözümü
         function [x,a] = lin_MCK(t,ag,M,C,K)
             % Lineer MCK sistemi için yer hareketi altındaki tepkiyi çözer.
