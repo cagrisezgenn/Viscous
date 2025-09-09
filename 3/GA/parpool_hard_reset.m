@@ -1,6 +1,10 @@
 function parpool_hard_reset(nWorkers)
-% Kill stale jobs, cap threads, open pool safely.
+% PARPOOL_HARD_RESET parpool'u sıfırlayıp iş parçacıklarını kısıtlar.
+% Eski işleri temizleyerek güvenli bir havuz açılışı sağlar.
+
     if nargin<1 || isempty(nWorkers), nWorkers = feature('numcores'); end
+
+    %% Havuz Temizliği
     try
         c = parcluster('Processes');
         if ~isempty(c.Jobs), delete(c.Jobs); end     % crash dump'lı işleri temizle
@@ -8,6 +12,8 @@ function parpool_hard_reset(nWorkers)
         if isempty(p) || ~isvalid(p)
             parpool(c, min(nWorkers, c.NumWorkers));
         end
+
+        %% Thread Sınırlandırma
         % oversubscription önlemleri
         pctRunOnAll maxNumCompThreads(1);
         pctRunOnAll set(0,'DefaultFigureVisible','off');
