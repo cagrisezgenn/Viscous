@@ -138,10 +138,8 @@ switch mode
 end
 
 %% Çözücüler
-% Sönümleyicisiz çözüm
-[x0,a_rel0] = Utils.lin_MCK(rec.t, rec.ag, params.M, params.C0, params.K);
+% Damperli çözüm doğrudan mck_with_damper_ts fonksiyonu üzerinden yürütülür.
 
-% Zaman serili sönümleyici modeli
 nMu = numel(mu_factors);
 mu_results = struct('mu_factor',cell(1,nMu));
 
