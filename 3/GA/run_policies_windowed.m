@@ -22,18 +22,8 @@ if ~isfield(opts,'cooldown_s_list'), opts.cooldown_s_list = [60 180 300]; end
 if ~isfield(opts,'rng_seed'), opts.rng_seed = 42; end
 if ~isfield(opts,'rank_metric'), opts.rank_metric = 'E_orifice_win'; end
 
-% QC eşikleri (opts içinde saklanır)
-thr_default = struct('dP95_max',50e6,'Qcap95_max',0.5,'cav_pct_max',0,'T_end_max',75,'mu_end_min',0.5);
-if ~isfield(opts,'thr') || isempty(opts.thr)
-    opts.thr = thr_default;
-else
-    fns = fieldnames(thr_default);
-    for ii = 1:numel(fns)
-        if ~isfield(opts.thr,fns{ii}) || isempty(opts.thr.(fns{ii}))
-            opts.thr.(fns{ii}) = thr_default.(fns{ii});
-        end
-    end
-end
+% QC eşikleri (Utils ile varsayılanlara tamamlanır)
+opts.thr = Utils.default_qc_thresholds(Utils.getfield_default(opts,'thr', struct()));
 
 % Sessizlik/çıktı bayrakları ve çıktı dizini
 quiet = isfield(opts,'quiet') && opts.quiet;

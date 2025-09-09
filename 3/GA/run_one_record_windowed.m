@@ -33,21 +33,8 @@ if isfield(opts,'thermal_reset') && strcmpi(opts.thermal_reset,'cooldown')
     opts.cooldown_s = max(opts.cooldown_s,0);
 end
 
-% QC thresholds (can be overridden via opts.thr)
-thr_default = struct('dP95_max',50e6, 'Qcap95_max',0.5, 'cav_pct_max',0, ...
-    'T_end_max',75, 'mu_end_min',0.5);
-if isfield(opts,'thr') && ~isempty(opts.thr)
-    thr_f = opts.thr;
-    fns = fieldnames(thr_default);
-    for ii=1:numel(fns)
-        if ~isfield(thr_f,fns{ii}) || isempty(thr_f.(fns{ii}))
-            thr_f.(fns{ii}) = thr_default.(fns{ii});
-        end
-    end
-    thr = thr_f;
-else
-    thr = thr_default;
-end
+% QC eşikleri (Utils ile varsayılanlara tamamlanır)
+thr = Utils.default_qc_thresholds(Utils.getfield_default(opts,'thr', struct()));
 
 assert(numel(opts.mu_factors)==numel(opts.mu_weights), ...
     'mu_factors and mu_weights must have same length.');

@@ -179,19 +179,25 @@ classdef Utils
         end
 
         %% Varsayılan QC Eşikleri
-        function thr = default_qc_thresholds(opts)
-            % Kalite kontrolü için varsayılan eşik değerlerini sağlar.
+        function thr = default_qc_thresholds(optsThr)
+            % Kalite kontrolü için varsayılan eşik değerlerini sağlar ve
+            % eksik alanları varsayılanlarla doldurur.
             % Örnek kullanım: thr = Utils.default_qc_thresholds(struct('dP95_max',40e6));
-            if nargin < 1 || isempty(opts)
-                opts = struct();
+            if nargin < 1 || isempty(optsThr)
+                optsThr = struct();
             end
             thr = struct('dP95_max',50e6, 'Qcap95_max',0.5, ...
                          'cav_pct_max',0, 'T_end_max',75, 'mu_end_min',0.5);
             fns = fieldnames(thr);
             for ii = 1:numel(fns)
-                if isfield(opts, fns{ii}) && ~isempty(opts.(fns{ii}))
-                    thr.(fns{ii}) = opts.(fns{ii});
+                if isfield(optsThr, fns{ii}) && ~isempty(optsThr.(fns{ii}))
+                    thr.(fns{ii}) = optsThr.(fns{ii});
                 end
+            end
+            % Ek alanları koru
+            extra = setdiff(fieldnames(optsThr), fns);
+            for ii = 1:numel(extra)
+                thr.(extra{ii}) = optsThr.(extra{ii});
             end
         end
     end
