@@ -34,15 +34,15 @@ end
     if isempty(scaledOrSnap_local)
         try
             scaledOrSnap_local = evalin('base','scaled');
-        catch
-            % leave empty; handled by asserts below
+        catch ME
+            warning('Temel çalışma alanında ''scaled'' bulunamadı: %s', ME.message);
         end
     end
     if isempty(params_local)
         try
             params_local = evalin('base','params');
-        catch
-            % may be filled from snapshot path below
+        catch ME
+            warning('Temel çalışma alanında ''params'' bulunamadı: %s', ME.message);
         end
     end
     if nargin < 3 || isempty(optsEval), optsEval = struct; end
@@ -141,7 +141,12 @@ end
     IntCon = 2;  % yalnız n_orf tam sayı
 
     % Veri seti imzası üret (önbellek anahtarı)
-    try, dsig = sum([scaled.IM]) + sum([scaled.PGA]); catch, dsig = 0; end
+    try
+        dsig = sum([scaled.IM]) + sum([scaled.PGA]);
+    catch ME
+        warning('Veri seti imzası hesaplanamadı: %s', ME.message);
+        dsig = 0;
+    end
     optsEval.dsig = dsig;
     obj = @(x) eval_design_fast(x, scaled, params, optsEval); % içerde kuantize/clamplar
 
@@ -241,26 +246,106 @@ end
         Pi = decode_params_from_x(params, Xi);
         Si = run_batch_windowed(scaled, Pi, Opost);
 
-        % Extract table columns safely
-        try, v_x10 = Si.table.x10_max_D_worst; catch, v_x10 = 0; end
-        try, v_a10 = Si.table.a10abs_max_D_worst; catch, v_a10 = 0; end
+        % Tablo sütunlarını güvenle al
+        try
+            v_x10 = Si.table.x10_max_D_worst;
+        catch ME
+            warning('x10_max_D_worst okunamadı: %s', ME.message);
+            v_x10 = 0;
+        end
+        try
+            v_a10 = Si.table.a10abs_max_D_worst;
+        catch ME
+            warning('a10abs_max_D_worst okunamadı: %s', ME.message);
+            v_a10 = 0;
+        end
 
-        try, v_dP95 = Si.table.dP95_worst; catch, v_dP95 = 0; end
-        try, v_Qcap = Si.table.Qcap95_worst; catch, v_Qcap = 0; end
-        try, v_cav  = Si.table.cav_pct_worst; catch, v_cav = 0; end
-        try, v_Tend = Si.table.T_end_worst; catch, v_Tend = 0; end
-        try, v_mu   = Si.table.mu_end_worst; catch, v_mu = 1; end
+        try
+            v_dP95 = Si.table.dP95_worst;
+        catch ME
+            warning('dP95_worst okunamadı: %s', ME.message);
+            v_dP95 = 0;
+        end
+        try
+            v_Qcap = Si.table.Qcap95_worst;
+        catch ME
+            warning('Qcap95_worst okunamadı: %s', ME.message);
+            v_Qcap = 0;
+        end
+        try
+            v_cav  = Si.table.cav_pct_worst;
+        catch ME
+            warning('cav_pct_worst okunamadı: %s', ME.message);
+            v_cav = 0;
+        end
+        try
+            v_Tend = Si.table.T_end_worst;
+        catch ME
+            warning('T_end_worst okunamadı: %s', ME.message);
+            v_Tend = 0;
+        end
+        try
+            v_mu   = Si.table.mu_end_worst;
+        catch ME
+            warning('mu_end_worst okunamadı: %s', ME.message);
+            v_mu = 1;
+        end
 
-        try, v_PFp95 = Si.table.PF_p95_worst; catch, v_PFp95 = 0; end
-        try, v_Qq50  = Si.table.Q_q50_worst; catch, v_Qq50 = 0; end
-        try, v_Qq95  = Si.table.Q_q95_worst; catch, v_Qq95 = 0; end
-        try, v_dPq50 = Si.table.dP_orf_q50_worst; catch, v_dPq50 = 0; end
-        try, v_Toil  = Si.table.T_oil_end_worst; catch, v_Toil = []; end
-        try, v_Tsteel= Si.table.T_steel_end_worst; catch, v_Tsteel = []; end
+        try
+            v_PFp95 = Si.table.PF_p95_worst;
+        catch ME
+            warning('PF_p95_worst okunamadı: %s', ME.message);
+            v_PFp95 = 0;
+        end
+        try
+            v_Qq50  = Si.table.Q_q50_worst;
+        catch ME
+            warning('Q_q50_worst okunamadı: %s', ME.message);
+            v_Qq50 = 0;
+        end
+        try
+            v_Qq95  = Si.table.Q_q95_worst;
+        catch ME
+            warning('Q_q95_worst okunamadı: %s', ME.message);
+            v_Qq95 = 0;
+        end
+        try
+            v_dPq50 = Si.table.dP_orf_q50_worst;
+        catch ME
+            warning('dP_orf_q50_worst okunamadı: %s', ME.message);
+            v_dPq50 = 0;
+        end
+        try
+            v_Toil  = Si.table.T_oil_end_worst;
+        catch ME
+            warning('T_oil_end_worst okunamadı: %s', ME.message);
+            v_Toil = [];
+        end
+        try
+            v_Tsteel= Si.table.T_steel_end_worst;
+        catch ME
+            warning('T_steel_end_worst okunamadı: %s', ME.message);
+            v_Tsteel = [];
+        end
 
-        try, v_Eor = Si.table.E_orifice_sum; catch, v_Eor = 0; end
-        try, v_Est = Si.table.E_struct_sum;  catch, v_Est = 0; end
-        try, v_Pm  = Si.table.P_mech_sum;    catch, v_Pm = 0; end
+        try
+            v_Eor = Si.table.E_orifice_sum;
+        catch ME
+            warning('E_orifice_sum okunamadı: %s', ME.message);
+            v_Eor = 0;
+        end
+        try
+            v_Est = Si.table.E_struct_sum;
+        catch ME
+            warning('E_struct_sum okunamadı: %s', ME.message);
+            v_Est = 0;
+        end
+        try
+            v_Pm  = Si.table.P_mech_sum;
+        catch ME
+            warning('P_mech_sum okunamadı: %s', ME.message);
+            v_Pm = 0;
+        end
 
         % Aggregate across records (dataset) to scalars per design
         x10pk(i)  = max(v_x10(:));
@@ -397,7 +482,12 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
     if isempty(memo), memo = containers.Map(); end
     % Add dataset salt so memo keys do not collide across different scaled sets
     dsig = 0;
-    try, dsig = sum([scaled.IM]) + sum([scaled.PGA]); catch, dsig = 0; end
+    try
+        dsig = sum([scaled.IM]) + sum([scaled.PGA]);
+    catch ME
+        warning('Veri seti imzası hesaplanamadı: %s', ME.message);
+        dsig = 0;
+    end
     key = jsonencode([x, dsig]);
     if isKey(memo, key)
         meta = memo(key); f = meta.f; return;
@@ -429,7 +519,11 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
         meta.pen_cav  = 0;
         meta.pen_T    = 0;
         meta.pen_mu   = 0;
-        try, memo_store('set', jsonencode([x, dsig]), meta); catch, end
+        try
+            memo_store('set', jsonencode([x, dsig]), meta);
+        catch ME
+            warning('memo_store yazımı başarısız: %s', ME.message);
+        end
         return;
     end
 
@@ -447,7 +541,11 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
         meta.pen_cav  = 0;
         meta.pen_T    = 0;
         meta.pen_mu   = 0;
-        try, memo_store('set', jsonencode([x, dsig]), meta); catch, end
+        try
+            memo_store('set', jsonencode([x, dsig]), meta);
+        catch ME
+            warning('memo_store yazımı başarısız: %s', ME.message);
+        end
         return;
     end
 
@@ -572,7 +670,11 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
     end
 
     memo(key) = meta;
-    try, memo_store('set', key, meta); catch, end
+    try
+        memo_store('set', key, meta);
+    catch ME
+        warning('memo_store yazımı başarısız: %s', ME.message);
+    end
 
     end
 
@@ -589,14 +691,20 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             else
                 X0(1) = 3.00;
             end
-        catch, X0(1) = 3.00; end
+        catch ME
+            warning('d_o_mm çıkarılamadı: %s', ME.message);
+            X0(1) = 3.00;
+        end
         try
             if isfield(params,'n_orf') && ~isempty(params.n_orf)
                 X0(2) = params.n_orf;
             else
                 X0(2) = 5;
             end
-        catch, X0(2) = 5; end
+        catch ME
+            warning('n_orf çıkarılamadı: %s', ME.message);
+            X0(2) = 5;
+        end
         % g_lo, g_mid, g_hi from toggle_gain if available
         try
             if isfield(params,'toggle_gain') && ~isempty(params.toggle_gain)
@@ -611,7 +719,10 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             else
                 X0(3:5) = [3.90 3.95 1.50];
             end
-        catch, X0(3:5) = [3.90 3.95 1.50]; end
+        catch ME
+            warning('toggle_gain bilgisi okunamadı: %s', ME.message);
+            X0(3:5) = [3.90 3.95 1.50];
+        end
         % PF parameters
         try
             if isfield(params,'cfg') && isfield(params.cfg,'PF')
@@ -620,7 +731,10 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             else
                 X0(6:7) = [0.97 0.90];
             end
-        catch, X0(6:7) = [0.97 0.90]; end
+        catch ME
+            warning('PF parametreleri okunamadı: %s', ME.message);
+            X0(6:7) = [0.97 0.90];
+        end
 
         % Simulate baseline with same post-eval options
         X0 = quant_clamp_x(X0);
@@ -744,7 +858,8 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
                 else
                     try
                         assign('energy_tot_sum', T0.E_orifice_sum + T0.E_struct_sum);
-                    catch
+                    catch ME
+                        warning('energy_tot_sum hesaplanamadı: %s', ME.message);
                         assign('energy_tot_sum', 0);
                     end
                 end
@@ -752,7 +867,8 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             if ismember('E_ratio', vn)
                 try
                     assign('E_ratio', (T0.E_struct_sum>0) * (T0.E_orifice_sum / max(T0.E_struct_sum, eps)));
-                catch
+                catch ME
+                    warning('E_ratio hesaplanamadı: %s', ME.message);
                     assign('E_ratio', 0);
                 end
             end
