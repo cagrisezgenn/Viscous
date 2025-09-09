@@ -1,20 +1,24 @@
 function [X,F,gaout] = run_ga_driver(scaledOrSnap, params, optsEval, optsGA)
-% === SAFE PARPOOL OPEN (cleanup + cap threads) ===
+% === Parpool Açılışı (temizlik + iş parçacığı sınırı) ===
 try
     parpool_hard_reset(16);
 catch ME
-    warning('[run_ga_driver] parpool init: %s', ME.message);
+    warning('[run_ga_driver] parpool başlatılamadı: %s', ME.message);
 end
-%RUN_GA_DRIVER Hybrid GA driver: accepts snapshot path or in-memory structs.
+%RUN_GA_DRIVER Hibrit GA sürücüsü: anlık görüntü yolu veya bellek içi
+% yapıları kabul eder.
 %   [X,F,GAOUT] = RUN_GA_DRIVER(SCALED_OR_PATH, PARAMS, OPTSEVAL, OPTSGA)
-%   Two modes:
-%     A) Snapshot: run_ga_driver('out/<ts>/snapshot.mat', params?, ...)
-%        Loads 'scaled' (and params if not provided).
-%     B) In-memory: run_ga_driver(scaled, params, ...)
-%   Fitness evaluations have no IO; no re-scaling is performed.
+%   İki çalışma modu:
+%     A) Anlık görüntü: run_ga_driver('out/<ts>/snapshot.mat', params?, ...)
+%        'scaled' (ve gerekirse params) yüklenir.
+%     B) Bellek içi: run_ga_driver(scaled, params, ...)
+%   Uygunluk hesapları sırasında IO yapılmaz; yeniden ölçekleme yoktur.
 
-    % ---------- Zero-arg convenience: pull from base workspace ----------
-    % Avoid referencing missing input args when nargin==0/1 by using locals.
+%% Girdi Çözümleme
+% Gelen girdileri ayrıştır, eksikse temel çalışma alanından tamamla.
+
+    % ---------- Sıfır argüman kolaylığı: temel çalışma alanından çek ----------
+    % nargin==0/1 olduğunda eksik girişlere referans vermemek için yerel kopyalar.
     if nargin >= 1
         scaledOrSnap_local = scaledOrSnap;
     else
@@ -25,8 +29,8 @@ end
     else
         params_local = [];
     end
-    % If called without inputs (e.g., pressing Run in editor), try to fetch
-    % 'scaled' and 'params' from the base workspace so that GA can start.
+    % Girdi verilmemişse (ör. editörde Run'a basıldığında) GA'nın başlayabilmesi
+    % için temel çalışma alanından 'scaled' ve 'params' değişkenlerini almaya çalış.
     if isempty(scaledOrSnap_local)
         try
             scaledOrSnap_local = evalin('base','scaled');
@@ -44,7 +48,7 @@ end
     if nargin < 3 || isempty(optsEval), optsEval = struct; end
     if nargin < 4 || isempty(optsGA),   optsGA   = struct; end
 
-    % ---------- Resolve scaled/params/meta ----------
+    % ---------- scaled/params/meta çözümü ----------
     if ischar(scaledOrSnap_local) || isstring(scaledOrSnap_local)
         S = load(char(scaledOrSnap_local), 'scaled','params','opts', ...
                  'IM_mode','band_fac','s_bounds','mu_factors','mu_weights','thr');
@@ -64,31 +68,36 @@ end
         meta.s_bounds   = Utils.getfield_default(S,'s_bounds',[]);
         meta.mu_factors = Utils.getfield_default(S,'mu_factors',[0.75 1.00 1.25]);
         meta.mu_weights = Utils.getfield_default(S,'mu_weights',[0.2 0.6 0.2]);
-        thr_default = struct('dP95_max',50e6,'Qcap95_max',0.5,'cav_pct_max',0,'T_end_max',75,'mu_end_min',0.5);
+        thr_default = Utils.default_qc_thresholds();
         meta.thr       = Utils.getfield_default(S,'thr', thr_default);
     else
         scaled = scaledOrSnap_local;
         params = params_local;
-        thr_default = struct('dP95_max',50e6,'Qcap95_max',0.5,'cav_pct_max',0,'T_end_max',75,'mu_end_min',0.5);
+        thr_default = Utils.default_qc_thresholds();
         meta = struct('IM_mode','', 'band_fac',[], 's_bounds',[], ...
                       'mu_factors',[0.75 1.00 1.25], 'mu_weights',[0.2 0.6 0.2], ...
                       'thr', thr_default);
         % Auto-prepare workspace if needed (no inputs provided)
         if (isempty(scaled) || isempty(params))
             try
-                % Ensure paths
-                try, setup; catch, end
-                % Load base parameters and compute T1
+                % Gerekli yolları ekle
+                try
+                    setup;
+                catch ME
+                    warning('Otomatik hazırlık: setup çağrısı başarısız: %s', ME.message);
+                end
+                % Temel parametreleri yükle ve T1 hesapla
                 parametreler;
-                % Freeze dataset (band scaling + caps + TRIM); no export
+                % Veri kümesini ölçekle (band/trim) ve dondur
                 try
                     [~, scaled] = load_ground_motions(T1);
-                catch
-                    % fall back to raw if needed
+                catch ME
+                    warning('Otomatik hazırlık: load_ground_motions başarısız: %s', ME.message);
+                    % gerekirse ham veriye düş
                     [scaled_raw, ~] = load_ground_motions(); %#ok<ASGLU>
                     error('run_ga_driver:auto_prep','Failed to produce scaled set.');
                 end
-                % Build params struct (mirror damperlinon)
+                % Parametre yapısını oluştur (damperlinon yansısı)
                 params = struct('M',M,'C0',C0,'K',K,'k_sd',k_sd,'c_lam0',c_lam0, ...
                     'orf',orf,'rho',rho,'Ap',Ap,'A_o',A_o,'Qcap_big',Qcap_big,'mu_ref',mu_ref, ...
                     'thermal',thermal,'T0_C',T0_C,'T_ref_C',T_ref_C,'b_mu',b_mu, ...
@@ -96,22 +105,24 @@ end
                     'cp_oil',cp_oil,'cp_steel',cp_steel,'steel_to_oil_mass_ratio',steel_to_oil_mass_ratio, ...
                     'toggle_gain',toggle_gain,'story_mask',story_mask,'n_dampers_per_story',n_dampers_per_story, ...
                     'resFactor',resFactor,'cfg',cfg,'story_height',story_height);
-                % Export to base workspace for user convenience
+                % Kullanıcı kolaylığı için temel çalışma alanına aktar
                 try
                     assignin('base','scaled',scaled);
                     assignin('base','params',params);
                     assignin('base','T1',T1);
-                catch
+                catch ME
+                    warning('Otomatik hazırlık: assignin başarısız: %s', ME.message);
                 end
-            catch
-                % leave to asserts below
+            catch ME
+                warning('Otomatik hazırlık başarısız: %s', ME.message);
+                % hatalar aşağıdaki assertlar tarafından yakalanacak
             end
         end
     end
     assert(~isempty(scaled),'run_ga_driver: scaled set is empty. Define ''scaled'' in workspace or pass a snapshot path.');
     assert(~isempty(params),'run_ga_driver: params is empty. Define ''params'' in workspace or include it in snapshot.');
 
-    % ---------- Defaults for evaluation (IO-free) ----------
+    % ---------- Varsayılan değerlendirme ayarları (IO yok) ----------
     if nargin < 3 || isempty(optsEval), optsEval = struct; end
     optsEval.do_export     = false;
     optsEval.quiet         = true;
@@ -119,21 +130,20 @@ end
     if ~isfield(optsEval,'mu_factors'), optsEval.mu_factors = meta.mu_factors; end
     if ~isfield(optsEval,'mu_weights'), optsEval.mu_weights = meta.mu_weights; end
     if ~isfield(optsEval,'thr'),        optsEval.thr        = meta.thr; end
-
-
-    % ---------- GA options and objective ----------
+    %% GA Kurulumu
+    % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
     if nargin < 4 || isempty(optsGA), optsGA = struct; end
     rng(42);
 
-    % decision vector: [d_o_mm, n_orf, g_lo, g_mid, g_hi, PF_tau, PF_gain]
+    % Karar vektörü: [d_o_mm, n_orf, g_lo, g_mid, g_hi, PF_tau, PF_gain]
     lb = [2.80, 5, 3.60, 3.80, 1.50, 0.95, 0.78];
     ub = [3.60, 6, 4.00, 4.00, 3.60, 1.10, 0.90];
-    IntCon = 2;  % n_orf only
+    IntCon = 2;  % yalnız n_orf tam sayı
 
-    % Provide dataset signature for memo keys
+    % Veri seti imzası üret (önbellek anahtarı)
     try, dsig = sum([scaled.IM]) + sum([scaled.PGA]); catch, dsig = 0; end
     optsEval.dsig = dsig;
-    obj = @(x) eval_design_fast(x, scaled, params, optsEval); % quantize/clamp inside
+    obj = @(x) eval_design_fast(x, scaled, params, optsEval); % içerde kuantize/clamplar
 
     options = optimoptions('gamultiobj', ...
        'PopulationSize',    Utils.getfield_default(optsGA,'PopulationSize',16), ...
@@ -146,7 +156,8 @@ end
        'UseParallel',       Utils.getfield_default(optsGA,'UseParallel',true), ...
        'Display','iter','PlotFcn',[], 'FunctionTolerance',1e-3);
 
-    % Provide grid-aligned initial population if none supplied (sparser grid + seeds)
+    %% Başlangıç Popülasyonu
+    % Izgaraya hizalı ilk popülasyonu oluştur (tohumlarla birlikte).
     try
         if ~isfield(optsGA,'InitialPopulationMatrix') || isempty(optsGA.InitialPopulationMatrix)
             step_vec = [0.1 NaN 0.05 0.05 0.05 0.05 0.02];
@@ -184,18 +195,19 @@ end
                     end
                 end
             catch ME
-                warning('Seed population from prior Pareto failed: %s', ME.message);
+                warning('Önceki Pareto tohumları okunamadı: %s', ME.message);
             end
             options = optimoptions(options,'InitialPopulationMatrix', P0);
         end
     catch ME
-        warning('Initial population setup failed: %s', ME.message);
+        warning('Başlangıç popülasyonu kurulurken hata: %s', ME.message);
     end
 
     [X,F,exitflag,output,population,scores] = gamultiobj(obj, numel(lb), [],[],[],[], lb, ub, [], IntCon, options);
     gaout = struct('exitflag',exitflag,'output',output);
 
-    % ---------- Post-run lightweight packaging (no simulations) ----------
+    %% Sonuçların Paketlenmesi
+    % GA tamamlandıktan sonra sonuçları dosyalara kaydet.
     outdir = fullfile('out', ['ga_' datestr(now,'yyyymmdd_HHMMSS_FFF')]);
     if ~exist(outdir,'dir'), mkdir(outdir); end
     opts_ga = options; date_str = datestr(now);
@@ -314,7 +326,7 @@ end
     try
         T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W);
     catch ME
-        warning('Baseline row generation failed: %s', ME.message);
+        warning('Başlangıç satırı oluşturulamadı: %s', ME.message);
     end
 
     write_pareto_results(T, outdir);
@@ -351,7 +363,8 @@ end
         fprintf(fid, 'mu_factors=%s, mu_weights=%s\n', mat2str(meta.mu_factors), mat2str(meta.mu_weights));
         try
             fprintf(fid, 'thr=%s\n', jsonencode(meta.thr));
-        catch
+        catch ME
+            warning('README yazımı sırasında thr bilgisi eklenemedi: %s', ME.message);
         end
         fprintf(fid, 'Note: No simulations during packaging. Fitness evals had no IO.\n');
         fclose(fid);
@@ -484,30 +497,33 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
     meta.pen_parts = pen_parts;
     % --- append damperli peak metrics (zeros if unavailable)
     x10pk = 0; a10pk = 0;
-    try
-        if isfield(S,'table') && istable(S.table)
-            if ismember('x10_max_D_worst', S.table.Properties.VariableNames)
-                try
-                    x10pk = max(S.table.x10_max_D_worst);
-                catch
-                    x10pk = S.table.x10_max_D_worst;
-                    if numel(x10pk)>1, x10pk = max(x10pk(:)); end
+        try
+            if isfield(S,'table') && istable(S.table)
+                if ismember('x10_max_D_worst', S.table.Properties.VariableNames)
+                    try
+                        x10pk = max(S.table.x10_max_D_worst);
+                    catch ME
+                        x10pk = S.table.x10_max_D_worst;
+                        if numel(x10pk)>1, x10pk = max(x10pk(:)); end
+                        warning('x10 pik değer okuması başarısız: %s', ME.message);
+                    end
+                end
+                if ismember('a10abs_max_D_worst', S.table.Properties.VariableNames)
+                    try
+                        a10pk = max(S.table.a10abs_max_D_worst);
+                    catch ME
+                        a10pk = S.table.a10abs_max_D_worst;
+                        if numel(a10pk)>1, a10pk = max(a10pk(:)); end
+                        warning('a10 pik değer okuması başarısız: %s', ME.message);
+                    end
                 end
             end
-            if ismember('a10abs_max_D_worst', S.table.Properties.VariableNames)
-                try
-                    a10pk = max(S.table.a10abs_max_D_worst);
-                catch
-                    a10pk = S.table.a10abs_max_D_worst;
-                    if numel(a10pk)>1, a10pk = max(a10pk(:)); end
-                end
-            end
+        catch ME
+            warning('Damperli pik metrikleri alınamadı: %s', ME.message);
         end
-    catch
-    end
     meta.x10_max_damperli    = x10pk;
     meta.a10abs_max_damperli = a10pk;
-    % === Append penalty drivers & diagnostics from S.table (if available) ===
+    % === Penaltı sürücüleri ve diagnostikleri ekle (varsa) ===
     try
         if isfield(S,'table') && istable(S.table)
             candCols = { ...
@@ -517,7 +533,7 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
               'T_oil_end_worst','T_steel_end_worst', ...
               'energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum' ...
             };
-            % Provide aliases if needed
+            % Gerekirse alan adları için takma adlar sağla
             try
                 if ismember('T_end_worst', S.table.Properties.VariableNames) && ...
                    ~ismember('T_oil_end_worst', S.table.Properties.VariableNames)
@@ -532,7 +548,8 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
                    ~ismember('energy_tot_sum', S.table.Properties.VariableNames)
                     S.table.energy_tot_sum = S.table.E_orifice_sum + S.table.E_struct_sum; %#ok<AGROW>
                 end
-            catch
+            catch ME
+                warning('Diagnostik alias tanımlamada hata: %s', ME.message);
             end
             for jj = 1:numel(candCols)
                 nm = candCols{jj};
@@ -542,13 +559,15 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
                         if ~all(isfinite(val(:)))
                             val(~isfinite(val)) = 0;
                         end
-                    catch
+                    catch ME
+                        warning('Diagnostik sütun işlenemedi (%s): %s', nm, ME.message);
                     end
                     meta.(nm) = val;
                 end
             end
         end
-    catch
+    catch ME
+        warning('Diagnostik alanlar eklenemedi: %s', ME.message);
     end
 
     memo(key) = meta;
@@ -612,7 +631,7 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         try
             [f0, ~] = eval_design_fast(X0, scaled, params, Opost);
         catch ME
-            warning('eval_design_fast baseline: %s', ME.message);
+            warning('eval_design_fast temel çalıştırma hatası: %s', ME.message);
         end
         % Penalty parts (same formula)
         dP95_0   = max(T0bl.dP95_worst);
@@ -646,7 +665,7 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
                 T0.a10abs_max_damperli = max(T0bl.a10abs_max_D_worst);
             end
         catch ME
-            warning('Baseline damper peak failed: %s', ME.message);
+            warning('Başlangıç damper tepe hesaplanamadı: %s', ME.message);
         end
         % other diagnostics if present
         try
@@ -704,13 +723,13 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
                 T0.P_mech_sum = sum(T0bl.P_mech_sum);
             end
         catch ME
-            warning('Baseline diagnostics failed: %s', ME.message);
+            warning('Başlangıç diagnostikleri alınamadı: %s', ME.message);
         end
 
         % Prepend baseline row
         T = [T0; T];
     catch ME
-        warning('prepend_baseline_row: %s', ME.message);
+        warning('Başlangıç satırı öne eklenemedi: %s', ME.message);
     end
 end
 
@@ -727,11 +746,11 @@ function write_pareto_results(T, outdir)
             Tknee_full = [T(1,:); Tknee]; % assume T(1,:) is baseline just prepended
             safe_write(Tknee_full, fullfile(outdir,'ga_knee.csv'));
         catch ME
-            warning('write_pareto_results (knee export): %s', ME.message);
+            warning('write_pareto_results (knee dışa aktarım) hatası: %s', ME.message);
             safe_write(Tknee, fullfile(outdir,'ga_knee.csv'));
         end
     catch ME
-        warning('write_pareto_results (knee compute): %s', ME.message);
+        warning('write_pareto_results (knee hesaplama) hatası: %s', ME.message);
     end
 end
 
@@ -798,6 +817,7 @@ function safe_write(data, filepath)
         else
             writetable(data, filepath);
         end
-    catch
+    catch ME
+        warning('safe_write dosya yazımı başarısız: %s', ME.message);
     end
 end
