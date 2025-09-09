@@ -24,9 +24,9 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
 %
 % -------------------------------------------------------------------------
 
-    % 0-arg/low-arg convenience: try to pull from workspace and latest GA CSVs
+    % 0 argüman/az argüman kolaylığı: çalışma alanı ve son GA CSV'lerinden verileri çekmeyi dene
     if nargin < 3 || isempty(scaled) || isempty(params) || isempty(gainsPF)
-        % scaled / params from base workspace
+        % scaled / params değişkenlerini temel çalışma alanından al
         try
             if nargin < 1 || isempty(scaled), scaled = evalin('base','scaled'); end
         catch
@@ -35,7 +35,7 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
             if nargin < 2 || isempty(params), params = evalin('base','params'); end
         catch
         end
-        % Best gains/PF from latest ga_knee.csv or ga_front.csv
+        % En iyi kazançlar/PF için son ga_knee.csv veya ga_front.csv dosyasını kullan
         if nargin < 3 || isempty(gainsPF)
             try
                 dd = dir(fullfile('out','ga_*'));
@@ -70,7 +70,7 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
 
     if nargin < 4 || isempty(opts), opts = struct(); end
 
-    % --- handy getter with default ---
+    % --- varsayılanlı pratik getter ---
     function v = getopt(s, f, def)
         if isstruct(s) && isfield(s,f) && ~isempty(s.(f))
             v = s.(f);

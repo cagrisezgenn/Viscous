@@ -76,7 +76,7 @@ end
         meta = struct('IM_mode','', 'band_fac',[], 's_bounds',[], ...
                       'mu_factors',[0.75 1.00 1.25], 'mu_weights',[0.2 0.6 0.2], ...
                       'thr', Utils.default_qc_thresholds(struct()));
-        % Auto-prepare workspace if needed (no inputs provided)
+        % Gerekirse çalışma alanını otomatik hazırla (giriş sağlanmadığında)
         if (isempty(scaled) || isempty(params))
             try
                 % Gerekli yolları ekle
@@ -167,13 +167,13 @@ end
         if ~isfield(optsGA,'InitialPopulationMatrix') || isempty(optsGA.InitialPopulationMatrix)
             step_vec = [0.1 NaN 0.05 0.05 0.05 0.05 0.02];
             P0 = Utils.initial_pop_grid(lb, ub, options.PopulationSize, step_vec);
-            % Seeds (feasible within new bounds)
+            % Tohumlar (yeni sınırlar içinde uygulanabilir)
             seed = [ 2.80 5 3.60 3.80 1.50 0.95 0.78;
                      3.20 5 3.80 3.90 2.50 1.00 0.82;
                      3.60 6 4.00 4.00 3.60 1.10 0.90 ];
             ns = min(size(seed,1), size(P0,1));
             P0(1:ns,:) = seed(1:ns,:);
-            % Try to read latest ga_front.csv to seed with prior Pareto
+            % Önceki Pareto'yu kullanmak için en son ga_front.csv dosyasını okumayı dene
             try
                 dd = dir(fullfile('out','ga_*'));
                 if ~isempty(dd)
@@ -184,11 +184,11 @@ end
                         cols = {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain'};
                         if all(ismember(cols, Tprev.Properties.VariableNames))
                             Xprev = Tprev{:, cols};
-                            % clamp & quantize to current grid
+                            % mevcut ızgaraya sıkıştır ve nicemle
                             for irow = 1:size(Xprev,1)
                                 Xprev(irow,:) = quant_clamp_x(Xprev(irow,:));
                             end
-                            % mix: previous + P0; keep unique and fit to pop size
+                            % karıştır: önceki + P0; eşsiz tut ve popülasyon boyutuna uydur
                             Pmix = unique([Xprev; P0], 'rows', 'stable');
                             if size(Pmix,1) >= options.PopulationSize
                                 P0 = Pmix(1:options.PopulationSize,:);
@@ -228,7 +228,7 @@ end
     dPq50  = zeros(nF,1);  dPq95w = zeros(nF,1); Toil = zeros(nF,1); Tsteel = zeros(nF,1);
     Etot   = zeros(nF,1);  Eor = zeros(nF,1);   Estr  = zeros(nF,1); Eratio = zeros(nF,1); Pmech = zeros(nF,1);
 
-    % penalty parts (same as eval)
+    % ceza bileşenleri (eval ile aynı)
     pen     = zeros(nF,1);
     pen_dP  = zeros(nF,1); pen_Qcap = zeros(nF,1); pen_cav = zeros(nF,1); pen_T = zeros(nF,1); pen_mu = zeros(nF,1);
     lambda  = Utils.getfield_default(optsEval,'penalty_scale',10);
@@ -388,7 +388,7 @@ end
         pen(i)      = lambda*(W.dP*pen_dP(i)+W.Qcap*pen_Qcap(i)+W.cav*pen_cav(i)+W.T*pen_T(i)+W.mu*pen_mu(i));
     end
 
-    % Build T using per-row arrays
+    % Satır başına dizilerden T tablosunu oluştur
     T = array2table([X F pen pen_dP pen_Qcap pen_cav pen_T pen_mu], 'VariableNames', ...
        {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','f1','f2', ...
         'pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu'});
@@ -412,7 +412,7 @@ end
 
     write_pareto_results(T, outdir);
 
-    % Decode top-K designs without running sims
+    % Simülasyon çalıştırmadan en iyi K tasarımı çözümlendir
     K = min(10, size(X,1));
     if K > 0
         idx = unique(round(linspace(1,size(X,1),K)));
@@ -422,7 +422,7 @@ end
         end
         safe_write(struct('params_list',{params_list}), fullfile(outdir,'ga_front.mat'), @(d,f) save(f,'-struct','d','-append'));
 
-        % ga_topK.csv with key decoded fields
+        % Önemli çözülmüş alanlarla ga_topK.csv
         top = table();
         for i = 1:numel(idx)
             P = params_list{i};
@@ -435,7 +435,7 @@ end
         safe_write(top, fullfile(outdir,'ga_topK.csv'), @writetable);
     end
 
-    % Minimal README
+    % Minimal README dosyası
     fid=fopen(fullfile(outdir,'README.txt'),'w');
     if fid~=-1
         fprintf(fid, 'Hybrid GA run: %s\n', date_str);

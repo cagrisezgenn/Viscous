@@ -8,7 +8,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     z0 = zeros(2*n,1);
     opts= odeset('RelTol',1e-3,'AbsTol',1e-6);
 
-    % Story vectors
+    % Kat vektörleri
     nStories = n-1;
     Rvec = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
     mask = story_mask(:);  if numel(mask)==1,  mask  = mask *ones(nStories,1); end
@@ -17,7 +17,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     Rvec = Rvec.';
     Nvec = 1:nStories; Mvec = 2:n;
 
-    % Initial temperature and viscosity
+    % Başlangıç sıcaklığı ve viskozitesi
     Tser = T0_C*ones(numel(t),1);
     mu_abs = mu_ref;
     c_lam = c_lam0;
@@ -49,13 +49,13 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     w_pf_vec = Utils.pf_weight(t, cfg) * cfg.PF.gain;
     F_p = k_sd*drift + (w_pf_vec .* dp_pf) * Ap;
 
-    % Apply geometry scaling R only once at assembly
+    % Geometri ölçeklendirmesi R sadece montajda uygulanır
     F_story = F_p .* (Rvec .* multi);
     P_visc_per = c_lam * (dvel.^2);
     P_sum = sum( (P_visc_per + P_orf_per) .* multi, 2 );
     energy = cumtrapz(t,P_sum);
     P_orf_tot = sum(P_orf_per .* multi, 2);
-    % Structural power uses story total force; avoid extra multi factor
+    % Yapısal güç kat toplam kuvvetini kullanır; ekstra çarpan kullanılmaz
     P_struct_tot = sum(F_story .* dvel, 2);
     E_orifice = trapz(t, P_orf_tot);
     E_struct = trapz(t, P_struct_tot);
@@ -76,7 +76,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     mu = mu_ref*exp(b_mu*(Tser - T_ref_C));
 
 %% Çıktı Hesabı
-    % Node forces for acceleration
+    % İvme için düğüm kuvvetleri
     F = zeros(numel(t),n);
     F(:,Nvec) = F(:,Nvec) - F_story;
     F(:,Mvec) = F(:,Mvec) + F_story;
@@ -108,7 +108,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         end
         w_pf = Utils.pf_weight(tt,cfg) * cfg.PF.gain;
         F_p_ = k_sd*drift_ + (w_pf .* dp_pf_) * Ap;
-        % Apply R scaling only once; at assembly (R*multi)
+        % R ölçeklendirmesi yalnızca montajda uygulanır (R*multi)
         F_story_ = F_p_ .* (Rcol .* multicol);
         Fd = zeros(n,1);
         Fd(Nvec) = Fd(Nvec) - F_story_;

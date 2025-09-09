@@ -1,17 +1,17 @@
 function [summary, all_out] = run_batch_windowed(scaled, params, opts)
-%RUN_BATCH_WINDOWED Analyse multiple records with windowed metrics.
-%   [SUMMARY, ALL_OUT] = RUN_BATCH_WINDOWED(SCALED, PARAMS, OPTS) processes each
-%   ground-motion record in the struct array SCALED using
-%   RUN_ONE_RECORD_WINDOWED and returns a summary table of key metrics. The
-%   cell array ALL_OUT contains the full outputs for each record. PARAMS
-%   bundles structural and damper properties. OPTS are forwarded to
-%   RUN_ONE_RECORD_WINDOWED.
+%RUN_BATCH_WINDOWED Pencereli metriklerle birden fazla kaydı analiz eder.
+%   [SUMMARY, ALL_OUT] = RUN_BATCH_WINDOWED(SCALED, PARAMS, OPTS) fonksiyonu,
+%   SCALED yapı dizisindeki her yer hareketi kaydını
+%   RUN_ONE_RECORD_WINDOWED ile işler ve temel metriklerin özet tablosunu
+%   döndürür. ALL_OUT hücre dizisi her kayıt için tam çıktıları içerir.
+%   PARAMS, yapısal ve damper özelliklerini; OPTS ise
+%   RUN_ONE_RECORD_WINDOWED'e iletilen ayarları barındırır.
 %
-%   QC logs are printed for IM consistency, low Arias coverage, physical
-%   plausibility of response metrics and saturation/cavitation checks.
-%   After processing all records, the worst peak floor acceleration and
-%   inter-story drift ratio along with the associated \mu factor are
-%   reported.
+%   IM tutarlılığı, düşük Arias kapsamı, tepki metriklerinin fiziksel
+%   geçerliliği ve satürasyon/kavitasyon kontrolleri için QC logları
+%   yazdırılır. Tüm kayıtlar işlendiğinde, en kötü tepe kat ivmesi ve
+%   katlar arası ötelenme oranı ile bunlara karşılık gelen \mu faktörü
+%   raporlanır.
 
 if nargin < 3, opts = struct(); end
 if ~isfield(opts,'mu_factors'), opts.mu_factors = [0.75 1.00 1.25]; end
@@ -49,7 +49,7 @@ t95      = zeros(n,1);
 coverage = zeros(n,1);
 rank_score = nan(n,1);
 
-% policy/order info
+    % politika/sıra bilgisi
 policy_val = Utils.getfield_default(opts,'thermal_reset','each');
 order_val  = Utils.getfield_default(opts,'order','natural');
 policy_col = repmat({policy_val}, n,1);
@@ -88,10 +88,10 @@ which_mu_IDR = zeros(n,1);
 T_end_worst  = zeros(n,1);
 mu_end_worst = zeros(n,1);
 cav_pct_worst = zeros(n,1);
-% New worst-case peak metrics at top story (damperli)
+    % Damperli üst kat için yeni en kötü durum tepe metrikleri
 x10_max_D_worst = zeros(n,1);
 a10abs_max_D_worst = zeros(n,1);
-% Energy summaries (worst across mu)
+    % Enerji özetleri (mu boyunca en kötü değer)
 E_orifice_sum = zeros(n,1);
 E_struct_sum  = zeros(n,1);
 E_ratio       = zeros(n,1);
@@ -120,7 +120,7 @@ for k = 1:n
     t5(k)       = out.win.t5;
     t95(k)      = out.win.t95;
     coverage(k) = out.win.coverage;
-    % rank score computed only for order='worst_first'
+    % rank skoru yalnızca order='worst_first' için hesaplanır
     if strcmpi(order_val,'worst_first')
         if isfield(out,'metr') && isfield(out.metr,'E_orifice_win')
             rank_score(k) = out.metr.E_orifice_win;
@@ -162,10 +162,10 @@ for k = 1:n
     T_end_worst(k)  = m_ws.T_oil_end;
     mu_end_worst(k) = m_ws.mu_end;
     cav_pct_worst(k)= m_ws.cav_pct;
-    % New: assign worst-case top story envelope metrics
+    % Yeni: en kötü durum üst kat zarf metriklerini ata
     if isfield(m_ws,'x10_max_D'),        x10_max_D_worst(k)    = m_ws.x10_max_D; end
     if isfield(m_ws,'a10abs_max_D'),     a10abs_max_D_worst(k) = m_ws.a10abs_max_D; end
-    % Fallbacks from single-window metrics if worst lacks the renamed fields
+    % En kötü durumda yeniden adlandırılmış alanlar yoksa tek pencere metriklerinden geri dönüş
     if isfield(m_ws,'x10_pk_D') && ~isfield(m_ws,'x10_max_D')
         x10_max_D_worst(k) = m_ws.x10_pk_D;
     end
@@ -212,7 +212,7 @@ summary.table = table(names, scale, SaT1, t5, t95, coverage, rank_score, policy_
     'which_mu_PFA','which_mu_IDR','T_end_worst','mu_end_worst','qc_all_mu', ...
     'T_start','T_end','mu_end','clamp_hits'});
 
-% Aliases for compatibility with consumers
+% Tüketicilerle uyumluluk için takma adlar
 summary.table.T_oil_end_worst = summary.table.T_end_worst;
 summary.table.dP_orf_q95_worst = summary.table.dP95_worst;
 try
@@ -222,7 +222,7 @@ end
 summary.all_out = all_out;
 %% QC Kontrolü
 % QC eşiklerine göre sonuçların değerlendirilmesi
-% --- QC flags and reason codes for summary.csv consumers ---
+% --- summary.csv kullanıcıları için QC bayrakları ve sebep kodları ---
 thr = opts.thr;
 ok_T    = summary.table.T_end_worst   <= thr.T_end_max;
 ok_mu   = summary.table.mu_end_worst  >= thr.mu_end_min;
