@@ -108,6 +108,55 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
     S_worst = run_batch_windowed(scaled, P, O);
 
     %% Adım 3: Q95 ve Basınç Sınırlarının Belirlenmesi
+    [Q95_worst, dp_kv_target, dp_cap] = find_Q95_worst(S_worst, O, dp_allow_frac);
+
+    %% Adım 4: Ao/d_o Araması ve Laminer Kol
+    rho = P.rho;
+    best = select_orifice_size(Q95_worst, dp_kv_target, Cd_init, n_orf_set, dmm_step, alpha_lam, mu_nom, rho);
+
+    %% Adım 5: Reynolds Sayısı ve Cd Güncellemesi
+    best = update_Re_Cd(best, Q95_worst, dp_kv_target, mu_nom, P, dmm_step, rho);
+
+    %% Adım 6: Debi Üst Sınırının Belirlenmesi
+    Qcap_big = 1.2 * abs(Q95_worst);
+
+    %% Adım 7: Parametre Yapısının Güncellenmesi
+    P_sized = P;
+    P_sized.n_orf    = best.n_orf;
+    P_sized.orf.d_o  = best.d_o;
+    P_sized.A_o      = best.A_o;
+    P_sized.Qcap_big = Qcap_big;
+
+    %% Adım 8: Boyutlandırma Paketinin Derlenmesi
+    sizing = struct();
+    sizing.Q95_worst   = Q95_worst;
+    sizing.dp_cap      = dp_cap;
+    sizing.dp_kv_target= dp_kv_target;
+    sizing.n_orf       = best.n_orf;
+    sizing.d_o         = best.d_o;
+    sizing.A_o         = best.A_o;
+    sizing.Cd          = best.Cd;
+    sizing.L_orif      = best.Lori;
+    sizing.Qcap_big    = Qcap_big;
+    sizing.alpha_lam   = alpha_lam;
+    sizing.notes       = 'Deterministic sizing pass; PF/gains fixed.';
+
+    %% Adım 9: Parametre Farklarının Raporlanması
+    try
+        [updates, T] = sizing_param_diff(params, P_sized, gainsPF, sizing); %#ok<NASGU>
+        % Otomatik yamaya hazır satırlar
+        fprintf('parametre.m için önerilen satırlar:\n');
+        for i=1:numel(updates.lines)
+            fprintf('  %s\n', updates.lines{i});
+        end
+        fprintf('  %% toggle_gain vektörü:\n  toggle_gain = %s;  %% (n-1)x1\n', mat2str(updates.toggle_gain_vec,3));
+    catch ME
+        warning('sizing_param_diff failed: %s', ME.message);
+    end
+end
+
+%% Yerel fonksiyon: Q95_worst ve basınç sınırını bulur
+function [Q95_worst, dp_kv_target, dp_cap] = find_Q95_worst(S_worst, O, dp_allow_frac)
     % Özet tablo üzerinden en kötü %95 debiyi çek
     Q95_worst = NaN;
     try
@@ -122,21 +171,22 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
     catch
     end
     % Model hard-limit veya thr üzerinden kap
-    dp_cap_default = 1.0e9; % Pa (hard-kill ile tutarlı)
+    dp_cap_default = 1.0e9; % Pa
     dp_cap = dp_cap_default;
     if isfield(O,'thr') && ~isempty(O.thr) && isfield(O.thr,'dP95_max') && ~isempty(O.thr.dP95_max)
         dp_cap = O.thr.dP95_max;
     end
     dp_kv_target = dp_allow_frac * dp_cap;
+end
 
-    %% Adım 4: Türbülans Baskın Koşuldan Orifis Alanı
-    rho = P.rho;
-    Ao_req = abs(Q95_worst) / max(Cd_init,eps) * sqrt(rho / max(2*dp_kv_target,eps));  % m^2
-    % n_orf adayları üzerinde en yakın kuantize d_o seç
+%% Yerel fonksiyon: Ao/d_o seçimi ve laminer kol hesabı
+function best = select_orifice_size(Q95_worst, dp_kv_target, Cd_init, n_orf_set, dmm_step, alpha_lam, mu_nom, rho)
+    % Türbülans baskın koşuldan gerekli alan
+    Ao_req = abs(Q95_worst) / max(Cd_init,eps) * sqrt(rho / max(2*dp_kv_target,eps));
     dgrid = @(dmm) (dmm_step * round(dmm./max(dmm_step,eps))); % mm ızgara
     best = struct('n_orf',NaN,'d_o',NaN,'A_o',NaN,'Cd',Cd_init,'Lori',NaN);
     best_err = inf;
-    for n_orf = n_orf_set(:).'
+    for n_orf = n_orf_set(:).' % izinli delik sayıları üzerinde ara
         d_o = sqrt(4*Ao_req/(pi*n_orf));       % m
         dmm = dgrid(1000*d_o); d_o_q = dmm/1000;  % kuantize m
         A_o = n_orf * (pi*d_o_q^2/4);
@@ -146,61 +196,24 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
             best.n_orf = n_orf; best.d_o = d_o_q; best.A_o = A_o;
         end
     end
-
-    %% Adım 5: Laminer Kol Uzunluğunun Hesabı
-    % R_lam,tot = (128 μ L / (π d^4)) / n_orf ; Δp_lam = R_lam,tot * Q
+    % Laminer kol uzunluğu
     L_orif = alpha_lam * dp_kv_target * (pi * best.d_o^4) * best.n_orf / max(128*mu_nom*abs(Q95_worst),eps);
     best.Lori = L_orif;
+end
 
-    %% Adım 6: Reynolds Sayısı ve Cd Güncellemesi
-    Cd = Cd_init; Re = NaN; %#ok<NASGU>
-    for it = 1:2
+%% Yerel fonksiyon: Reynolds sayısı ve Cd güncellemesi
+function best = update_Re_Cd(best, Q95_worst, dp_kv_target, mu_nom, P, dmm_step, rho)
+    dgrid = @(dmm) (dmm_step * round(dmm./max(dmm_step,eps))); % mm ızgara
+    Cd = best.Cd; Re = NaN; %#ok<NASGU>
+    for it = 1:2 % tekrarlı güncelleme
         Q_hole = Q95_worst / max(best.n_orf,1);
-        Re = 4*rho*abs(Q_hole) / max(pi*mu_nom*best.d_o,eps); % ≈ (4 ρ Q)/(π μ d)
+        Re = 4*rho*abs(Q_hole) / max(pi*mu_nom*best.d_o,eps);
         Cd = P.orf.CdInf - (P.orf.CdInf - P.orf.Cd0) / (1 + (Re/max(P.orf.Rec,eps))^P.orf.p_exp);
         Ao_req = abs(Q95_worst) / max(Cd,eps) * sqrt(rho / max(2*dp_kv_target,eps));
-        % d_o’yu yeniden kuantize et (n_orf sabit; gerekirse n_orf_set genişletilebilir)
         d_o = sqrt(4*Ao_req/(pi*best.n_orf));
         dmm = dgrid(1000*d_o); best.d_o = dmm/1000; best.A_o = best.n_orf*(pi*best.d_o^2/4);
     end
     best.Cd = Cd;
-
-    %% Adım 7: Debi Üst Sınırının Belirlenmesi
-    Qcap_big = 1.2 * abs(Q95_worst);
-
-    %% Adım 8: Parametre Yapısının Güncellenmesi
-    P_sized = P;
-    P_sized.n_orf    = best.n_orf;
-    P_sized.orf.d_o  = best.d_o;
-    P_sized.A_o      = best.A_o;
-    P_sized.Qcap_big = Qcap_big;
-
-    %% Adım 9: Boyutlandırma Paketinin Derlenmesi
-    sizing = struct();
-    sizing.Q95_worst   = Q95_worst;
-    sizing.dp_cap      = dp_cap;
-    sizing.dp_kv_target= dp_kv_target;
-    sizing.n_orf       = best.n_orf;
-    sizing.d_o         = best.d_o;
-    sizing.A_o         = best.A_o;
-    sizing.Cd          = best.Cd;
-    sizing.L_orif      = best.Lori;
-    sizing.Qcap_big    = Qcap_big;
-    sizing.alpha_lam   = alpha_lam;
-    sizing.notes       = 'Deterministic sizing pass; PF/gains fixed.';
-
-    %% Adım 10: Parametre Farklarının Raporlanması
-    try
-        [updates, T] = sizing_param_diff(params, P_sized, gainsPF, sizing); %#ok<NASGU>
-        % Otomatik yamaya hazır satırlar
-        fprintf('parametre.m için önerilen satırlar:\n');
-        for i=1:numel(updates.lines)
-            fprintf('  %s\n', updates.lines{i});
-        end
-        fprintf('  %% toggle_gain vektörü:\n  toggle_gain = %s;  %% (n-1)x1\n', mat2str(updates.toggle_gain_vec,3));
-    catch ME
-        warning('sizing_param_diff failed: %s', ME.message);
-    end
 end
 
 %% ============================================================
