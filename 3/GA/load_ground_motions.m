@@ -42,12 +42,12 @@ for k = 1:numel(fn)
     % 3A) Zaman vektorunu duzenle
     [t,iu] = unique(t,'stable'); ag = ag(iu);
     dt = median(diff(t));
-    assert(max(abs(diff(t) - dt)) < 1e-6, 'Non-uniform sampling interval');
+    assert(max(abs(diff(t) - dt)) < 1e-6, 'Zaman örnekleme aralığı düzensiz');
     t  = (t(1):dt:t(end)).';
     ag = interp1(A(:,1), A(:,2), t, 'linear');
 
     % 3B) Temel birim ve filtreleme kontrolleri
-    assert(max(abs(ag)) < 100, 'Acceleration magnitude suggests wrong units');
+    assert(max(abs(ag)) < 100, 'İvme büyüklüğü birim hatasına işaret ediyor');
     ag = detrend(ag,0);             % ortalama
     ag = detrend(ag,1);             % dogrusal trend
     try
@@ -59,7 +59,7 @@ for k = 1:numel(fn)
         % Butter/Filtfilt yoksa yalnizca detrend uygulanir
     end
 
-    % 3C) Metadata
+    % 3C) Metaveri
     duration = t(end) - t(1);
     v  = cumtrapz(t,ag);
     PGA = max(abs(ag));
@@ -71,7 +71,7 @@ for k = 1:numel(fn)
 end
 
 %% Yükleme Özeti
-fprintf('Loaded %d ground-motion records:\n', numel(records));
+fprintf('Toplam %d zemin hareketi kaydı yüklendi:\n', numel(records));
 for k = 1:numel(records)
     r = records(k);
     fprintf('%2d) %-12s dt=%6.4f s dur=%6.2f s PGA=%7.3f PGV=%7.3f\n', ...
@@ -85,7 +85,7 @@ meta = struct();
 if nargin >= 1 && ~isempty(T1)
     %% IM Hesabı
     for k = 1:numel(records)
-        records(k).IM = compute_IM(records(k), IM_mode, T1, band_fac, band_N);
+        records(k).IM = compute_IM(records(k).t, records(k).ag, IM_mode, T1, band_fac, band_N);
     end
 
     %% Hedef IM Seçimi ve TRIM
@@ -107,7 +107,7 @@ if nargin >= 1 && ~isempty(T1)
         IM(idx) = [];
     end
     if ~isempty(dropped)
-        fprintf('TRIM: dropped outliers = %s\n', strjoin(dropped,', '));
+        fprintf('TRIM: ayıklanan uç değerler = %s\n', strjoin(dropped,', '));
     end
     IM_low  = max(s_bounds(1)*IM);
     IM_high = min(s_bounds(2)*IM);
@@ -134,7 +134,7 @@ if nargin >= 1 && ~isempty(T1)
         scaled(k).s_clipped = doClip && (abs(s - s_raw) > 1e-12);
         scaled(k).trimmed   = false;
 
-        scaled(k).IM = compute_IM(scaled(k), IM_mode, T1, band_fac, band_N);
+        scaled(k).IM = compute_IM(scaled(k).t, scaled(k).ag, IM_mode, T1, band_fac, band_N);
     end
 
     %% Hata ve Log
@@ -144,12 +144,12 @@ if nargin >= 1 && ~isempty(T1)
     else
         modeStr = 'PSA@T1';
     end
-    fprintf('Target IM = %.3f (%s). Max error = %.2f%% | feasible=[%.3f, %.3f] | s_min=%.2f s_max=%.2f', ...
+    fprintf('Hedef IM = %.3f (%s). Maks hata = %.2f%% | uygun aralık=[%.3f, %.3f] | s_min=%.2f s_max=%.2f', ...
         targetIM, modeStr, max(err), IM_low, IM_high, min(s_all), max(s_all));
     if doClip
-        fprintf(' | CLIPPED=%d', n_clipped);
+        fprintf(' | KIRPILAN=%d', n_clipped);
     else
-        fprintf(' | CLIPPED=0');
+        fprintf(' | KIRPILAN=0');
     end
     fprintf('\n');
 
@@ -161,14 +161,13 @@ end
 end
 
 %% ==== Yerel Fonksiyonlar ====
-function IM = compute_IM(record, mode, T1, band_fac, band_N)
+function IM = compute_IM(t, ag, mode, T1, band_fac, band_N)
 %COMPUTE_IM Kayit icin hedef IM degerini hesaplar.
-%   IM = COMPUTE_IM(RECORD, MODE, T1, BAND_FAC, BAND_N) fonksiyonu,
-%   RECORD yapisi icindeki t ve ag alanlarini kullanarak belirlenen
-%   periyot moduna gore yapay spektral ivme (IM) dondurur.
+%   IM = COMPUTE_IM(T, AG, MODE, T1, BAND_FAC, BAND_N) fonksiyonu,
+%   verilen zaman vektoru t ve ivme ag icin, secilen modda
+%   yapay spektral ivme (IM) dondurur.
 
 zeta = 0.05;
-t = record.t; ag = record.ag;
 if strcmpi(mode,'band')
     Tgrid = linspace(band_fac(1)*T1, band_fac(2)*T1, band_N);
     Sa = zeros(size(Tgrid));
