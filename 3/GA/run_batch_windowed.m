@@ -19,6 +19,9 @@ if ~isfield(opts,'mu_weights'), opts.mu_weights = [0.2 0.6 0.2]; end
 if ~isfield(opts,'thr'), opts.thr = struct(); end
 opts.thr = Utils.default_qc_thresholds(opts.thr);
 
+assert(isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), ...
+    'run_batch_windowed: params.thermal.hA_W_perK eksik');
+
 do_export = isfield(opts,'do_export') && opts.do_export;
 if do_export
     if isfield(opts,'outdir')

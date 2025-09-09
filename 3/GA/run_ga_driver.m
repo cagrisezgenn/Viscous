@@ -121,9 +121,9 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     if nargin < 4 || isempty(optsGA), optsGA = struct; end
     rng(42);
 
-    % Karar vektörü: [d_o_mm, n_orf, g_lo, g_mid, g_hi, PF_tau, PF_gain, Cd0, CdInf, p_exp, Lori_mm, c_lam0_e7]
-    lb = [2.80, 5, 3.60, 3.80, 1.50, 0.95, 0.78, 0.50, 0.75, 0.80, 60, 2.0];
-    ub = [3.60, 6, 4.00, 4.00, 3.60, 1.10, 0.90, 0.70, 0.95, 1.40, 140, 4.0];
+    % Karar vektörü: [d_o_mm, n_orf, g_lo, g_mid, g_hi, PF_tau, PF_gain, Cd0, CdInf, p_exp, Lori_mm, c_lam0_e7, hA_W_perK]
+    lb = [2.80, 5, 3.60, 3.80, 1.50, 0.95, 0.78, 0.50, 0.75, 0.80, 60, 2.0, 200];
+    ub = [3.60, 6, 4.00, 4.00, 3.60, 1.10, 0.90, 0.70, 0.95, 1.40, 140, 4.0, 800];
     IntCon = 2;  % yalnız n_orf tam sayı
 
     % Veri seti imzası üret (önbellek anahtarı)
@@ -151,12 +151,12 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     % Izgaraya hizalı ilk popülasyonu oluştur (tohumlarla birlikte).
     try
         if ~isfield(optsGA,'InitialPopulationMatrix') || isempty(optsGA.InitialPopulationMatrix)
-            step_vec = [0.1 NaN 0.05 0.05 0.05 0.05 0.02 0.01 0.01 0.05 1 0.1];
+            step_vec = [0.1 NaN 0.05 0.05 0.05 0.05 0.02 0.01 0.01 0.05 1 0.1 25];
             P0 = Utils.initial_pop_grid(lb, ub, options.PopulationSize, step_vec);
             % Tohumlar (yeni sınırlar içinde uygulanabilir)
-            seed = [ 2.80 5 3.60 3.80 1.50 0.95 0.78 0.61 0.80 1.10 100 3.0;
-                     3.20 5 3.80 3.90 2.50 1.00 0.82 0.61 0.80 1.10 100 3.0;
-                     3.60 6 4.00 4.00 3.60 1.10 0.90 0.61 0.80 1.10 100 3.0 ];
+            seed = [ 2.80 5 3.60 3.80 1.50 0.95 0.78 0.61 0.80 1.10 100 3.0 450;
+                     3.20 5 3.80 3.90 2.50 1.00 0.82 0.61 0.80 1.10 100 3.0 450;
+                     3.60 6 4.00 4.00 3.60 1.10 0.90 0.61 0.80 1.10 100 3.0 450 ];
             ns = min(size(seed,1), size(P0,1));
             P0(1:ns,:) = seed(1:ns,:);
             % Önceki Pareto'yu kullanmak için en son ga_front.csv dosyasını okumayı dene
@@ -167,7 +167,7 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
                     latest = fullfile(dd(ix).folder, dd(ix).name, 'ga_front.csv');
                     if exist(latest,'file')
                         Tprev = readtable(latest);
-                        cols = {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','c_lam0_e7'};
+                        cols = {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','c_lam0_e7','hA_W_perK'};
                         if all(ismember(cols, Tprev.Properties.VariableNames))
                             Xprev = Tprev{:, cols};
                             % mevcut ızgaraya sıkıştır ve nicemle
@@ -376,7 +376,7 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
 
     % Satır başına dizilerden T tablosunu oluştur
     T = array2table([X F pen pen_dP pen_Qcap pen_cav pen_T pen_mu], 'VariableNames', ...
-       {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','c_lam0_e7', ...
+       {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','c_lam0_e7','hA_W_perK', ...
         'f1','f2','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu'});
 
     T.x10_max_damperli    = x10pk;
@@ -411,9 +411,9 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
             P = params_list{i};
             row = table(P.orf.d_o*1e3, P.n_orf, ...
                 X(idx(i),3),X(idx(i),4),X(idx(i),5),X(idx(i),6),X(idx(i),7), ...
-                P.orf.Cd0, P.orf.CdInf, P.orf.p_exp, X(idx(i),11), X(idx(i),12), ...
+                P.orf.Cd0, P.orf.CdInf, P.orf.p_exp, X(idx(i),11), X(idx(i),12), X(idx(i),13), ...
                 P.A_o, P.Qcap_big, 'VariableNames', ...
-                {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','c_lam0_e7','A_o','Qcap_big'});
+                {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','c_lam0_e7','hA_W_perK','A_o','Qcap_big'});
             top = [top; row]; %#ok<AGROW>
         end
         safe_write(top, fullfile(outdir,'ga_topK.csv'), @writetable);
@@ -452,6 +452,9 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     if numel(x) >= 12
         x(12)= Utils.quantize_step(x(12),0.1);  % c_lam0_e7
     end
+    if numel(x) >= 13
+        x(13)= Utils.quantize_step(x(13),25);   % hA_W_perK
+    end
     x(2) = round(max(x(2),1));              % n_orf tam sayı, >=1
 
     % Kuantizasyondan sonra GA sınırlarına sıkıştır
@@ -470,6 +473,9 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     end
     if numel(x) >= 12
         x(12)= min(max(x(12),2.0),4.0);
+    end
+    if numel(x) >= 13
+        x(13)= min(max(x(13),200),800);
     end
 
     persistent memo;
@@ -667,7 +673,7 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
     rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
     try
         % Build X0 from params (with sensible fallbacks)
-        X0 = nan(1,12);
+        X0 = nan(1,13);
         % d_o_mm and n_orf
         try
             if isfield(params,'orf') && isfield(params.orf,'d_o') && ~isempty(params.orf.d_o)
@@ -735,7 +741,7 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             X0(8:10) = [0.61 0.80 1.10];
         end
 
-        % Lori ve c_lam0
+        % Lori, c_lam0 ve hA
         try
             X0(11) = Utils.getfield_default(params,'Lori',0.10)*1e3;
         catch ME
@@ -747,6 +753,12 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         catch ME
             warning('c_lam0 okunamadı: %s', ME.message);
             X0(12) = 3;
+        end
+        try
+            X0(13) = Utils.getfield_default(params.thermal,'hA_W_perK',450);
+        catch ME
+            warning('hA_W_perK okunamadı: %s', ME.message);
+            X0(13) = 450;
         end
 
         % Simulate baseline with same post-eval options
@@ -791,6 +803,7 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         assign('p_exp',   X0(10));
         assign('Lori_mm', X0(11));
         assign('c_lam0_e7', X0(12));
+        assign('hA_W_perK', X0(13));
 
         % amaç fonksiyonları
         assign('f1', f0(1));
@@ -950,6 +963,9 @@ function xq = quant_clamp_x(x)
     if numel(x) >= 12
         x(12)= Utils.quantize_step(x(12),0.1); % c_lam0_e7
     end
+    if numel(x) >= 13
+        x(13)= Utils.quantize_step(x(13),25);  % hA_W_perK
+    end
     x(2) = round(max(x(2),1));
     x(1) = min(max(x(1), 2.80), 3.60);
     x(2) = min(max(x(2), 5), 6);
@@ -966,6 +982,9 @@ function xq = quant_clamp_x(x)
     end
     if numel(x) >= 12
         x(12)= min(max(x(12),2.0),4.0);
+    end
+    if numel(x) >= 13
+        x(13)= min(max(x(13),200),800);
     end
     xq = x;
 end
@@ -990,7 +1009,7 @@ function P = decode_params_from_x(params_base_, x_)
     g_lo = x_(3); g_mid = x_(4); g_hi = x_(5);
     PF_tau = x_(6); PF_gain = x_(7);
     Cd0 = x_(8); CdInf = x_(9); p_exp = x_(10);
-    Lori_mm = x_(11); c_lam0_e7 = x_(12);
+    Lori_mm = x_(11); c_lam0_e7 = x_(12); hA_W_perK = x_(13);
     P = params_base_;
     P.orf.d_o = d_o_mm * 1e-3;         % mm'den m'ye
     P.n_orf   = n_orf;
@@ -1001,6 +1020,9 @@ function P = decode_params_from_x(params_base_, x_)
     P.Qcap_big= max(P.orf.CdInf * P.A_o, 1e-9) * sqrt(2 * 1.0e9 / P.rho);
     P.Lori   = Lori_mm * 1e-3;
     P.c_lam0 = c_lam0_e7 * 1e7;
+    if isfield(P,'thermal')
+        P.thermal.hA_W_perK = hA_W_perK;
+    end
     if isfield(P,'c_lam_min_frac') && isfield(P,'c_lam_min_abs')
         P.c_lam_min = max(P.c_lam_min_abs, P.c_lam_min_frac * P.c_lam0);
     end
