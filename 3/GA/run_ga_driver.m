@@ -647,90 +647,135 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         pen_mu_0   = rev(muend_0, Opost.thr.mu_end_min);
         pen_0      = lambda*(W.dP*pen_dP_0 + W.Qcap*pen_Qcap_0 + W.cav*pen_cav_0 + W.T*pen_T_0 + W.mu*pen_mu_0);
 
-        % Build baseline row T0 with same columns as T
+        % Baz satırı için tablonun ilk satırını kopyala
         vn = T.Properties.VariableNames;
-        T0 = cell2table(cell(1,numel(vn)), 'VariableNames', vn);
-        % decision variables
-        T0.d_o_mm = X0(1); T0.n_orf = X0(2); T0.g_lo = X0(3); T0.g_mid = X0(4); T0.g_hi = X0(5);
-        T0.PF_tau = X0(6); T0.PF_gain = X0(7);
-        % objectives
-        T0.f1 = f0(1); T0.f2 = f0(2);
-        % penalties
-        T0.pen = pen_0; T0.pen_dP = pen_dP_0; T0.pen_Qcap = pen_Qcap_0; T0.pen_cav = pen_cav_0; T0.pen_T = pen_T_0; T0.pen_mu = pen_mu_0;
-        % damper peak
+        T0 = T(1,:); T0(:) = {nan};
+
+        % T0'ya değer yazarken sütun tiplerini koru
+
+        % karar değişkenleri
+        assign('d_o_mm',  X0(1));
+        assign('n_orf',   X0(2));
+        assign('g_lo',    X0(3));
+        assign('g_mid',   X0(4));
+        assign('g_hi',    X0(5));
+        assign('PF_tau',  X0(6));
+        assign('PF_gain', X0(7));
+
+        % amaç fonksiyonları
+        assign('f1', f0(1));
+        assign('f2', f0(2));
+
+        % cezalar
+        assign('pen',     pen_0);
+        assign('pen_dP',  pen_dP_0);
+        assign('pen_Qcap',pen_Qcap_0);
+        assign('pen_cav', pen_cav_0);
+        assign('pen_T',   pen_T_0);
+        assign('pen_mu',  pen_mu_0);
+
+        % damper tepe değerleri
         try
-            if ismember('x10_max_damperli', vn)
-                T0.x10_max_damperli = max(T0bl.x10_max_D_worst);
+            if ismember('x10_max_damperli', vn) && ismember('x10_max_D_worst', T0bl.Properties.VariableNames)
+                assign('x10_max_damperli', max(T0bl.x10_max_D_worst));
             end
-            if ismember('a10abs_max_damperli', vn)
-                T0.a10abs_max_damperli = max(T0bl.a10abs_max_D_worst);
+            if ismember('a10abs_max_damperli', vn) && ismember('a10abs_max_D_worst', T0bl.Properties.VariableNames)
+                assign('a10abs_max_damperli', max(T0bl.a10abs_max_D_worst));
             end
         catch ME
             warning('Başlangıç damper tepe hesaplanamadı: %s', ME.message);
         end
-        % other diagnostics if present
+
+        % diğer diagnostikler
         try
-            if ismember('dP95_worst', vn),        T0.dP95_worst        = max(T0bl.dP95_worst); end
-            if ismember('Qcap95_worst', vn),      T0.Qcap95_worst      = max(T0bl.Qcap95_worst); end
-            if ismember('cav_pct_worst', vn),     T0.cav_pct_worst     = max(T0bl.cav_pct_worst); end
-            if ismember('T_end_worst', vn),       T0.T_end_worst       = max(T0bl.T_end_worst); end
-            if ismember('mu_end_worst', vn),      T0.mu_end_worst      = min(T0bl.mu_end_worst); end
+            if ismember('dP95_worst', vn) && ismember('dP95_worst', T0bl.Properties.VariableNames)
+                assign('dP95_worst', max(T0bl.dP95_worst));
+            end
+            if ismember('Qcap95_worst', vn) && ismember('Qcap95_worst', T0bl.Properties.VariableNames)
+                assign('Qcap95_worst', max(T0bl.Qcap95_worst));
+            end
+            if ismember('cav_pct_worst', vn) && ismember('cav_pct_worst', T0bl.Properties.VariableNames)
+                assign('cav_pct_worst', max(T0bl.cav_pct_worst));
+            end
+            if ismember('T_end_worst', vn) && ismember('T_end_worst', T0bl.Properties.VariableNames)
+                assign('T_end_worst', max(T0bl.T_end_worst));
+            end
+            if ismember('mu_end_worst', vn) && ismember('mu_end_worst', T0bl.Properties.VariableNames)
+                assign('mu_end_worst', min(T0bl.mu_end_worst));
+            end
             if ismember('PF_p95_worst', vn) && ismember('PF_p95_worst', T0bl.Properties.VariableNames)
-                T0.PF_p95_worst = max(T0bl.PF_p95_worst);
+                assign('PF_p95_worst', max(T0bl.PF_p95_worst));
             end
             if ismember('Q_q50_worst', vn) && ismember('Q_q50_worst', T0bl.Properties.VariableNames)
-                T0.Q_q50_worst = max(T0bl.Q_q50_worst);
+                assign('Q_q50_worst', max(T0bl.Q_q50_worst));
             end
             if ismember('Q_q95_worst', vn) && ismember('Q_q95_worst', T0bl.Properties.VariableNames)
-                T0.Q_q95_worst = max(T0bl.Q_q95_worst);
+                assign('Q_q95_worst', max(T0bl.Q_q95_worst));
             end
             if ismember('dP_orf_q50_worst', vn) && ismember('dP_orf_q50_worst', T0bl.Properties.VariableNames)
-                T0.dP_orf_q50_worst = max(T0bl.dP_orf_q50_worst);
+                assign('dP_orf_q50_worst', max(T0bl.dP_orf_q50_worst));
             end
             if ismember('dP_orf_q95_worst', vn)
                 if ismember('dP_orf_q95_worst', T0bl.Properties.VariableNames)
-                    T0.dP_orf_q95_worst = max(T0bl.dP_orf_q95_worst);
+                    assign('dP_orf_q95_worst', max(T0bl.dP_orf_q95_worst));
                 else
-                    T0.dP_orf_q95_worst = max(T0bl.dP95_worst);
+                    assign('dP_orf_q95_worst', max(T0bl.dP95_worst));
                 end
             end
             if ismember('T_oil_end_worst', vn) && ismember('T_oil_end_worst', T0bl.Properties.VariableNames)
-                T0.T_oil_end_worst = max(T0bl.T_oil_end_worst);
+                assign('T_oil_end_worst', max(T0bl.T_oil_end_worst));
             end
             if ismember('T_steel_end_worst', vn) && ismember('T_steel_end_worst', T0bl.Properties.VariableNames)
-                T0.T_steel_end_worst = max(T0bl.T_steel_end_worst);
+                if iscell(T.T_steel_end_worst)
+                    T0.T_steel_end_worst = {max(T0bl.T_steel_end_worst)};
+                else
+                    T0.T_steel_end_worst = max(T0bl.T_steel_end_worst);
+                end
             end
             if ismember('E_orifice_sum', vn) && ismember('E_orifice_sum', T0bl.Properties.VariableNames)
-                T0.E_orifice_sum = sum(T0bl.E_orifice_sum);
+                assign('E_orifice_sum', sum(T0bl.E_orifice_sum));
             end
             if ismember('E_struct_sum', vn) && ismember('E_struct_sum', T0bl.Properties.VariableNames)
-                T0.E_struct_sum = sum(T0bl.E_struct_sum);
+                assign('E_struct_sum', sum(T0bl.E_struct_sum));
             end
             if ismember('energy_tot_sum', vn)
                 if ismember('energy_tot_sum', T0bl.Properties.VariableNames)
-                    T0.energy_tot_sum = sum(T0bl.energy_tot_sum);
+                    assign('energy_tot_sum', sum(T0bl.energy_tot_sum));
                 else
                     try
-                        T0.energy_tot_sum = T0.E_orifice_sum + T0.E_struct_sum;
-                    catch, T0.energy_tot_sum = 0; end
+                        assign('energy_tot_sum', T0.E_orifice_sum + T0.E_struct_sum);
+                    catch
+                        assign('energy_tot_sum', 0);
+                    end
                 end
             end
             if ismember('E_ratio', vn)
                 try
-                    T0.E_ratio = (T0.E_struct_sum>0) * (T0.E_orifice_sum / max(T0.E_struct_sum, eps));
-                catch, T0.E_ratio = 0; end
+                    assign('E_ratio', (T0.E_struct_sum>0) * (T0.E_orifice_sum / max(T0.E_struct_sum, eps)));
+                catch
+                    assign('E_ratio', 0);
+                end
             end
             if ismember('P_mech_sum', vn) && ismember('P_mech_sum', T0bl.Properties.VariableNames)
-                T0.P_mech_sum = sum(T0bl.P_mech_sum);
+                assign('P_mech_sum', sum(T0bl.P_mech_sum));
             end
         catch ME
             warning('Başlangıç diagnostikleri alınamadı: %s', ME.message);
         end
 
-        % Prepend baseline row
+        % Bas satırı en üste ekle
         T = [T0; T];
     catch ME
         warning('Başlangıç satırı öne eklenemedi: %s', ME.message);
+    end
+    function assign(name, val)
+        if ismember(name, vn)
+            if iscell(T.(name))
+                T0.(name) = {val};
+            else
+                T0.(name) = val;
+            end
+        end
     end
 end
 
