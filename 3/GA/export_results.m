@@ -7,7 +7,7 @@ function export_results(outdir, scaled, params, opts, summary, all_out, varargin
 if nargin < 1 || isempty(outdir), return; end
 if ~exist(outdir,'dir'), mkdir(outdir); end
 
-%% Meta/snapshot
+%% Meta Kaydı
 try
     % IM and trimming info  (BOŞSA BİLE DOLUYA ÇEK!)
     IM_mode  = Utils.getfield_default(opts,'IM_mode','band');
@@ -55,27 +55,21 @@ try
 catch
 end
 
-try
-    names = {scaled.name}';
-    dt = arrayfun(@(s) Utils.getfield_default(s,'dt',NaN), scaled)';
-    dur = arrayfun(@(s) Utils.getfield_default(s,'duration',NaN), scaled)';
-    PGA = arrayfun(@(s) Utils.getfield_default(s,'PGA',NaN), scaled)';
-    PGV = arrayfun(@(s) Utils.getfield_default(s,'PGV',NaN), scaled)';
-    IM  = arrayfun(@(s) Utils.getfield_default(s,'IM',NaN), scaled)';
-    sc  = arrayfun(@(s) Utils.getfield_default(s,'scale',NaN), scaled)';
-    s_cl = arrayfun(@(s) Utils.getfield_default(s,'s_clipped',0), scaled)';
-    trimmed = arrayfun(@(s) Utils.getfield_default(s,'trimmed',0), scaled)';
-    tbl = table(names, dt, dur, PGA, PGV, IM, sc, s_cl, trimmed, ...
-        'VariableNames',{'name','dt','dur','PGA','PGV','IM','scale','s_clipped','trimmed'});
-    writetable(tbl, fullfile(outdir,'scaled_index.csv'));
-catch
-end
+names = {scaled.name}';
+dt = arrayfun(@(s) Utils.getfield_default(s,'dt',NaN), scaled)';
+dur = arrayfun(@(s) Utils.getfield_default(s,'duration',NaN), scaled)';
+PGA = arrayfun(@(s) Utils.getfield_default(s,'PGA',NaN), scaled)';
+PGV = arrayfun(@(s) Utils.getfield_default(s,'PGV',NaN), scaled)';
+IM  = arrayfun(@(s) Utils.getfield_default(s,'IM',NaN), scaled)';
+sc  = arrayfun(@(s) Utils.getfield_default(s,'scale',NaN), scaled)';
+s_cl = arrayfun(@(s) Utils.getfield_default(s,'s_clipped',0), scaled)';
+trimmed = arrayfun(@(s) Utils.getfield_default(s,'trimmed',0), scaled)';
+tbl = table(names, dt, dur, PGA, PGV, IM, sc, s_cl, trimmed, ...
+    'VariableNames',{'name','dt','dur','PGA','PGV','IM','scale','s_clipped','trimmed'});
+safe_write(tbl, fullfile(outdir,'scaled_index.csv'));
 
-%% Summaries
-try
-    writetable(summary.table, fullfile(outdir,'summary.csv'));
-catch
-end
+%% Özetler
+safe_write(summary.table, fullfile(outdir,'summary.csv'));
 try
     save(fullfile(outdir,'summary_full.mat'), 'summary','all_out','-v7.3');
 catch
@@ -86,55 +80,46 @@ try
     [~,idx] = maxk(summary.table.PFA_worst, min(3,height(summary.table)));
     worst = summary.table.name(idx);
     qc_tbl = table(pass, fail, worst, 'VariableNames',{'pass','fail','worst'});
-    writetable(qc_tbl, fullfile(outdir,'qc_summary.csv'));
+    safe_write(qc_tbl, fullfile(outdir,'qc_summary.csv'));
 catch
 end
 
-%% Record-based details
+%% Kayıt Bazlı Detaylar
 for k = 1:numel(all_out)
     out = all_out{k};
     try
         recdir = fullfile(outdir, ['rec-' Utils.sanitize_name(out.name)]);
         if ~exist(recdir,'dir'), mkdir(recdir); end
         % window.json
-        try
-            w = out.win;
-            win_struct = struct('t5',w.t5,'t95',w.t95,'pad',Utils.getfield_default(w,'pad',0), ...
-                                'coverage',w.coverage);
-            Utils.writejson(win_struct, fullfile(recdir,'window.json'));
-        catch
-        end
+        w = out.win;
+        win_struct = struct('t5',w.t5,'t95',w.t95,'pad',Utils.getfield_default(w,'pad',0), ...
+                            'coverage',w.coverage);
+        safe_write(win_struct, fullfile(recdir,'window.json'));
         % mu_results.csv
         if isfield(out,'mu_results') && ~isempty(out.mu_results)
-            try
-                mu_tbl = struct2table(arrayfun(@(s) s.metr, out.mu_results));
-                mu_tbl.mu = [out.mu_results.mu_factor]';
-                mu_tbl = movevars(mu_tbl,'mu','before',1);
-                writetable(mu_tbl, fullfile(recdir,'mu_results.csv'));
-            catch
-            end
+            mu_tbl = struct2table(arrayfun(@(s) s.metr, out.mu_results));
+            mu_tbl.mu = [out.mu_results.mu_factor]';
+            mu_tbl = movevars(mu_tbl,'mu','before',1);
+            safe_write(mu_tbl, fullfile(recdir,'mu_results.csv'));
         end
         % metrics_win.csv
-        try
-            m = out.metr;
-            mu_mode = Utils.getfield_default(out,'mu_mode','nominal');   % label only
-            mu_used = Utils.getfield_default(out,'mu_used',1.0);
-            mstruct = struct('PFA_top',m.PFA_top,'IDR_max',m.IDR_max, ...
-                             'dP95',m.dP_orf_q95,'Qcap95',m.Qcap_ratio_q95, ...
-                             'cav_pct',m.cav_pct,'T_end',out.T_end,'mu_end',out.mu_end);
-            % append PF meta if present in OUT
-            if isfield(out,'PF_t_on'),       mstruct.PF_t_on = out.PF_t_on; end
-            if isfield(out,'PF_tau'),        mstruct.PF_tau = out.PF_tau; end
-            if isfield(out,'PF_gain'),       mstruct.PF_gain = out.PF_gain; end
-            if isfield(out,'PF_mode'),       mstruct.PF_mode = out.PF_mode; end
-            if isfield(out,'PF_auto_t_on'),  mstruct.PF_auto_t_on = out.PF_auto_t_on; end
-            mstruct.mu_mode = mu_mode; mstruct.mu_used = mu_used;
-            if isfield(m,'E_orifice_win'), mstruct.E_orf_win = m.E_orifice_win; end
-            if isfield(m,'E_struct_win'), mstruct.E_struct_win = m.E_struct_win; end
-            metr_tbl = struct2table(mstruct);
-            writetable(metr_tbl, fullfile(recdir,'metrics_win.csv'));
-        catch
-        end
+        m = out.metr;
+        mu_mode = Utils.getfield_default(out,'mu_mode','nominal');   % label only
+        mu_used = Utils.getfield_default(out,'mu_used',1.0);
+        mstruct = struct('PFA_top',m.PFA_top,'IDR_max',m.IDR_max, ...
+                         'dP95',m.dP_orf_q95,'Qcap95',m.Qcap_ratio_q95, ...
+                         'cav_pct',m.cav_pct,'T_end',out.T_end,'mu_end',out.mu_end);
+        % append PF meta if present in OUT
+        if isfield(out,'PF_t_on'),       mstruct.PF_t_on = out.PF_t_on; end
+        if isfield(out,'PF_tau'),        mstruct.PF_tau = out.PF_tau; end
+        if isfield(out,'PF_gain'),       mstruct.PF_gain = out.PF_gain; end
+        if isfield(out,'PF_mode'),       mstruct.PF_mode = out.PF_mode; end
+        if isfield(out,'PF_auto_t_on'),  mstruct.PF_auto_t_on = out.PF_auto_t_on; end
+        mstruct.mu_mode = mu_mode; mstruct.mu_used = mu_used;
+        if isfield(m,'E_orifice_win'), mstruct.E_orf_win = m.E_orifice_win; end
+        if isfield(m,'E_struct_win'), mstruct.E_struct_win = m.E_struct_win; end
+        metr_tbl = struct2table(mstruct);
+        safe_write(metr_tbl, fullfile(recdir,'metrics_win.csv'));
         % ts_ds.mat
         if isfield(out,'ts') && ~isempty(out.ts)
             try
@@ -165,7 +150,7 @@ for k = 1:numel(all_out)
     end
 end
 
-%% Policy results
+%% Politika Sonuçları
 if ~isempty(varargin)
     P = varargin{1};
     try
@@ -179,12 +164,12 @@ if ~isempty(varargin)
         T_end_worst_max = arrayfun(@(s) max(s.summary.T_end_worst), P)';
         idx_tbl = table(pol, ord, cd, qc_rate, PFA_w_mean, IDR_w_mean, dP95_worst_max, T_end_worst_max, ...
             'VariableNames',{'policy','order','cooldown_s','qc_rate','PFA_w_mean','IDR_w_mean','dP95_worst_max','T_end_worst_max'});
-        writetable(idx_tbl, fullfile(outdir,'policy_index.csv'));
+        safe_write(idx_tbl, fullfile(outdir,'policy_index.csv'));
         for i = 1:numel(P)
             fname = sprintf('policy_%s_%s_cd%s.csv', ...
                 Utils.sanitize_name(P(i).policy), Utils.sanitize_name(P(i).order), ...
                 Utils.sanitize_name(num2str(P(i).cooldown_s)));
-            writetable(P(i).summary, fullfile(outdir,fname));
+            safe_write(P(i).summary, fullfile(outdir,fname));
         end
     catch
     end
@@ -203,4 +188,16 @@ function Cth = compute_Cth_effective(params)
     m_oil_tot = sum(multi) * (params.rho * V_oil_per);
     m_steel_tot = params.steel_to_oil_mass_ratio * m_oil_tot;
     Cth = max(m_oil_tot*params.cp_oil + m_steel_tot*params.cp_steel, eps);
+end
+
+function safe_write(data, filepath)
+    try
+        [~,~,ext] = fileparts(filepath);
+        if strcmpi(ext,'.json')
+            Utils.writejson(data, filepath);
+        else
+            writetable(data, filepath);
+        end
+    catch
+    end
 end

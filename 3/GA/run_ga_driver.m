@@ -339,7 +339,7 @@ end
                 {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','A_o','Qcap_big'});
             top = [top; row]; %#ok<AGROW>
         end
-        writetable(top, fullfile(outdir,'ga_topK.csv'));
+        safe_write(top, fullfile(outdir,'ga_topK.csv'));
     end
 
     % Minimal README
@@ -715,7 +715,7 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
 end
 
 function write_pareto_results(T, outdir)
-    writetable(T, fullfile(outdir,'ga_front.csv'));
+    safe_write(T, fullfile(outdir,'ga_front.csv'));
     try
         f1v = T.f1; f2v = T.f2;
         f1n = (f1v - min(f1v)) / max(eps, (max(f1v)-min(f1v)));
@@ -725,10 +725,10 @@ function write_pareto_results(T, outdir)
         Tknee = T(kidx,:);
         try
             Tknee_full = [T(1,:); Tknee]; % assume T(1,:) is baseline just prepended
-            writetable(Tknee_full, fullfile(outdir,'ga_knee.csv'));
+            safe_write(Tknee_full, fullfile(outdir,'ga_knee.csv'));
         catch ME
             warning('write_pareto_results (knee export): %s', ME.message);
-            writetable(Tknee, fullfile(outdir,'ga_knee.csv'));
+            safe_write(Tknee, fullfile(outdir,'ga_knee.csv'));
         end
     catch ME
         warning('write_pareto_results (knee compute): %s', ME.message);
@@ -787,5 +787,17 @@ function P = decode_params_from_x(params0_, x_)
     if isfield(P,'cfg') && isfield(P.cfg,'PF')
         P.cfg.PF.tau  = PF_tau;
         P.cfg.PF.gain = PF_gain;
+    end
+end
+
+function safe_write(data, filepath)
+    try
+        [~,~,ext] = fileparts(filepath);
+        if strcmpi(ext,'.json')
+            Utils.writejson(data, filepath);
+        else
+            writetable(data, filepath);
+        end
+    catch
     end
 end
