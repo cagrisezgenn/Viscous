@@ -67,7 +67,7 @@ tbl = table(names, dt, dur, PGA, PGV, IM, sc, s_cl, trimmed, ...
 safe_write(tbl, fullfile(outdir,'scaled_index.csv'), @writetable);
 
 %% Özetler
-% Genel özet tablosunu kaydet
+% Genel özet tablosunu kaydet (zeta1_hot ve z2_over_z1_hot dahil)
 safe_write(summary.table, fullfile(outdir,'summary.csv'), @writetable);
 
 % Detaylı özet verisini .mat olarak sakla
@@ -106,7 +106,9 @@ for k = 1:numel(all_out)
         mu_used = Utils.getfield_default(out,'mu_used',1.0);
         mstruct = struct('PFA_top',m.PFA_top,'IDR_max',m.IDR_max, ...
                          'dP95',m.dP_orf_q95,'Qcap95',m.Qcap_ratio_q95, ...
-                         'cav_pct',m.cav_pct,'T_end',out.T_end,'mu_end',out.mu_end);
+                         'cav_pct',m.cav_pct,'T_end',out.T_end,'mu_end',out.mu_end, ...
+                         'zeta1_hot',Utils.getfield_default(m,'zeta1_hot',NaN), ...
+                         'z2_over_z1_hot',Utils.getfield_default(m,'z2_over_z1_hot',NaN));
         % OUT yapısında PF bilgisi varsa ekle
         if isfield(out,'PF_t_on'),       mstruct.PF_t_on = out.PF_t_on; end
         if isfield(out,'PF_tau'),        mstruct.PF_tau = out.PF_tau; end
