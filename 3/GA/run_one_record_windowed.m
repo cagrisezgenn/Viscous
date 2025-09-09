@@ -35,8 +35,8 @@ end
 
 % QC eşikleri (eksik alanlar varsayılanlarla doldurulur)
 if ~isfield(opts,'thr'), opts.thr = struct(); end
-opts.thr = Utils.default_qc_thresholds(opts.thr);
-thr = opts.thr;
+thr = Utils.default_qc_thresholds(opts.thr);
+opts.thr = thr;
 
 assert(numel(opts.mu_factors)==numel(opts.mu_weights), ...
     'mu_factors and mu_weights must have same length.');
@@ -46,7 +46,7 @@ assert(wsum>0,'mu_weights sum must be > 0.');
 mu_weights = mu_weights/wsum;
 mu_factors = opts.mu_factors(:)';
 
-%% Arias Penceresi
+%% Pencere Hazırlığı
 if isfield(opts,'window') && ~isempty(opts.window)
     wfields = fieldnames(opts.window);
     wargs = cell(1,2*numel(wfields));
@@ -59,7 +59,7 @@ else
     win = Utils.make_arias_window(rec.t, rec.ag);
 end
 
-% PF auto_t_on based on Arias t5 (before any solver call)
+% PF auto_t_on, Arias t5'e göre belirlenir (çözücü çağrısından önce)
 try
     if isfield(params,'cfg') && isfield(params.cfg,'PF') && ...
        isfield(params.cfg.PF,'auto_t_on') && params.cfg.PF.auto_t_on
@@ -74,8 +74,8 @@ try
         end
     end
 catch ME
-    warning('PF auto_t_on failed: %s', ME.message);
-    % leave params unchanged
+    warning('PF auto_t_on başarısız: %s', ME.message);
+    % parametreler değiştirilmeden bırakıldı
 end
 
 % ham ve ölçekli kayıt karşılaştırması kaldırıldı (üst seviyede kullanılmıyor)
@@ -88,7 +88,7 @@ else
     mode = 'each';
 end
 
-% compute thermal capacity for cooldown option
+% soğuma seçeneği için termal kapasite hesaplanır
 nStories = size(params.M,1) - 1;
 Rvec = params.toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
 mask = params.story_mask(:);  if numel(mask)==1, mask = mask*ones(nStories,1); end
@@ -126,7 +126,11 @@ switch mode
         Tinit = params.T0_C;
 end
 
-%% Çözücüler
+%% Sönümleyicisiz Çözüm
+% Lineer MCK sistemi sönümleyici olmadan çözülür.
+[x0, a_rel0] = Utils.lin_MCK(rec.t, rec.ag, params.M, params.C0, params.K); %#ok<NASGU>
+
+%% Damperli Çözüm
 % Damperli çözüm doğrudan mck_with_damper_ts fonksiyonu üzerinden yürütülür.
 
 nMu = numel(mu_factors);
@@ -160,12 +164,12 @@ for i = 1:nMu
     mu_results(i).qc.pass     = qc_pass;
 end
 
-% Nominal metrics (f=1)
+% Nominal metrikler (f=1)
 [~,nom_idx] = min(abs(mu_factors-1));
 metr = mu_results(nom_idx).metr;
 diag = mu_results(nom_idx).diag;
 
-% Log thermal/viscosity end states for nominal run
+% Nominal koşu için son termal ve viskozite durumları kaydedilir
 T_start = Tinit;
 if isfield(diag,'T_oil')
     T_end = diag.T_oil(end);
@@ -181,7 +185,7 @@ else
     mu_end = NaN;
 end
 
-% Weighted and worst-case summaries (metric-specific min/max where appropriate)
+% Ağırlıklı ve en kötü durum özetleri (metrik bazında uygun min/maks)
 fields = {'PFA_top','IDR_max','dP_orf_q95','dP_orf_q50','Q_q95','Q_q50','Qcap_ratio_q95', ...
           'cav_pct','T_oil_end','mu_end', 'x10_max_D','a10abs_max_D', ...
           'E_orifice_full','E_struct_full','E_ratio_full','PF_p95'};
@@ -191,12 +195,12 @@ worst.which_mu = struct();
 for kf = 1:numel(fields)
     fn = fields{kf};
     vals = arrayfun(@(s) s.metr.(fn), mu_results);
-    % weighted average for all
+    % tüm metrikler için ağırlıklı ortalama
     weighted.(fn) = sum(mu_weights(:)'.*vals);
-    % worst-case selection rule
+    % en kötü durum seçim kuralı
     switch fn
         case 'mu_end'
-            [worst.(fn), idx] = min(vals); % smaller viscosity is worst
+            [worst.(fn), idx] = min(vals); % daha küçük viskozite daha kötüdür
         otherwise
             [worst.(fn), idx] = max(vals);
     end
@@ -220,14 +224,14 @@ out.T_start = T_start;
 out.T_end = T_end;
 out.mu_end = mu_end;
 out.clamp_hits = clamp_hits;
-% convenience telemetry fields
+% kolaylık amaçlı telemetri alanları
 out.PFA_top = metr.PFA_top;
 out.IDR_max = metr.IDR_max;
 out.dP_orf_q95 = metr.dP_orf_q95;
 out.Qcap_ratio_q95 = metr.Qcap_ratio_q95;
 out.cav_pct = metr.cav_pct;
 out.t5 = win.t5; out.t95 = win.t95; out.coverage = win.coverage;
-% chosen PF ramp onset (if set)
+% ayarlanmışsa PF rampasının başlangıcı
 try
     if isfield(params,'cfg') && isfield(params.cfg,'PF')
         if isfield(params.cfg.PF,'t_on')
@@ -247,7 +251,7 @@ try
         end
     end
 catch ME
-    warning('PF telemetry capture failed: %s', ME.message);
+    warning('PF telemetri yakalama başarısız: %s', ME.message);
 end
 end
 
