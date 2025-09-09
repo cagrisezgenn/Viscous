@@ -42,7 +42,7 @@ T1 = 2*pi/w(1);
 %% --- 2) Damper geometrisi ve malzeme ---
 Dp     = 0.125;     % Piston çapı [m]
 Lgap   = 0.055;     % Dış gövde/piston aralığı [m]
-d_o    = 1.5e-3;    % Orifis çapı [m]
+d_o    = 3.0e-3;    % Orifis çapı [m]
 Lori   = 0.10;      % Orifis uzunluğu [m]
 mu_ref = 0.9;       % Referans viskozite [Pa·s]
 
@@ -84,10 +84,18 @@ orf.bounds.Cd0   = [0.50 0.70];      % Cd0 için sınırlar
 orf.bounds.CdInf = [0.75 0.95];      % CdInf için sınırlar
 orf.bounds.p_exp = [0.80 1.40];      % p_exp için sınırlar
 
-% Ek GA sınırları
-bounds.Lori   = [0.06 0.14];         % Orifis uzunluğu [m]
-bounds.c_lam0 = [2e7 4e7];          % Laminer sönüm [N·s/m]
+% GA sınırları (karar değişkenleri)
+bounds.d_o_mm    = [2.80 3.60];      % Orifis çapı [mm]
+bounds.n_orf     = [5 8];            % Orifis adedi [-]
+bounds.PF_tau    = [0.95 1.10];      % PF zaman sabiti [s]
+bounds.PF_gain   = [0.78 0.90];      % PF kazancı [-]
+bounds.Lori_mm   = [60 140];         % Orifis uzunluğu [mm]
 bounds.hA_W_perK = [200 800];       % Konvektif ısı kaybı [W/K]
+bounds.Dp_mm     = [100 160];        % Piston çapı [mm]
+bounds.d_w_mm    = [8 16];           % Yay teli çapı [mm]
+bounds.D_m_mm    = [60 100];         % Yay orta çapı [mm]
+bounds.n_turn    = [6 12];           % Yay tur sayısı [-]
+bounds.mu_ref    = [0.60 1.20];      % Referans viskozite [Pa·s]
 
 % Akış satürasyonu (sayısal kararlılık için)
 Qcap_big = max(orf.CdInf*A_o, 1e-9) * sqrt(2*1.0e9/rho);
@@ -122,8 +130,8 @@ c_lam_min      = max(c_lam_min_abs, c_lam_min_frac*c_lam0);
 % Basınç-kuvvet filtresi (PF) ayarları
 cfg = struct();
 cfg.PF.mode      = 'ramp';
-cfg.PF.tau       = 0.05;
-cfg.PF.gain      = 1.0;
+cfg.PF.tau       = 1.0;
+cfg.PF.gain      = 0.85;
 cfg.PF.t_on      = 0;
 cfg.PF.auto_t_on = true;
 cfg.on.pressure_force     = true;

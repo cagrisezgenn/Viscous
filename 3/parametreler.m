@@ -42,7 +42,7 @@ T1 = 2*pi/w(1);
 %% --- 2) Damper geometrisi ve malzeme ---
 Dp     = 0.125;     % Piston çapı [m]
 Lgap   = 0.055;     % Dış gövde/piston aralığı [m]
-d_o    = 1.5e-3;    % Orifis çapı [m]
+d_o    = 3.0e-3;    % Orifis çapı [m]
 Lori   = 0.10;      % Orifis uzunluğu [m]
 mu_ref = 0.9;       % Referans viskozite [Pa·s]
 
@@ -112,8 +112,8 @@ c_lam_min      = max(c_lam_min_abs, c_lam_min_frac*c_lam0);
 % Basınç-kuvvet filtresi (PF) ayarları
 cfg = struct();
 cfg.PF.mode      = 'ramp';
-cfg.PF.tau       = 0.05;
-cfg.PF.gain      = 1.0;
+cfg.PF.tau       = 1.0;
+cfg.PF.gain      = 0.85;
 cfg.PF.t_on      = 0;
 cfg.PF.auto_t_on = true;
 cfg.on.pressure_force     = true;

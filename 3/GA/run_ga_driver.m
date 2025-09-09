@@ -89,7 +89,8 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
                     'c_lam_min',c_lam_min,'c_lam_cap',c_lam_cap,'Lgap',Lgap, ...
                     'cp_oil',cp_oil,'cp_steel',cp_steel,'steel_to_oil_mass_ratio',steel_to_oil_mass_ratio, ...
                     'toggle_gain',toggle_gain,'story_mask',story_mask,'n_dampers_per_story',n_dampers_per_story, ...
-                    'resFactor',resFactor,'cfg',cfg,'story_height',story_height);
+                    'resFactor',resFactor,'cfg',cfg,'story_height',story_height, ...
+                    'Dp',Dp,'d_w',d_w,'D_m',D_m,'n_turn',n_turn,'Kd',Kd,'Ebody',Ebody,'Gsh',Gsh);
                 % Kullanıcı kolaylığı için temel çalışma alanına aktar
                 try
                     assignin('base','scaled',scaled);
@@ -121,10 +122,10 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     if nargin < 4 || isempty(optsGA), optsGA = struct; end
     rng(42);
 
-    % Karar vektörü: [d_o_mm, n_orf, g_lo, g_mid, g_hi, PF_tau, PF_gain, Cd0, CdInf, p_exp, Lori_mm, c_lam0_e7, hA_W_perK]
-    lb = [2.80, 5, 3.60, 3.80, 1.50, 0.95, 0.78, 0.50, 0.75, 0.80, 60, 2.0, 200];
-    ub = [3.60, 6, 4.00, 4.00, 3.60, 1.10, 0.90, 0.70, 0.95, 1.40, 140, 4.0, 800];
-    IntCon = 2;  % yalnız n_orf tam sayı
+    % Karar vektörü: [d_o_mm, n_orf, PF_tau, PF_gain, Cd0, CdInf, p_exp, Lori_mm, hA_W_perK, Dp_mm, d_w_mm, D_m_mm, n_turn, mu_ref]
+    lb = [2.80, 5, 0.95, 0.78, 0.50, 0.75, 0.80, 60, 200, 100, 8, 60, 6, 0.60];
+    ub = [3.60, 8, 1.10, 0.90, 0.70, 0.95, 1.40, 140, 800, 160, 16, 100, 12, 1.20];
+    IntCon = [2 13];  % n_orf ve n_turn tam sayı
 
     % Veri seti imzası üret (önbellek anahtarı)
     try
@@ -151,12 +152,12 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     % Izgaraya hizalı ilk popülasyonu oluştur (tohumlarla birlikte).
     try
         if ~isfield(optsGA,'InitialPopulationMatrix') || isempty(optsGA.InitialPopulationMatrix)
-            step_vec = [0.1 NaN 0.05 0.05 0.05 0.05 0.02 0.01 0.01 0.05 1 0.1 25];
+            step_vec = [0.1 NaN 0.01 0.02 0.01 0.01 0.05 1 25 1 0.5 5 NaN 0.05];
             P0 = Utils.initial_pop_grid(lb, ub, options.PopulationSize, step_vec);
             % Tohumlar (yeni sınırlar içinde uygulanabilir)
-            seed = [ 2.80 5 3.60 3.80 1.50 0.95 0.78 0.61 0.80 1.10 100 3.0 450;
-                     3.20 5 3.80 3.90 2.50 1.00 0.82 0.61 0.80 1.10 100 3.0 450;
-                     3.60 6 4.00 4.00 3.60 1.10 0.90 0.61 0.80 1.10 100 3.0 450 ];
+            seed = [ 2.80 5 1.00 0.85 0.61 0.80 1.10 100 450 125 12 80 8 0.90;
+                     3.20 5 1.00 0.85 0.61 0.80 1.10 100 450 125 12 80 8 0.90;
+                     3.60 6 1.00 0.85 0.61 0.80 1.10 100 450 125 12 80 8 0.90 ];
             ns = min(size(seed,1), size(P0,1));
             P0(1:ns,:) = seed(1:ns,:);
             % Önceki Pareto'yu kullanmak için en son ga_front.csv dosyasını okumayı dene
@@ -167,7 +168,7 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
                     latest = fullfile(dd(ix).folder, dd(ix).name, 'ga_front.csv');
                     if exist(latest,'file')
                         Tprev = readtable(latest);
-                        cols = {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','c_lam0_e7','hA_W_perK'};
+                        cols = {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref'};
                         if all(ismember(cols, Tprev.Properties.VariableNames))
                             Xprev = Tprev{:, cols};
                             % mevcut ızgaraya sıkıştır ve nicemle
@@ -376,7 +377,7 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
 
     % Satır başına dizilerden T tablosunu oluştur
     T = array2table([X F pen pen_dP pen_Qcap pen_cav pen_T pen_mu], 'VariableNames', ...
-       {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','c_lam0_e7','hA_W_perK', ...
+       {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref', ...
         'f1','f2','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu'});
 
     T.x10_max_damperli    = x10pk;
@@ -410,10 +411,10 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
         for i = 1:numel(idx)
             P = params_list{i};
             row = table(P.orf.d_o*1e3, P.n_orf, ...
-                X(idx(i),3),X(idx(i),4),X(idx(i),5),X(idx(i),6),X(idx(i),7), ...
-                P.orf.Cd0, P.orf.CdInf, P.orf.p_exp, X(idx(i),11), X(idx(i),12), X(idx(i),13), ...
+                X(idx(i),3), X(idx(i),4), X(idx(i),5), X(idx(i),6), X(idx(i),7), X(idx(i),8), ...
+                X(idx(i),9), X(idx(i),10), X(idx(i),11), X(idx(i),12), X(idx(i),13), X(idx(i),14), ...
                 P.A_o, P.Qcap_big, 'VariableNames', ...
-                {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','c_lam0_e7','hA_W_perK','A_o','Qcap_big'});
+                {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref','A_o','Qcap_big'});
             top = [top; row]; %#ok<AGROW>
         end
         safe_write(top, fullfile(outdir,'ga_topK.csv'), @writetable);
@@ -438,45 +439,36 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     x = x(:)';
     % kuantize et
     x(1) = Utils.quantize_step(x(1),0.05);  % d_o_mm
-    x(3) = Utils.quantize_step(x(3),0.05);  % g_lo
-    x(4) = Utils.quantize_step(x(4),0.05);  % g_mid
-    x(5) = Utils.quantize_step(x(5),0.05);  % g_hi
-    x(6) = Utils.quantize_step(x(6),0.01);  % PF_tau
-    x(7) = Utils.quantize_step(x(7),0.02);  % PF_gain
-    x(8) = Utils.quantize_step(x(8),0.01);  % Cd0
-    x(9) = Utils.quantize_step(x(9),0.01);  % CdInf
-    x(10)= Utils.quantize_step(x(10),0.05); % p_exp
-    if numel(x) >= 11
-        x(11)= Utils.quantize_step(x(11),1);    % Lori_mm
-    end
-    if numel(x) >= 12
-        x(12)= Utils.quantize_step(x(12),0.1);  % c_lam0_e7
-    end
-    if numel(x) >= 13
-        x(13)= Utils.quantize_step(x(13),25);   % hA_W_perK
-    end
-    x(2) = round(max(x(2),1));              % n_orf tam sayı, >=1
+    x(3) = Utils.quantize_step(x(3),0.01);  % PF_tau
+    x(4) = Utils.quantize_step(x(4),0.02);  % PF_gain
+    x(5) = Utils.quantize_step(x(5),0.01);  % Cd0
+    x(6) = Utils.quantize_step(x(6),0.01);  % CdInf
+    x(7) = Utils.quantize_step(x(7),0.05);  % p_exp
+    if numel(x) >= 8,  x(8)  = Utils.quantize_step(x(8),1);   end % Lori_mm
+    if numel(x) >= 9,  x(9)  = Utils.quantize_step(x(9),25);  end % hA_W_perK
+    if numel(x) >=10,  x(10) = Utils.quantize_step(x(10),1);  end % Dp_mm
+    if numel(x) >=11,  x(11) = Utils.quantize_step(x(11),0.5);end % d_w_mm
+    if numel(x) >=12,  x(12) = Utils.quantize_step(x(12),5);  end % D_m_mm
+    if numel(x) >=13,  x(13) = round(x(13));                end % n_turn
+    if numel(x) >=14,  x(14) = Utils.quantize_step(x(14),0.05); end % mu_ref
+    x(2)  = round(max(x(2),1));        % n_orf tam sayı, >=1
+    if numel(x) >=13, x(13) = round(max(x(13),1)); end
 
     % Kuantizasyondan sonra GA sınırlarına sıkıştır
     x(1) = min(max(x(1), 2.80), 3.60);
-    x(2) = min(max(x(2), 5), 6);
-    x(3) = min(max(x(3), 3.60), 4.00);
-    x(4) = min(max(x(4), 3.80), 4.00);
-    x(5) = min(max(x(5), 1.50), 3.60);
-    x(6) = min(max(x(6), 0.95), 1.10);
-    x(7) = min(max(x(7), 0.78), 0.90);
-    x(8) = min(max(x(8), 0.50), 0.70);
-    x(9) = min(max(x(9), 0.75), 0.95);
-    x(10)= min(max(x(10),0.80), 1.40);
-    if numel(x) >= 11
-        x(11)= min(max(x(11),60),140);
-    end
-    if numel(x) >= 12
-        x(12)= min(max(x(12),2.0),4.0);
-    end
-    if numel(x) >= 13
-        x(13)= min(max(x(13),200),800);
-    end
+    x(2) = min(max(x(2), 5), 8);
+    x(3) = min(max(x(3), 0.95), 1.10);
+    x(4) = min(max(x(4), 0.78), 0.90);
+    x(5) = min(max(x(5), 0.50), 0.70);
+    x(6) = min(max(x(6), 0.75), 0.95);
+    x(7) = min(max(x(7), 0.80), 1.40);
+    if numel(x) >= 8,  x(8)  = min(max(x(8),60),140);  end
+    if numel(x) >= 9,  x(9)  = min(max(x(9),200),800); end
+    if numel(x) >=10,  x(10) = min(max(x(10),100),160);end
+    if numel(x) >=11,  x(11) = min(max(x(11),8),16);   end
+    if numel(x) >=12,  x(12) = min(max(x(12),60),100); end
+    if numel(x) >=13,  x(13) = min(max(x(13),6),12);   end
+    if numel(x) >=14,  x(14) = min(max(x(14),0.60),1.20); end
 
     persistent memo;
     if isempty(memo), memo = containers.Map(); end
@@ -695,70 +687,71 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             warning('n_orf çıkarılamadı: %s', ME.message);
             X0(2) = 5;
         end
-        % g_lo, g_mid, g_hi from toggle_gain if available
-        try
-            if isfield(params,'toggle_gain') && ~isempty(params.toggle_gain)
-                tg = params.toggle_gain(:);
-                nStories = numel(tg);
-                loN = min(3, nStories);
-                hiN = min(2, nStories);
-                midStart = min(loN+1, nStories);
-                midEnd   = max(nStories-hiN, midStart);
-                midIdx   = midStart:midEnd;
-                if isempty(midIdx)
-                    midIdx = min(round(nStories/2), nStories);
-                end
-                X0(3) = mean(tg(1:loN));
-                X0(4) = mean(tg(midIdx));
-                X0(5) = mean(tg(max(end-hiN+1,1):end));
-            else
-                X0(3:5) = [3.90 3.95 1.50];
-            end
-        catch ME
-            warning('toggle_gain bilgisi okunamadı: %s', ME.message);
-            X0(3:5) = [3.90 3.95 1.50];
-        end
         % PF parameters
         try
             if isfield(params,'cfg') && isfield(params.cfg,'PF')
-                X0(6) = Utils.getfield_default(params.cfg.PF,'tau',0.97);
-                X0(7) = Utils.getfield_default(params.cfg.PF,'gain',0.90);
+                X0(3) = Utils.getfield_default(params.cfg.PF,'tau',1.0);
+                X0(4) = Utils.getfield_default(params.cfg.PF,'gain',0.85);
             else
-                X0(6:7) = [0.97 0.90];
+                X0(3:4) = [1.0 0.85];
             end
         catch ME
             warning('PF parametreleri okunamadı: %s', ME.message);
-            X0(6:7) = [0.97 0.90];
+            X0(3:4) = [1.0 0.85];
         end
 
         % Orifis katsayıları
         try
-            X0(8)  = Utils.getfield_default(params.orf,'Cd0',0.61);
-            X0(9)  = Utils.getfield_default(params.orf,'CdInf',0.80);
-            X0(10) = Utils.getfield_default(params.orf,'p_exp',1.10);
+            X0(5) = Utils.getfield_default(params.orf,'Cd0',0.61);
+            X0(6) = Utils.getfield_default(params.orf,'CdInf',0.80);
+            X0(7) = Utils.getfield_default(params.orf,'p_exp',1.10);
         catch ME
             warning('Orifis katsayıları okunamadı: %s', ME.message);
-            X0(8:10) = [0.61 0.80 1.10];
+            X0(5:7) = [0.61 0.80 1.10];
         end
 
-        % Lori, c_lam0 ve hA
+        % Lori, hA ve geometri
         try
-            X0(11) = Utils.getfield_default(params,'Lori',0.10)*1e3;
+            X0(8) = Utils.getfield_default(params,'Lori',0.10)*1e3;
         catch ME
             warning('Lori okunamadı: %s', ME.message);
-            X0(11) = 100;
+            X0(8) = 100;
         end
         try
-            X0(12) = Utils.getfield_default(params,'c_lam0',3e7)/1e7;
-        catch ME
-            warning('c_lam0 okunamadı: %s', ME.message);
-            X0(12) = 3;
-        end
-        try
-            X0(13) = Utils.getfield_default(params.thermal,'hA_W_perK',450);
+            X0(9) = Utils.getfield_default(params.thermal,'hA_W_perK',450);
         catch ME
             warning('hA_W_perK okunamadı: %s', ME.message);
-            X0(13) = 450;
+            X0(9) = 450;
+        end
+        try
+            X0(10) = Utils.getfield_default(params,'Dp',0.125)*1e3;
+        catch ME
+            warning('Dp okunamadı: %s', ME.message);
+            X0(10) = 125;
+        end
+        try
+            X0(11) = Utils.getfield_default(params,'d_w',0.012)*1e3;
+        catch ME
+            warning('d_w okunamadı: %s', ME.message);
+            X0(11) = 12;
+        end
+        try
+            X0(12) = Utils.getfield_default(params,'D_m',0.080)*1e3;
+        catch ME
+            warning('D_m okunamadı: %s', ME.message);
+            X0(12) = 80;
+        end
+        try
+            X0(13) = Utils.getfield_default(params,'n_turn',8);
+        catch ME
+            warning('n_turn okunamadı: %s', ME.message);
+            X0(13) = 8;
+        end
+        try
+            X0(14) = Utils.getfield_default(params,'mu_ref',0.9);
+        catch ME
+            warning('mu_ref okunamadı: %s', ME.message);
+            X0(14) = 0.9;
         end
 
         % Simulate baseline with same post-eval options
@@ -793,17 +786,18 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         % karar değişkenleri
         assign('d_o_mm',  X0(1));
         assign('n_orf',   X0(2));
-        assign('g_lo',    X0(3));
-        assign('g_mid',   X0(4));
-        assign('g_hi',    X0(5));
-        assign('PF_tau',  X0(6));
-        assign('PF_gain', X0(7));
-        assign('Cd0',     X0(8));
-        assign('CdInf',   X0(9));
-        assign('p_exp',   X0(10));
-        assign('Lori_mm', X0(11));
-        assign('c_lam0_e7', X0(12));
-        assign('hA_W_perK', X0(13));
+        assign('PF_tau',  X0(3));
+        assign('PF_gain', X0(4));
+        assign('Cd0',     X0(5));
+        assign('CdInf',   X0(6));
+        assign('p_exp',   X0(7));
+        assign('Lori_mm', X0(8));
+        assign('hA_W_perK', X0(9));
+        assign('Dp_mm',   X0(10));
+        assign('d_w_mm',  X0(11));
+        assign('D_m_mm',  X0(12));
+        assign('n_turn',  X0(13));
+        assign('mu_ref',  X0(14));
 
         % amaç fonksiyonları
         assign('f1', f0(1));
@@ -949,43 +943,34 @@ function xq = quant_clamp_x(x)
     % Apply the same quantization/clamps as in eval
     x = x(:)';
     x(1) = Utils.quantize_step(x(1),0.05);
-    x(3) = Utils.quantize_step(x(3),0.05);
-    x(4) = Utils.quantize_step(x(4),0.05);
-    x(5) = Utils.quantize_step(x(5),0.05);
+    x(3) = Utils.quantize_step(x(3),0.01);
+    x(4) = Utils.quantize_step(x(4),0.02);
+    x(5) = Utils.quantize_step(x(5),0.01);
     x(6) = Utils.quantize_step(x(6),0.01);
-    x(7) = Utils.quantize_step(x(7),0.02);
-    x(8) = Utils.quantize_step(x(8),0.01);
-    x(9) = Utils.quantize_step(x(9),0.01);
-    x(10)= Utils.quantize_step(x(10),0.05);
-    if numel(x) >= 11
-        x(11)= Utils.quantize_step(x(11),1);   % Lori_mm
-    end
-    if numel(x) >= 12
-        x(12)= Utils.quantize_step(x(12),0.1); % c_lam0_e7
-    end
-    if numel(x) >= 13
-        x(13)= Utils.quantize_step(x(13),25);  % hA_W_perK
-    end
+    x(7) = Utils.quantize_step(x(7),0.05);
+    if numel(x) >= 8,  x(8)  = Utils.quantize_step(x(8),1);   end
+    if numel(x) >= 9,  x(9)  = Utils.quantize_step(x(9),25);  end
+    if numel(x) >=10,  x(10) = Utils.quantize_step(x(10),1);  end
+    if numel(x) >=11,  x(11) = Utils.quantize_step(x(11),0.5);end
+    if numel(x) >=12,  x(12) = Utils.quantize_step(x(12),5);  end
+    if numel(x) >=13,  x(13) = round(x(13));                end
+    if numel(x) >=14,  x(14) = Utils.quantize_step(x(14),0.05); end
     x(2) = round(max(x(2),1));
+    if numel(x) >=13, x(13) = round(max(x(13),1)); end
     x(1) = min(max(x(1), 2.80), 3.60);
-    x(2) = min(max(x(2), 5), 6);
-    x(3) = min(max(x(3), 3.60), 4.00);
-    x(4) = min(max(x(4), 3.80), 4.00);
-    x(5) = min(max(x(5), 1.50), 3.60);
-    x(6) = min(max(x(6), 0.95), 1.10);
-    x(7) = min(max(x(7), 0.78), 0.90);
-    x(8) = min(max(x(8), 0.50), 0.70);
-    x(9) = min(max(x(9), 0.75), 0.95);
-    x(10)= min(max(x(10),0.80), 1.40);
-    if numel(x) >= 11
-        x(11)= min(max(x(11),60),140);
-    end
-    if numel(x) >= 12
-        x(12)= min(max(x(12),2.0),4.0);
-    end
-    if numel(x) >= 13
-        x(13)= min(max(x(13),200),800);
-    end
+    x(2) = min(max(x(2), 5), 8);
+    x(3) = min(max(x(3), 0.95), 1.10);
+    x(4) = min(max(x(4), 0.78), 0.90);
+    x(5) = min(max(x(5), 0.50), 0.70);
+    x(6) = min(max(x(6), 0.75), 0.95);
+    x(7) = min(max(x(7), 0.80), 1.40);
+    if numel(x) >= 8,  x(8)  = min(max(x(8),60),140);  end
+    if numel(x) >= 9,  x(9)  = min(max(x(9),200),800); end
+    if numel(x) >=10,  x(10) = min(max(x(10),100),160);end
+    if numel(x) >=11,  x(11) = min(max(x(11),8),16);   end
+    if numel(x) >=12,  x(12) = min(max(x(12),60),100); end
+    if numel(x) >=13,  x(13) = min(max(x(13),6),12);   end
+    if numel(x) >=14,  x(14) = min(max(x(14),0.60),1.20); end
     xq = x;
 end
 
@@ -1006,10 +991,11 @@ end
 
 function P = decode_params_from_x(params_base_, x_)
     d_o_mm = x_(1); n_orf = round(x_(2));
-    g_lo = x_(3); g_mid = x_(4); g_hi = x_(5);
-    PF_tau = x_(6); PF_gain = x_(7);
-    Cd0 = x_(8); CdInf = x_(9); p_exp = x_(10);
-    Lori_mm = x_(11); c_lam0_e7 = x_(12); hA_W_perK = x_(13);
+    PF_tau = x_(3); PF_gain = x_(4);
+    Cd0 = x_(5); CdInf = x_(6); p_exp = x_(7);
+    Lori_mm = x_(8); hA_W_perK = x_(9);
+    Dp_mm = x_(10); d_w_mm = x_(11); D_m_mm = x_(12);
+    n_turn = round(x_(13)); mu_ref = x_(14);
     P = params_base_;
     P.orf.d_o = d_o_mm * 1e-3;         % mm'den m'ye
     P.n_orf   = n_orf;
@@ -1017,20 +1003,27 @@ function P = decode_params_from_x(params_base_, x_)
     P.orf.Cd0   = Cd0;
     P.orf.CdInf = CdInf;
     P.orf.p_exp = p_exp;
-    P.Qcap_big= max(P.orf.CdInf * P.A_o, 1e-9) * sqrt(2 * 1.0e9 / P.rho);
     P.Lori   = Lori_mm * 1e-3;
-    P.c_lam0 = c_lam0_e7 * 1e7;
+    P.mu_ref = mu_ref;
+    P.Dp     = Dp_mm * 1e-3;
+    P.d_w    = d_w_mm * 1e-3;
+    P.D_m    = D_m_mm * 1e-3;
+    P.n_turn = n_turn;
     if isfield(P,'thermal')
         P.thermal.hA_W_perK = hA_W_perK;
     end
+    P.Ap    = pi * P.Dp^2 / 4;
+    P.k_h   = P.Kd * P.Ap^2 / P.Lgap;
+    P.k_s   = P.Ebody * P.Ap / P.Lgap;
+    P.k_hyd = 1 / (1/P.k_h + 1/P.k_s);
+    P.k_p   = P.Gsh * P.d_w^4 / (8 * P.n_turn * P.D_m^3);
+    P.k_sd  = P.k_hyd + P.k_p;
+    P.c_lam0 = 12 * P.mu_ref * P.Lori * P.Ap^2 / P.orf.d_o^4;
+    P.A_o   = P.n_orf * (pi * P.orf.d_o^2 / 4);
+    P.Qcap_big= max(P.orf.CdInf * P.A_o, 1e-9) * sqrt(2 * 1.0e9 / P.rho);
     if isfield(P,'c_lam_min_frac') && isfield(P,'c_lam_min_abs')
         P.c_lam_min = max(P.c_lam_min_abs, P.c_lam_min_frac * P.c_lam0);
     end
-    n  = size(P.M,1); nStories = n-1;
-    tg = ones(nStories,1) * g_mid;
-    loN = min(3, nStories); if loN > 0, tg(1:loN) = g_lo; end
-    hiN = min(2, nStories); if hiN > 0, tg(end-hiN+1:end) = g_hi; end
-    P.toggle_gain = tg;
     if isfield(P,'cfg') && isfield(P.cfg,'PF')
         P.cfg.PF.tau  = PF_tau;
         P.cfg.PF.gain = PF_gain;
