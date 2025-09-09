@@ -98,6 +98,15 @@ classdef Utils
             end
         end
 
+        %% Alan Mevcutsa Atama
+        function arr = assign_if_field(S, fname, arr, idx)
+            % Belirtilen alan mevcutsa değeri hedef dizinin idx konumuna atar.
+            % Örnek kullanım: Q = Utils.assign_if_field(m,'Q_q95',Q,k);
+            if isfield(S, fname)
+                arr(idx) = S.(fname);
+            end
+        end
+
         %% JSON Yazma
         function writejson(data, filename)
             % Verilen veriyi JSON dosyasına yazar.
