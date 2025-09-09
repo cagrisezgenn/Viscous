@@ -315,35 +315,30 @@ end
             warning('dP_orf_q50_worst okunamadı: %s', ME.message);
             v_dPq50 = 0;
         end
-        try
-            v_Toil  = Si.table.T_oil_end_worst;
-        catch ME
-            warning('T_oil_end_worst okunamadı: %s', ME.message);
+        if ismember('T_oil_end_worst', Si.table.Properties.VariableNames)
+            v_Toil = Si.table.T_oil_end_worst;
+        else
             v_Toil = [];
         end
-        try
-            v_Tsteel= Si.table.T_steel_end_worst;
-        catch ME
-            warning('T_steel_end_worst okunamadı: %s', ME.message);
+        if ismember('T_steel_end_worst', Si.table.Properties.VariableNames)
+            v_Tsteel = Si.table.T_steel_end_worst;
+        else
             v_Tsteel = [];
         end
 
-        try
+        if ismember('E_orifice_sum', Si.table.Properties.VariableNames)
             v_Eor = Si.table.E_orifice_sum;
-        catch ME
-            warning('E_orifice_sum okunamadı: %s', ME.message);
+        else
             v_Eor = 0;
         end
-        try
+        if ismember('E_struct_sum', Si.table.Properties.VariableNames)
             v_Est = Si.table.E_struct_sum;
-        catch ME
-            warning('E_struct_sum okunamadı: %s', ME.message);
+        else
             v_Est = 0;
         end
-        try
-            v_Pm  = Si.table.P_mech_sum;
-        catch ME
-            warning('P_mech_sum okunamadı: %s', ME.message);
+        if ismember('P_mech_sum', Si.table.Properties.VariableNames)
+            v_Pm = Si.table.P_mech_sum;
+        else
             v_Pm = 0;
         end
 
@@ -710,12 +705,17 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             if isfield(params,'toggle_gain') && ~isempty(params.toggle_gain)
                 tg = params.toggle_gain(:);
                 nStories = numel(tg);
-                loN = min(3, nStories); hiN = min(2, nStories);
-                midIdx = (loN+1) : max(nStories-hiN, loN+1);
-                if isempty(midIdx), midIdx = round(nStories/2); end
+                loN = min(3, nStories);
+                hiN = min(2, nStories);
+                midStart = min(loN+1, nStories);
+                midEnd   = max(nStories-hiN, midStart);
+                midIdx   = midStart:midEnd;
+                if isempty(midIdx)
+                    midIdx = min(round(nStories/2), nStories);
+                end
                 X0(3) = mean(tg(1:loN));
                 X0(4) = mean(tg(midIdx));
-                X0(5) = mean(tg(end-hiN+1:end));
+                X0(5) = mean(tg(max(end-hiN+1,1):end));
             else
                 X0(3:5) = [3.90 3.95 1.50];
             end
@@ -763,7 +763,8 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
 
         % Baz satırı için tablonun ilk satırını kopyala
         vn = T.Properties.VariableNames;
-        T0 = T(1,:); T0(:) = {nan};
+        T0 = T(1,:);
+        T0{1,:} = repmat({nan},1,width(T0));
 
         % T0'ya değer yazarken sütun tiplerini koru
 
