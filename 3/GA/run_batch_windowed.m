@@ -16,6 +16,7 @@ function [summary, all_out] = run_batch_windowed(scaled, params, opts)
 if nargin < 3, opts = struct(); end
 if ~isfield(opts,'mu_factors'), opts.mu_factors = [0.75 1.00 1.25]; end
 if ~isfield(opts,'mu_weights'), opts.mu_weights = [0.2 0.6 0.2]; end
+opts.thr = Utils.default_qc_thresholds(Utils.getfield_default(opts,'thr', struct()));
 
 do_export = isfield(opts,'do_export') && opts.do_export;
 if do_export
@@ -221,7 +222,7 @@ summary.all_out = all_out;
 %% QC Kontrolü
 % QC eşiklerine göre sonuçların değerlendirilmesi
 % --- QC flags and reason codes for summary.csv consumers ---
-thr = Utils.default_qc_thresholds(Utils.getfield_default(opts,'thr', struct()));
+thr = opts.thr;
 ok_T    = summary.table.T_end_worst   <= thr.T_end_max;
 ok_mu   = summary.table.mu_end_worst  >= thr.mu_end_min;
 ok_dP   = summary.table.dP95_worst    <= thr.dP95_max;

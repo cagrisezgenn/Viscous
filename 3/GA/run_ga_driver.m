@@ -127,7 +127,11 @@ end
     optsEval.thermal_reset = 'each';
     if ~isfield(optsEval,'mu_factors'), optsEval.mu_factors = meta.mu_factors; end
     if ~isfield(optsEval,'mu_weights'), optsEval.mu_weights = meta.mu_weights; end
-    if ~isfield(optsEval,'thr'),        optsEval.thr        = meta.thr; end
+    if ~isfield(optsEval,'thr')
+        optsEval.thr = meta.thr;
+    else
+        optsEval.thr = Utils.default_qc_thresholds(optsEval.thr);
+    end
     %% GA Kurulumu
     % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
     if nargin < 4 || isempty(optsGA), optsGA = struct; end
