@@ -221,19 +221,7 @@ summary.all_out = all_out;
 %% QC Kontrolü
 % QC eşiklerine göre sonuçların değerlendirilmesi
 % --- QC flags and reason codes for summary.csv consumers ---
-% Use thresholds from opts if provided, else defaults consistent with runners
-thr_default = struct('dP95_max',50e6,'Qcap95_max',0.5,'cav_pct_max',0,'T_end_max',75,'mu_end_min',0.5);
-if isfield(opts,'thr') && ~isempty(opts.thr)
-    thr = opts.thr;
-    fns = fieldnames(thr_default);
-    for ii=1:numel(fns)
-        if ~isfield(thr,fns{ii}) || isempty(thr.(fns{ii}))
-            thr.(fns{ii}) = thr_default.(fns{ii});
-        end
-    end
-else
-    thr = thr_default;
-end
+thr = Utils.default_qc_thresholds(Utils.getfield_default(opts,'thr', struct()));
 ok_T    = summary.table.T_end_worst   <= thr.T_end_max;
 ok_mu   = summary.table.mu_end_worst  >= thr.mu_end_min;
 ok_dP   = summary.table.dP95_worst    <= thr.dP95_max;

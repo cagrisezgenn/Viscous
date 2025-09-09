@@ -68,15 +68,13 @@ end
         meta.s_bounds   = Utils.getfield_default(S,'s_bounds',[]);
         meta.mu_factors = Utils.getfield_default(S,'mu_factors',[0.75 1.00 1.25]);
         meta.mu_weights = Utils.getfield_default(S,'mu_weights',[0.2 0.6 0.2]);
-        thr_default = Utils.default_qc_thresholds();
-        meta.thr       = Utils.getfield_default(S,'thr', thr_default);
+        meta.thr       = Utils.default_qc_thresholds(Utils.getfield_default(S,'thr', struct()));
     else
         scaled = scaledOrSnap_local;
         params = params_local;
-        thr_default = Utils.default_qc_thresholds();
         meta = struct('IM_mode','', 'band_fac',[], 's_bounds',[], ...
                       'mu_factors',[0.75 1.00 1.25], 'mu_weights',[0.2 0.6 0.2], ...
-                      'thr', thr_default);
+                      'thr', Utils.default_qc_thresholds());
         % Auto-prepare workspace if needed (no inputs provided)
         if (isempty(scaled) || isempty(params))
             try
