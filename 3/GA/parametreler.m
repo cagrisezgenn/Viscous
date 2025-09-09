@@ -87,6 +87,7 @@ orf.bounds.p_exp = [0.80 1.40];      % p_exp için sınırlar
 % Ek GA sınırları
 bounds.Lori   = [0.06 0.14];         % Orifis uzunluğu [m]
 bounds.c_lam0 = [2e7 4e7];          % Laminer sönüm [N·s/m]
+bounds.hA_W_perK = [200 800];       % Konvektif ısı kaybı [W/K]
 
 % Akış satürasyonu (sayısal kararlılık için)
 Qcap_big = max(orf.CdInf*A_o, 1e-9) * sqrt(2*1.0e9/rho);

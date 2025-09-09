@@ -38,6 +38,9 @@ if ~isfield(opts,'thr'), opts.thr = struct(); end
 thr = Utils.default_qc_thresholds(opts.thr);
 opts.thr = thr;
 
+assert(isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), ...
+    'run_one_record_windowed: params.thermal.hA_W_perK eksik');
+
 assert(numel(opts.mu_factors)==numel(opts.mu_weights), ...
     'mu_factors and mu_weights must have same length.');
 mu_weights = opts.mu_weights(:);
