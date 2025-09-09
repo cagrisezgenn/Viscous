@@ -53,6 +53,28 @@ abs_Q  = abs(ts.Q(idx,:));
 Qcap_ratio = abs_Q ./ max(params.Qcap_big, eps);
 abs_story_force = abs(ts.story_force(idx,:));
 
+% Reynolds sayısının pencere içindeki maksimumu
+try
+    if all(isfield(params,{'Qcap_big','Ap','A_o','rho','orf','diag'})) && ...
+            isfield(params.diag,'mu') && isfield(ts,'dvel') && ...
+            all(isfield(params.orf,{'veps','d_o'}))
+        dvel_win = ts.dvel(idx,:);
+        qmag = params.Qcap_big * tanh((params.Ap/params.Qcap_big) * ...
+            sqrt(dvel_win.^2 + params.orf.veps^2));
+        mu_win = params.diag.mu(idx);
+        mu_mat = repmat(mu_win,1,size(qmag,2));
+        Ao = params.A_o; if numel(Ao)==1, Ao = Ao*ones(1,size(qmag,2)); end
+        Ao_mat = repmat(Ao,size(qmag,1),1);
+        Re = (params.rho .* qmag ./ max(Ao_mat .* mu_mat,1e-9)) .* ...
+             max(params.orf.d_o,1e-9);
+        metr.Re_max = max(Re,[],'all');
+    else
+        metr.Re_max = NaN;
+    end
+catch
+    metr.Re_max = NaN;
+end
+
 % 50. ve 95. yüzdelik değerler
 dP_q50         = local_quantile(abs_dP, 0.50);
 dP_q95         = local_quantile(abs_dP, 0.95);
@@ -91,8 +113,11 @@ metr.energy_tot = metr.E_orifice_full + metr.E_struct_full;
 try
     if isfield(ts,'P_sum') && ~isempty(ts.P_sum)
         metr.P_mech = mean(ts.P_sum(idx));
+    else
+        metr.P_mech = NaN;
     end
 catch
+    metr.P_mech = NaN;
 end
 
 % Seçilen pencere içindeki enerji birikimleri
