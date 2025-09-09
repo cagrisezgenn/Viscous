@@ -144,37 +144,47 @@ for k = 1:n
     IDR_w(k)    = m_w.IDR_max;
     dP95_w(k)   = m_w.dP_orf_q95;
     Qcap95_w(k) = m_w.Qcap_ratio_q95;
-    if isfield(m_w,'Q_q95'),        Q_q95_w(k)  = m_w.Q_q95; end
-    if isfield(m_w,'Q_q50'),        Q_q50_w(k)  = m_w.Q_q50; end
-    if isfield(m_w,'dP_orf_q50'),   dP50_w(k)   = m_w.dP_orf_q50; end
+    fields  = {'Q_q95','Q_q50','dP_orf_q50'};
+    targets = {Q_q95_w, Q_q50_w, dP50_w};
+    for f = 1:numel(fields)
+        targets{f} = Utils.assign_if_field(m_w, fields{f}, targets{f}, k);
+    end
+    [Q_q95_w, Q_q50_w, dP50_w] = targets{:};
 
     m_ws = out.worst;
     PFA_worst(k)    = m_ws.PFA_top;
     IDR_worst(k)    = m_ws.IDR_max;
     dP95_worst(k)   = m_ws.dP_orf_q95;
     Qcap95_worst(k) = m_ws.Qcap_ratio_q95;
-    if isfield(m_ws,'Q_q95'),           Q_q95_worst(k)        = m_ws.Q_q95; end
-    if isfield(m_ws,'Q_q50'),           Q_q50_worst(k)        = m_ws.Q_q50; end
-    if isfield(m_ws,'dP_orf_q50'),      dP_orf_q50_worst(k)   = m_ws.dP_orf_q50; end
-    if isfield(m_ws,'PF_p95'),          PF_p95_worst(k)       = m_ws.PF_p95; end
+    fields  = {'Q_q95','Q_q50','dP_orf_q50','PF_p95'};
+    targets = {Q_q95_worst, Q_q50_worst, dP_orf_q50_worst, PF_p95_worst};
+    for f = 1:numel(fields)
+        targets{f} = Utils.assign_if_field(m_ws, fields{f}, targets{f}, k);
+    end
+    [Q_q95_worst, Q_q50_worst, dP_orf_q50_worst, PF_p95_worst] = targets{:};
     which_mu_PFA(k) = m_ws.which_mu.PFA_top;
     which_mu_IDR(k) = m_ws.which_mu.IDR_max;
     T_end_worst(k)  = m_ws.T_oil_end;
     mu_end_worst(k) = m_ws.mu_end;
     cav_pct_worst(k)= m_ws.cav_pct;
-    % Yeni: en kötü durum üst kat zarf metriklerini ata
-    if isfield(m_ws,'x10_max_D'),        x10_max_D_worst(k)    = m_ws.x10_max_D; end
-    if isfield(m_ws,'a10abs_max_D'),     a10abs_max_D_worst(k) = m_ws.a10abs_max_D; end
-    % En kötü durumda yeniden adlandırılmış alanlar yoksa tek pencere metriklerinden geri dönüş
-    if isfield(m_ws,'x10_pk_D') && ~isfield(m_ws,'x10_max_D')
-        x10_max_D_worst(k) = m_ws.x10_pk_D;
+    % Üst kat zarf metrikleri
+    fields  = {'x10_max_D','a10abs_max_D'};
+    targets = {x10_max_D_worst, a10abs_max_D_worst};
+    for f = 1:numel(fields)
+        targets{f} = Utils.assign_if_field(m_ws, fields{f}, targets{f}, k);
+        if ~isfield(m_ws, fields{f})
+            fallback = strrep(fields{f}, '_max_', '_pk_');
+            targets{f} = Utils.assign_if_field(m_ws, fallback, targets{f}, k);
+        end
     end
-    if isfield(m_ws,'a10abs_pk_D') && ~isfield(m_ws,'a10abs_max_D')
-        a10abs_max_D_worst(k) = m_ws.a10abs_pk_D;
+    [x10_max_D_worst, a10abs_max_D_worst] = targets{:};
+    % Enerji toplamları
+    fields  = {'E_orifice_full','E_struct_full','E_ratio_full'};
+    targets = {E_orifice_sum, E_struct_sum, E_ratio};
+    for f = 1:numel(fields)
+        targets{f} = Utils.assign_if_field(m_ws, fields{f}, targets{f}, k);
     end
-    if isfield(m_ws,'E_orifice_full'),    E_orifice_sum(k) = m_ws.E_orifice_full; end
-    if isfield(m_ws,'E_struct_full'),     E_struct_sum(k)  = m_ws.E_struct_full; end
-    if isfield(m_ws,'E_ratio_full'),      E_ratio(k)       = m_ws.E_ratio_full; end
+    [E_orifice_sum, E_struct_sum, E_ratio] = targets{:};
     qc_all_mu(k)    = out.qc_all_mu;
 
     valsPFA = arrayfun(@(s) s.metr.PFA_top, out.mu_results);
