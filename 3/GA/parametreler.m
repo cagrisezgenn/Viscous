@@ -79,6 +79,11 @@ orf.cav_sf    = 0.90;                % Kavitasyon emniyet katsayısı
 orf.d_o   = d_o;                     % Re düzeltmesi için çap [m]
 orf.veps  = 0.10;                    % Düşük hız yumuşatma [m/s]
 
+% Varsayılan GA alt/üst sınırları
+orf.bounds.Cd0   = [0.50 0.70];      % Cd0 için sınırlar
+orf.bounds.CdInf = [0.75 0.95];      % CdInf için sınırlar
+orf.bounds.p_exp = [0.80 1.40];      % p_exp için sınırlar
+
 % Akış satürasyonu (sayısal kararlılık için)
 Qcap_big = max(orf.CdInf*A_o, 1e-9) * sqrt(2*1.0e9/rho);
 

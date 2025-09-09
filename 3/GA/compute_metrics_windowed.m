@@ -50,7 +50,7 @@ metr.IDR_max = max(max(abs(drift(idx,:))));
 
 abs_dP = abs(ts.dP_orf(idx,:));
 abs_Q  = abs(ts.Q(idx,:));
-Qcap_ratio = ts.Qcap_ratio(idx,:);
+Qcap_ratio = abs_Q ./ max(params.Qcap_big, eps);
 abs_story_force = abs(ts.story_force(idx,:));
 
 % 50. ve 95. yüzdelik değerler
