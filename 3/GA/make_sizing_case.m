@@ -344,11 +344,8 @@ function [updates, T] = sizing_param_diff(P_old, P_sized, gainsPF, sizing)
     fprintf('===========================================================\n\n');
 
     % --- CSV yazımı -----------------------------------------------------
-    try
-        outdir = fullfile('out'); if ~exist(outdir,'dir'), mkdir(outdir); end
-        writetable(T, fullfile(outdir,'sizing_updates.csv'));
-    catch
-    end
+    outdir = fullfile('out'); if ~exist(outdir,'dir'), mkdir(outdir); end
+    safe_write(T, fullfile(outdir,'sizing_updates.csv'));
 
     % --- parametre.m'e yapıştırmalık satırlar --------------------------
     updates = struct(); updates.lines = {};
@@ -362,5 +359,17 @@ function [updates, T] = sizing_param_diff(P_old, P_sized, gainsPF, sizing)
         end
     end
     updates.toggle_gain_vec = new_tg;
+end
+
+function safe_write(data, filepath)
+    try
+        [~,~,ext] = fileparts(filepath);
+        if strcmpi(ext,'.json')
+            Utils.writejson(data, filepath);
+        else
+            writetable(data, filepath);
+        end
+    catch
+    end
 end
 
