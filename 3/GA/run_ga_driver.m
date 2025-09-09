@@ -457,19 +457,19 @@ end
     end
 end
 
-function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
-    % snap to grids
+function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
+    % ızgaralara oturt
     x = x(:)';
-    % quantize
+    % kuantize et
     x(1) = Utils.quantize_step(x(1),0.05);  % d_o_mm
     x(3) = Utils.quantize_step(x(3),0.05);  % g_lo
     x(4) = Utils.quantize_step(x(4),0.05);  % g_mid
     x(5) = Utils.quantize_step(x(5),0.05);  % g_hi
     x(6) = Utils.quantize_step(x(6),0.01);  % PF_tau
     x(7) = Utils.quantize_step(x(7),0.02);  % PF_gain
-    x(2) = round(max(x(2),1));              % n_orf integer, >=1
+    x(2) = round(max(x(2),1));              % n_orf tam sayı, >=1
 
-    % clamp to GA bounds to be safe after quantization
+    % Kuantizasyondan sonra GA sınırlarına sıkıştır
     x(1) = min(max(x(1), 2.80), 3.60);
     x(2) = min(max(x(2), 5), 6);
     x(3) = min(max(x(3), 3.60), 4.00);
@@ -480,7 +480,7 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
 
     persistent memo;
     if isempty(memo), memo = containers.Map(); end
-    % Add dataset salt so memo keys do not collide across different scaled sets
+    % Bellek anahtarlarının farklı veri setleri arasında çakışmaması için tuz ekle
     dsig = 0;
     try
         dsig = sum([scaled.IM]) + sum([scaled.PGA]);
@@ -493,7 +493,7 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
         meta = memo(key); f = meta.f; return;
     end
 
-    P = decode_params_from_x(params0, x);
+    P = decode_params_from_x(params_base, x);
 
     O = struct();
     if nargin >= 4 && ~isempty(optsEval), O = optsEval; end
@@ -505,14 +505,14 @@ function [f, meta] = eval_design_fast(x, scaled, params0, optsEval)
     if ~isfield(O,'mu_factors'), O.mu_factors = [0.75 1.00 1.25]; end
     if ~isfield(O,'mu_weights'), O.mu_weights = [0.2 0.6 0.2]; end
 
-    % safe evaluation (no IO during GA)
+    % Güvenli değerlendirme (GA sırasında IO yok)
     try
         S = run_batch_windowed(scaled, P, O);
     catch ME
         f = [1e6, 1e6];
         meta = struct('x',x,'f',f,'error','eval_failed', ...
                       'message',ME.message,'identifier',ME.identifier);
-        % --- penalties: force numeric (no NaNs) on failure
+        % --- cezalar: hata durumunda sayısal değerleri zorla (NaN olmasın)
         meta.pen      = 0;
         meta.pen_dP   = 0;
         meta.pen_Qcap = 0;
@@ -951,12 +951,12 @@ function out = memo_store(cmd, key, val)
     end
 end
 
-function P = decode_params_from_x(params0_, x_)
+function P = decode_params_from_x(params_base_, x_)
     d_o_mm = x_(1); n_orf = round(x_(2));
     g_lo = x_(3); g_mid = x_(4); g_hi = x_(5);
     PF_tau = x_(6); PF_gain = x_(7);
-    P = params0_;
-    P.orf.d_o = d_o_mm * 1e-3;         % mm -> m
+    P = params_base_;
+    P.orf.d_o = d_o_mm * 1e-3;         % mm'den m'ye
     P.n_orf   = n_orf;
     P.A_o     = P.n_orf * (pi * P.orf.d_o^2 / 4);
     P.Qcap_big= max(P.orf.CdInf * P.A_o, 1e-9) * sqrt(2 * 1.0e9 / P.rho);
