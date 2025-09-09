@@ -7,7 +7,7 @@ function export_results(outdir, scaled, params, opts, summary, all_out, varargin
 if nargin < 1 || isempty(outdir), return; end
 if ~exist(outdir,'dir'), mkdir(outdir); end
 
-%% Meta Kaydı
+%% Meta
 try
     % IM ve kırpma bilgileri (boşsa varsayılan değerler kullanılır)
     IM_mode  = Utils.getfield_default(opts,'IM_mode','band');
@@ -42,16 +42,13 @@ try
     end
 
     % snapshot.mat kaydı (P varsa dahil et)
+    snap = struct('params',params,'opts',opts,'scaled',scaled, ...
+                  'IM_mode',IM_mode,'band_fac',band_fac,'s_bounds',s_bounds, ...
+                  'TRIM_names',{TRIM_names},'params_derived',params_derived,'qc_meta',qc_meta);
     if ~isempty(varargin)
-        P = varargin{1}; %#ok<NASGU>
-        save(fullfile(outdir,'snapshot.mat'), ...
-             'params','opts','scaled','P', ...
-             'IM_mode','band_fac','s_bounds','TRIM_names','params_derived','qc_meta','-v7.3');
-    else
-        save(fullfile(outdir,'snapshot.mat'), ...
-             'params','opts','scaled', ...
-             'IM_mode','band_fac','s_bounds','TRIM_names','params_derived','qc_meta','-v7.3');
+        snap.P = varargin{1};
     end
+    safe_write(snap, fullfile(outdir,'snapshot.mat'), @(d,f) save(f,'-struct','d','-v7.3'));
 catch
 end
 
@@ -67,17 +64,15 @@ trimmed = arrayfun(@(s) Utils.getfield_default(s,'trimmed',0), scaled)';
 tbl = table(names, dt, dur, PGA, PGV, IM, sc, s_cl, trimmed, ...
     'VariableNames',{'name','dt','dur','PGA','PGV','IM','scale','s_clipped','trimmed'});
 % Ölçeklenmiş kayıt özetini CSV olarak yaz
-safe_write(tbl, fullfile(outdir,'scaled_index.csv'));
+safe_write(tbl, fullfile(outdir,'scaled_index.csv'), @writetable);
 
 %% Özetler
 % Genel özet tablosunu kaydet
-safe_write(summary.table, fullfile(outdir,'summary.csv'));
+safe_write(summary.table, fullfile(outdir,'summary.csv'), @writetable);
 
 % Detaylı özet verisini .mat olarak sakla
-try
-    save(fullfile(outdir,'summary_full.mat'), 'summary','all_out','-v7.3');
-catch
-end
+full_summary = struct('summary',summary,'all_out',{all_out});
+safe_write(full_summary, fullfile(outdir,'summary_full.mat'), @(d,f) save(f,'-struct','d','-v7.3'));
 
 % Kalite kontrol sonuçlarını yaz
 pass = sum(summary.table.qc_all_mu);
@@ -85,9 +80,8 @@ fail = height(summary.table) - pass;
 [~,idx] = maxk(summary.table.PFA_worst, min(3,height(summary.table)));
 worst = summary.table.name(idx);
 qc_tbl = table(pass, fail, worst, 'VariableNames',{'pass','fail','worst'});
-safe_write(qc_tbl, fullfile(outdir,'qc_summary.csv'));
-
-%% Kayıt Detayları
+safe_write(qc_tbl, fullfile(outdir,'qc_summary.csv'), @writetable);
+%% Kayıt Bazlı
 % Her kayıt için ayrı klasör ve detay dosyaları oluştur
 for k = 1:numel(all_out)
     out = all_out{k};
@@ -98,13 +92,13 @@ for k = 1:numel(all_out)
         w = out.win;
         win_struct = struct('t5',w.t5,'t95',w.t95,'pad',Utils.getfield_default(w,'pad',0), ...
                             'coverage',w.coverage);
-        safe_write(win_struct, fullfile(recdir,'window.json'));
+        safe_write(win_struct, fullfile(recdir,'window.json'), @Utils.writejson);
         % mu sonuçları (mu_results.csv)
         if isfield(out,'mu_results') && ~isempty(out.mu_results)
             mu_tbl = struct2table(arrayfun(@(s) s.metr, out.mu_results));
             mu_tbl.mu = [out.mu_results.mu_factor]';
             mu_tbl = movevars(mu_tbl,'mu','before',1);
-            safe_write(mu_tbl, fullfile(recdir,'mu_results.csv'));
+            safe_write(mu_tbl, fullfile(recdir,'mu_results.csv'), @writetable);
         end
         % pencereye ait metrikler (metrics_win.csv)
         m = out.metr;
@@ -123,7 +117,7 @@ for k = 1:numel(all_out)
         if isfield(m,'E_orifice_win'), mstruct.E_orf_win = m.E_orifice_win; end
         if isfield(m,'E_struct_win'), mstruct.E_struct_win = m.E_struct_win; end
         metr_tbl = struct2table(mstruct);
-        safe_write(metr_tbl, fullfile(recdir,'metrics_win.csv'));
+        safe_write(metr_tbl, fullfile(recdir,'metrics_win.csv'), @writetable);
         % seyreltilmiş zaman serileri (ts_ds.mat)
         if isfield(out,'ts') && ~isempty(out.ts)
             try
@@ -132,7 +126,7 @@ for k = 1:numel(all_out)
                     ds = opts.export.ds;
                 end
                 ts_ds = Utils.downsample_ts(out.ts, ds);
-                save(fullfile(recdir,'ts_ds.mat'),'ts_ds','-v7.3');
+                safe_write(struct('ts_ds',ts_ds), fullfile(recdir,'ts_ds.mat'), @(d,f) save(f,'-struct','d','-v7.3'));
             catch
             end
         end
@@ -154,7 +148,7 @@ for k = 1:numel(all_out)
     end
 end
 
-%% Politika Sonuçları
+%%% Politika Sonuçları
 % Politika sonuçlarını özetleyip kaydet
 if ~isempty(varargin)
     P = varargin{1};
@@ -168,18 +162,18 @@ if ~isempty(varargin)
     T_end_worst_max = arrayfun(@(s) max(s.summary.T_end_worst), P)';
     idx_tbl = table(pol, ord, cd, qc_rate, PFA_w_mean, IDR_w_mean, dP95_worst_max, T_end_worst_max, ...
         'VariableNames',{'policy','order','cooldown_s','qc_rate','PFA_w_mean','IDR_w_mean','dP95_worst_max','T_end_worst_max'});
-    safe_write(idx_tbl, fullfile(outdir,'policy_index.csv'));
+    safe_write(idx_tbl, fullfile(outdir,'policy_index.csv'), @writetable);
     for i = 1:numel(P)
         fname = sprintf('policy_%s_%s_cd%s.csv', ...
             Utils.sanitize_name(P(i).policy), Utils.sanitize_name(P(i).order), ...
             Utils.sanitize_name(num2str(P(i).cooldown_s)));
-        safe_write(P(i).summary, fullfile(outdir,fname));
+        safe_write(P(i).summary, fullfile(outdir,fname), @writetable);
     end
 end
 
 end % export_results fonksiyon sonu
 
-%% --- Yardımcı Fonksiyonlar ---
+%%% --- Yardımcı Fonksiyonlar ---
 function Cth = compute_Cth_effective(params)
     % Sıcaklık kapasitesinin etkin değerini hesaplar
     nStories = size(params.M,1) - 1;
@@ -193,15 +187,11 @@ function Cth = compute_Cth_effective(params)
     Cth = max(m_oil_tot*params.cp_oil + m_steel_tot*params.cp_steel, eps);
 end
 
-function safe_write(tableObj, filepath)
-% Tablo veya yapı verisini uzantıya göre güvenle dosyaya yazar
+function safe_write(obj, filepath, writeFcn)
+% Verilen yazma fonksiyonunu güvenle çağırır, hataları uyarı olarak bildirir
     try
-        [~,~,ext] = fileparts(filepath);
-        if strcmpi(ext,'.json')
-            Utils.writejson(tableObj, filepath);
-        else
-            writetable(tableObj, filepath);
-        end
-    catch
+        writeFcn(obj, filepath);
+    catch ME
+        warning('Yazma hatası (%s): %s', filepath, ME.message);
     end
 end
