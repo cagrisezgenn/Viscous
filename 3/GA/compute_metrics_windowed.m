@@ -14,6 +14,9 @@ function metr = compute_metrics_windowed(t, x, a_rel, ag, ts, story_height, win,
 %   vektördür. PARAMS yapısal ve damper parametrelerini, ayrıca termal
 %   nicelikleri barındıran DIAG alanını içerir.
 
+% Türetilmiş damper sabitlerini güncelle
+params = Utils.recompute_damper_params(params);
+
 idx = win.idx;
 
 %% Temel Tepki
@@ -184,9 +187,18 @@ end
 try
     if isfield(ts,'PF')
         PF_abs = abs(ts.PF(idx,:));
-        metr.PF_p95 = local_quantile(PF_abs(:,ws), 0.95);
+    metr.PF_p95 = local_quantile(PF_abs(:,ws), 0.95);
     end
 catch
+end
+
+% Parametrelerden gerekli alanlar kayıt altına alınır
+param_fields = {'Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref'};
+for ii = 1:numel(param_fields)
+    fn = param_fields{ii};
+    if isfield(params, fn)
+        metr.(fn) = params.(fn);
+    end
 end
 
 end

@@ -7,6 +7,9 @@ function export_results(outdir, scaled, params, opts, summary, all_out, varargin
 if nargin < 1 || isempty(outdir), return; end
 if ~exist(outdir,'dir'), mkdir(outdir); end
 
+% Türetilmiş damper sabitlerini güncelle
+params = Utils.recompute_damper_params(params);
+
 %% Meta
 try
     % IM ve kırpma bilgileri (boşsa varsayılan değerler kullanılır)
@@ -118,6 +121,14 @@ for k = 1:numel(all_out)
         if isfield(out,'PF_mode'),       mstruct.PF_mode = out.PF_mode; end
         if isfield(out,'PF_auto_t_on'),  mstruct.PF_auto_t_on = out.PF_auto_t_on; end
         mstruct.mu_mode = mu_mode; mstruct.mu_used = mu_used;
+        % Yeni parametreleri isteğe bağlı olarak metriklere ekle
+        param_fields = {'Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref'};
+        for ii = 1:numel(param_fields)
+            fn = param_fields{ii};
+            if isfield(out, fn)
+                mstruct.(fn) = out.(fn);
+            end
+        end
         if isfield(m,'E_orifice_win'), mstruct.E_orf_win = m.E_orifice_win; end
         if isfield(m,'E_struct_win'), mstruct.E_struct_win = m.E_struct_win; end
         metr_tbl = struct2table(mstruct);

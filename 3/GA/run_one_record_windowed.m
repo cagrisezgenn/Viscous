@@ -26,6 +26,9 @@ if nargin < 3 || isempty(opts), opts = struct(); end
 if ~isfield(opts,'mu_factors'), opts.mu_factors = [0.75 1.00 1.25]; end
 if ~isfield(opts,'mu_weights'), opts.mu_weights = [0.2 0.6 0.2]; end
 
+% Türetilmiş damper sabitlerini güncelle
+params = Utils.recompute_damper_params(params);
+
 if isfield(opts,'thermal_reset') && strcmpi(opts.thermal_reset,'cooldown')
     if ~isfield(opts,'cooldown_s') || isempty(opts.cooldown_s) || isnan(opts.cooldown_s)
         opts.cooldown_s = 60;
@@ -255,6 +258,15 @@ try
     end
 catch ME
     warning('PF telemetri yakalama başarısız: %s', ME.message);
+end
+
+% Yeni parametreleri isteğe bağlı olarak kaydet
+param_fields = {'Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref'};
+for ii = 1:numel(param_fields)
+    fn = param_fields{ii};
+    if isfield(params, fn)
+        out.(fn) = params.(fn);
+    end
 end
 end
 
