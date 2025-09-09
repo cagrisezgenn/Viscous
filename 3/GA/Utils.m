@@ -148,6 +148,20 @@ classdef Utils
             if c, s=a; else, s=b; end
         end
 
+        %% Güvenli Çalıştırma ve Uyarı
+        function varargout = try_warn(funcHandle, msgPrefix)
+            %TRY_WARN Hata durumunda uyarı vererek fonksiyonu çalıştırır.
+            %   varargout = Utils.try_warn(@() func(), 'prefix')
+            try
+                [varargout{1:nargout}] = funcHandle();
+            catch ME
+                warning('%s: %s', msgPrefix, ME.message);
+                for k = 1:nargout
+                    varargout{k} = [];
+                end
+            end
+        end
+
         %% Başlangıç Popülasyon Izgarası
         function P = initial_pop_grid(lb, ub, N, steps)
             %INITIAL_POP_GRID Değişken ızgaralarına hizalanmış bir başlangıç popülasyonu oluşturur.

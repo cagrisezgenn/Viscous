@@ -1,10 +1,6 @@
 function [X,F,gaout] = run_ga_driver(scaledOrSnap, params, optsEval, optsGA)
 % === Parpool Açılışı (temizlik + iş parçacığı sınırı) ===
-try
-    parpool_hard_reset(16);
-catch ME
-    warning('[run_ga_driver] parpool başlatılamadı: %s', ME.message);
-end
+Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılamadı');
 %RUN_GA_DRIVER Hibrit GA sürücüsü: anlık görüntü yolu veya bellek içi
 % yapıları kabul eder.
 %   [X,F,GAOUT] = RUN_GA_DRIVER(SCALED_OR_PATH, PARAMS, OPTSEVAL, OPTSGA)
@@ -32,18 +28,12 @@ end
     % Girdi verilmemişse (ör. editörde Run'a basıldığında) GA'nın başlayabilmesi
     % için temel çalışma alanından 'scaled' ve 'params' değişkenlerini almaya çalış.
     if isempty(scaledOrSnap_local)
-        try
-            scaledOrSnap_local = evalin('base','scaled');
-        catch ME
-            warning('Temel çalışma alanında ''scaled'' bulunamadı: %s', ME.message);
-        end
+        scaledOrSnap_local = Utils.try_warn(@() evalin('base','scaled'), ...
+            'Temel çalışma alanında ''scaled'' bulunamadı');
     end
     if isempty(params_local)
-        try
-            params_local = evalin('base','params');
-        catch ME
-            warning('Temel çalışma alanında ''params'' bulunamadı: %s', ME.message);
-        end
+        params_local = Utils.try_warn(@() evalin('base','params'), ...
+            'Temel çalışma alanında ''params'' bulunamadı');
     end
     if nargin < 3 || isempty(optsEval), optsEval = struct; end
     if nargin < 4 || isempty(optsGA),   optsGA   = struct; end
@@ -80,11 +70,7 @@ end
         if (isempty(scaled) || isempty(params))
             try
                 % Gerekli yolları ekle
-                try
-                    setup;
-                catch ME
-                    warning('Otomatik hazırlık: setup çağrısı başarısız: %s', ME.message);
-                end
+                Utils.try_warn(@() setup, 'Otomatik hazırlık: setup çağrısı başarısız');
                 % Temel parametreleri yükle ve T1 hesapla
                 parametreler;
                 % Veri kümesini ölçekle (band/trim) ve dondur
@@ -404,11 +390,8 @@ end
     T.E_ratio             = Eratio;   T.P_mech_sum        = Pmech;
 
     % === BASELINE (pre-GA) ROW: params başlangıcıyla tek koşu, ilk satır ===
-    try
-        T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W);
-    catch ME
-        warning('Başlangıç satırı oluşturulamadı: %s', ME.message);
-    end
+    T = Utils.try_warn(@() prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W), ...
+        'Başlangıç satırı oluşturulamadı');
 
     write_pareto_results(T, outdir);
 
@@ -442,11 +425,8 @@ end
         fprintf(fid, 'IM_mode=%s, band_fac=%s, s_bounds=%s\n', ...
             mat2str(meta.IM_mode), mat2str(meta.band_fac), mat2str(meta.s_bounds));
         fprintf(fid, 'mu_factors=%s, mu_weights=%s\n', mat2str(meta.mu_factors), mat2str(meta.mu_weights));
-        try
-            fprintf(fid, 'thr=%s\n', jsonencode(meta.thr));
-        catch ME
-            warning('README yazımı sırasında thr bilgisi eklenemedi: %s', ME.message);
-        end
+        Utils.try_warn(@() fprintf(fid, 'thr=%s\n', jsonencode(meta.thr)), ...
+            'README yazımı sırasında thr bilgisi eklenemedi');
         fprintf(fid, 'Note: No simulations during packaging. Fitness evals had no IO.\n');
         fclose(fid);
     end
@@ -514,11 +494,8 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
         meta.pen_cav  = 0;
         meta.pen_T    = 0;
         meta.pen_mu   = 0;
-        try
-            memo_store('set', jsonencode([x, dsig]), meta);
-        catch ME
-            warning('memo_store yazımı başarısız: %s', ME.message);
-        end
+        Utils.try_warn(@() memo_store('set', jsonencode([x, dsig]), meta), ...
+            'memo_store yazımı başarısız');
         return;
     end
 
@@ -536,11 +513,8 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
         meta.pen_cav  = 0;
         meta.pen_T    = 0;
         meta.pen_mu   = 0;
-        try
-            memo_store('set', jsonencode([x, dsig]), meta);
-        catch ME
-            warning('memo_store yazımı başarısız: %s', ME.message);
-        end
+        Utils.try_warn(@() memo_store('set', jsonencode([x, dsig]), meta), ...
+            'memo_store yazımı başarısız');
         return;
     end
 
@@ -664,12 +638,8 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
         warning('Diagnostik alanlar eklenemedi: %s', ME.message);
     end
 
-    memo(key) = meta;
-    try
-        memo_store('set', key, meta);
-    catch ME
-        warning('memo_store yazımı başarısız: %s', ME.message);
-    end
+memo(key) = meta;
+Utils.try_warn(@() memo_store('set', key, meta), 'memo_store yazımı başarısız');
 
     end
 
@@ -743,11 +713,8 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         T0bl  = S0.table;
         % Objectives
         f0 = [NaN NaN];
-        try
-            [f0, ~] = eval_design_fast(X0, scaled, params, Opost);
-        catch ME
-            warning('eval_design_fast temel çalıştırma hatası: %s', ME.message);
-        end
+        [f0, ~] = Utils.try_warn(@() eval_design_fast(X0, scaled, params, Opost), ...
+            'eval_design_fast temel çalıştırma hatası');
         % Penalty parts (same formula)
         dP95_0   = max(T0bl.dP95_worst);
         Qcap95_0 = max(T0bl.Qcap95_worst);
@@ -974,9 +941,6 @@ end
 
 function safe_write(obj, filepath, writeFcn)
 % Verilen yazma fonksiyonunu hataya karşı korumalı olarak çağırır
-    try
-        writeFcn(obj, filepath);
-    catch ME
-        warning('Yazma hatası (%s): %s', filepath, ME.message);
-    end
+    Utils.try_warn(@() writeFcn(obj, filepath), ...
+        sprintf('Yazma hatası (%s)', filepath));
 end
