@@ -2,7 +2,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     use_thermal, thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
     n_dampers_per_story, resFactor, cfg)
-
+%% Giriş Parametreleri
     n = size(M,1); r = ones(n,1);
     agf = griddedInterpolant(t,ag,'linear','nearest');
     z0 = zeros(2*n,1);
@@ -22,7 +22,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     mu_abs = mu_ref;
     c_lam = c_lam0;
 
-    % Solve ODE
+%% ODE Çözümü
     odef = @(tt,z) [ z(n+1:end); M \ ( -C*z(n+1:end) - K*z(1:n) - dev_force(tt,z(1:n),z(n+1:end),c_lam,mu_abs) - M*r*agf(tt) ) ];
     sol  = ode15s(odef,[t(1) t(end)],z0,opts);
     z    = deval(sol,t).';
@@ -61,7 +61,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     E_struct = trapz(t, P_struct_tot);
     P_mech = mean(P_struct_tot);
 
-    % Thermal response
+%% Termal Çözüm
     nDtot = sum(multi);
     V_oil_per = resFactor*(Ap*(2*Lgap));
     m_oil_tot = nDtot*(rho*V_oil_per);
@@ -75,6 +75,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     end
     mu = mu_ref*exp(b_mu*(Tser - T_ref_C));
 
+%% Çıktıların Hesabı
     % Node forces for acceleration
     F = zeros(numel(t),n);
     F(:,Nvec) = F(:,Nvec) - F_story;
@@ -86,6 +87,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         'energy',energy,'P_sum',P_sum,'c_lam',c_lam, ...
         'E_orifice',E_orifice,'E_struct',E_struct);
 
+%% İç Fonksiyonlar
     function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)
         Rcol = Rvec.';
         multicol = multi.';
@@ -97,7 +99,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         else
             params = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
                             'Ao',Ao,'mu',mu_abs_loc,'F_lin',F_lin_);
-            F_orf_ = calc_orifice_force(dvel_, params);
+            [F_orf_, ~, ~, ~] = calc_orifice_force(dvel_, params);
         end
         dp_pf_ = (c_lam_loc*dvel_ + F_orf_) ./ Ap;
         if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
@@ -112,18 +114,18 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         Fd(Nvec) = Fd(Nvec) - F_story_;
         Fd(Mvec) = Fd(Mvec) + F_story_;
     end
+end
 
-    function [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params)
-        qmag = params.Qcap * tanh( (params.Ap/params.Qcap) * sqrt(dvel.^2 + params.orf.veps^2) );
-        Re   = (params.rho .* qmag ./ max(params.Ao*params.mu,1e-9)) .* max(params.orf.d_o,1e-9);
-        Cd   = params.orf.CdInf - (params.orf.CdInf - params.orf.Cd0) ./ (1 + (Re./params.orf.Rec).^params.orf.p_exp);
-        dP_calc = 0.5*params.rho .* ( qmag ./ max(Cd.*params.Ao,1e-9) ).^2;
-        p_up   = params.orf.p_amb + abs(params.F_lin)./max(params.Ap,1e-12);
-        dP_cav = max( (p_up - params.orf.p_cav_eff).*params.orf.cav_sf, 0 );
-        dP_orf = Utils.softmin(dP_calc,dP_cav,1e5);
-        sgn = dvel ./ sqrt(dvel.^2 + params.orf.veps^2);
-        F_orf = dP_orf .* params.Ap .* sgn;
-        Q = params.Ap * sqrt(dvel.^2 + params.orf.veps^2);
-        P_orf_per = dP_orf .* Q;
-    end
+function [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params)
+    qmag = params.Qcap * tanh( (params.Ap/params.Qcap) * sqrt(dvel.^2 + params.orf.veps^2) );
+    Re   = (params.rho .* qmag ./ max(params.Ao*params.mu,1e-9)) .* max(params.orf.d_o,1e-9);
+    Cd   = params.orf.CdInf - (params.orf.CdInf - params.orf.Cd0) ./ (1 + (Re./params.orf.Rec).^params.orf.p_exp);
+    dP_calc = 0.5*params.rho .* ( qmag ./ max(Cd.*params.Ao,1e-9) ).^2;
+    p_up   = params.orf.p_amb + abs(params.F_lin)./max(params.Ap,1e-12);
+    dP_cav = max( (p_up - params.orf.p_cav_eff).*params.orf.cav_sf, 0 );
+    dP_orf = Utils.softmin(dP_calc,dP_cav,1e5);
+    sgn = dvel ./ sqrt(dvel.^2 + params.orf.veps^2);
+    F_orf = dP_orf .* params.Ap .* sgn;
+    Q = params.Ap * sqrt(dvel.^2 + params.orf.veps^2);
+    P_orf_per = dP_orf .* Q;
 end
