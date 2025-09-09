@@ -1,15 +1,25 @@
+% Bu dosya, farklı statik yardımcı fonksiyonları barındıran Utils sınıfını tanımlar.
 classdef Utils
-%UTILS Collect small helper functions as static methods.
+%UTILS Küçük yardımcı fonksiyonları statik yöntemler olarak toplayan sınıf.
     methods(Static)
+        %% Yumuşak Minimum
         function y = softmin(a,b,epsm)
+            % İki değerin yumuşak minimumunu hesaplar.
+            % Örnek kullanım: y = Utils.softmin(3,5,0.2);
             y = 0.5*(a + b - sqrt((a - b).^2 + epsm.^2));
         end
 
+        %% Orantılı Pencere Ağırlığı
         function w = pf_weight(t, cfg)
+            % Basınç kuvveti için orantılı pencere ağırlığı hesaplar.
+            % Örnek kullanım: w = Utils.pf_weight(t, cfg);
             w = cfg.on.pressure_force * (1 - exp(-max(t - cfg.PF.t_on, 0) ./ max(cfg.PF.tau, 1e-6)));
         end
 
+        %% Lineer MCK Çözümü
         function [x,a] = lin_MCK(t,ag,M,C,K)
+            % Lineer MCK sistemi için yer hareketi altındaki tepkiyi çözer.
+            % Örnek kullanım: [x,a] = Utils.lin_MCK(t, ag, M, C, K);
             n = size(M,1); r = ones(n,1);
             agf = griddedInterpolant(t,ag,'linear','nearest');
             odef = @(tt,z)[ z(n+1:end); M \ ( -C*z(n+1:end) - K*z(1:n) - M*r*agf(tt) ) ];
@@ -21,7 +31,10 @@ classdef Utils
             a = ( -(M\(C*z(:,n+1:end).' + K*z(:,1:n).')).' - ag.*r.' );
         end
 
+        %% Arias Penceresi Oluşturma
         function win = make_arias_window(t, ag, varargin)
+            % Arias yoğunluğu tabanlı pencere oluşturur.
+            % Örnek kullanım: win = Utils.make_arias_window(t, ag);
             p = inputParser;
             p.addParameter('p1',0.05,@(x)isscalar(x) && x>=0 && x<=1);
             p.addParameter('p2',0.95,@(x)isscalar(x) && x>=0 && x<=1);
@@ -30,7 +43,7 @@ classdef Utils
             p1 = p.Results.p1; p2 = p.Results.p2; pad = p.Results.pad;
             IA = cumtrapz(t, ag.^2);
             IA_tot = IA(end);
-            % Guard against degenerate/very low-energy records
+            % Bozulmuş veya çok düşük enerjili kayıtlara karşı koruma
             if ~(isfinite(IA_tot)) || IA_tot <= eps
                 t_start = t(1); t_end = t(end);
                 idx = true(size(t));
@@ -56,14 +69,20 @@ classdef Utils
                          'coverage',coverage,'flag_low_arias',flag_low_arias);
         end
 
+        %% Adımsal Nicemleme
         function y = quantize_step(x, step)
+            % Verilen adım büyüklüğüne göre x değerini nicemler.
+            % Örnek kullanım: y = Utils.quantize_step(3.7, 0.5);
             if nargin < 2 || isempty(step)
                 y = x; return;
             end
             y = step * round(x ./ step);
         end
 
+        %% Varsayılan Alan Değeri
         function v = getfield_default(S, fname, defaultVal)
+            % Yapı alanı mevcut değilse varsayılan değeri döndürür.
+            % Örnek kullanım: v = Utils.getfield_default(S,'a',0);
             if ~isstruct(S) || ~isfield(S, fname) || isempty(S.(fname))
                 v = defaultVal; return;
             end
@@ -79,7 +98,10 @@ classdef Utils
             end
         end
 
+        %% JSON Yazma
         function writejson(data, filename)
+            % Verilen veriyi JSON dosyasına yazar.
+            % Örnek kullanım: Utils.writejson(data,'cikti.json');
             try
                 txt = jsonencode(data);
                 fid = fopen(filename,'w');
@@ -91,14 +113,20 @@ classdef Utils
             end
         end
 
+        %% İsim Temizleme
         function s2 = sanitize_name(s)
+            % Dosya veya alan isimlerindeki geçersiz karakterleri temizler.
+            % Örnek kullanım: s2 = Utils.sanitize_name('örnek?*ad');
             if ~ischar(s) && ~isstring(s)
                 s = char(s);
             end
             s2 = regexprep(char(s),'[^a-zA-Z0-9_\- ]','_');
         end
 
+        %% Zaman Serisi Aşağı Örnekleme
         function ts_ds = downsample_ts(ts, ds)
+            % Zaman serisi alanlarını verilen faktörle seyrekleştirir.
+            % Örnek kullanım: ts_ds = Utils.downsample_ts(ts, 5);
             if nargin < 2 || isempty(ds), ds = 5; end
             fns = fieldnames(ts);
             ts_ds = struct();
@@ -113,15 +141,20 @@ classdef Utils
             end
         end
 
+        %% Üçlü Operatör
         function s = tern(c,a,b)
+            % Mantıksal koşula göre iki değerden birini seçer.
+            % Örnek kullanım: s = Utils.tern(x>0, 1, -1);
             if c, s=a; else, s=b; end
         end
 
+        %% Başlangıç Popülasyon Izgarası
         function P = initial_pop_grid(lb, ub, N, steps)
-            %INITIAL_POP_GRID Create an initial population aligned to variable grids.
-            %   P = Utils.initial_pop_grid(lb, ub, N, steps) returns an NxD matrix
-            %   where each column i is sampled on a grid with spacing steps(i)
-            %   (if steps(i) is NaN, sample uniformly in [lb(i), ub(i)]).
+            %INITIAL_POP_GRID Değişken ızgaralarına hizalanmış bir başlangıç popülasyonu oluşturur.
+            %   P = Utils.initial_pop_grid(lb, ub, N, steps) fonksiyonu NxD boyutlu bir matris
+            %   döndürür. Her i sütunu adım aralığı steps(i) olan bir ızgaradan örneklenir
+            %   (steps(i) NaN ise, [lb(i), ub(i)] aralığında uniform örnekleme yapılır).
+            % Örnek kullanım: P = Utils.initial_pop_grid([0 0],[1 1],5,[0.1 NaN]);
             d = numel(lb);
             P = zeros(N, d);
             for i = 1:d
@@ -145,7 +178,10 @@ classdef Utils
             end
         end
 
+        %% Varsayılan QC Eşikleri
         function thr = default_qc_thresholds(opts)
+            % Kalite kontrolü için varsayılan eşik değerlerini sağlar.
+            % Örnek kullanım: thr = Utils.default_qc_thresholds(struct('dP95_max',40e6));
             if nargin < 1 || isempty(opts)
                 opts = struct();
             end
