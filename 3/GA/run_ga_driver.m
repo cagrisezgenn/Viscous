@@ -328,20 +328,20 @@ end
             end
         catch, X0(2) = 5; end
         % g_lo, g_mid, g_hi from toggle_gain if available
-        try
-            if isfield(params,'toggle_gain') && ~isempty(params.toggle_gain)
-                tg = params.toggle_gain(:);
-                nStories = numel(tg);
-                loN = min(3, nStories); hiN = min(2, nStories);
-                midIdx = (loN+1) : max(nStories-hiN, loN+1);
-                if isempty(midIdx), midIdx = round(nStories/2); end
-                X0(3) = mean(tg(1:loN));
-                X0(4) = mean(tg(midIdx));
-                X0(5) = mean(tg(end-hiN+1:end));
-            else
-                X0(3:5) = [3.90 3.95 1.50];
-            end
-        catch, X0(3:5) = [3.90 3.95 1.50]; end
+        if isfield(params,'toggle_gain') && ~isempty(params.toggle_gain)
+            % Mevcut toggle_gain vektöründen alt/orta/üst kat ortalamaları
+            tg = params.toggle_gain(:);
+            nStories = numel(tg);
+            loN = min(3, nStories);          % ilk 3 kat alt bölge
+            hiN = min(2, nStories);          % son 2 kat üst bölge
+            midIdx = (loN+1) : max(nStories-hiN, loN+1);
+            if isempty(midIdx), midIdx = round(nStories/2); end
+            X0(3) = mean(tg(1:loN));
+            X0(4) = mean(tg(midIdx));
+            X0(5) = mean(tg(max(nStories-hiN+1,1):nStories));
+        else
+            X0(3:5) = [3.90 3.95 1.50];       % bilgi yoksa varsayılan kazançlar
+        end
         % PF parameters
         try
             if isfield(params,'cfg') && isfield(params.cfg,'PF')
@@ -363,12 +363,12 @@ end
             [f0, ~] = eval_design_fast(X0, scaled, params, Opost);
         catch
         end
-        % Penalty parts (same formula)
-        dP95_0   = max(T0bl.dP95_worst);
-        Qcap95_0 = max(T0bl.Qcap95_worst);
-        cavW_0   = max(T0bl.cav_pct_worst);
-        Tend_0   = max(T0bl.T_end_worst);
-        muend_0  = min(T0bl.mu_end_worst);
+        % Penaltı parçaları (tablodan güvenli okuma)
+        dP95_0   = tbl_get(T0bl,'dP95_worst','max');
+        Qcap95_0 = tbl_get(T0bl,'Qcap95_worst','max');
+        cavW_0   = tbl_get(T0bl,'cav_pct_worst','max');
+        Tend_0   = tbl_get(T0bl,'T_end_worst','max');
+        muend_0  = tbl_get(T0bl,'mu_end_worst','min');
         pen_dP_0   = rel(dP95_0,  Opost.thr.dP95_max);
         pen_Qcap_0 = rel(Qcap95_0,Opost.thr.Qcap95_max);
         if Opost.thr.cav_pct_max<=0, pen_cav_0 = max(0,cavW_0).^pwr; else, pen_cav_0 = rel(cavW_0,Opost.thr.cav_pct_max); end
@@ -376,9 +376,9 @@ end
         pen_mu_0   = rev(muend_0, Opost.thr.mu_end_min);
         pen_0      = lambda*(W.dP*pen_dP_0 + W.Qcap*pen_Qcap_0 + W.cav*pen_cav_0 + W.T*pen_T_0 + W.mu*pen_mu_0);
 
-        % Build baseline row T0 with same columns as T
+        % T ile aynı sütun tiplerinde boş bir satır oluştur
         vn = T.Properties.VariableNames;
-        T0 = cell2table(cell(1,numel(vn)), 'VariableNames', vn);
+        T0 = T(1,:); T0{:,:} = nan;
         % decision variables
         T0.d_o_mm = X0(1); T0.n_orf = X0(2); T0.g_lo = X0(3); T0.g_mid = X0(4); T0.g_hi = X0(5);
         T0.PF_tau = X0(6); T0.PF_gain = X0(7);
@@ -386,73 +386,41 @@ end
         T0.f1 = f0(1); T0.f2 = f0(2);
         % penalties
         T0.pen = pen_0; T0.pen_dP = pen_dP_0; T0.pen_Qcap = pen_Qcap_0; T0.pen_cav = pen_cav_0; T0.pen_T = pen_T_0; T0.pen_mu = pen_mu_0;
-        % damper peak
-        try
-            if ismember('x10_max_damperli', vn)
-                T0.x10_max_damperli = max(T0bl.x10_max_D_worst);
-            end
-            if ismember('a10abs_max_damperli', vn)
-                T0.a10abs_max_damperli = max(T0bl.a10abs_max_D_worst);
-            end
-        catch
+        % damper tepe değerleri
+        if ismember('x10_max_damperli', vn),    T0.x10_max_damperli    = tbl_get(T0bl,'x10_max_D_worst','max'); end
+        if ismember('a10abs_max_damperli', vn), T0.a10abs_max_damperli = tbl_get(T0bl,'a10abs_max_D_worst','max'); end
+
+        % diğer tanısal sütunlar (varsa)
+        if ismember('dP95_worst', vn),        T0.dP95_worst        = tbl_get(T0bl,'dP95_worst','max'); end
+        if ismember('Qcap95_worst', vn),      T0.Qcap95_worst      = tbl_get(T0bl,'Qcap95_worst','max'); end
+        if ismember('cav_pct_worst', vn),     T0.cav_pct_worst     = tbl_get(T0bl,'cav_pct_worst','max'); end
+        if ismember('T_end_worst', vn),       T0.T_end_worst       = tbl_get(T0bl,'T_end_worst','max'); end
+        if ismember('mu_end_worst', vn),      T0.mu_end_worst      = tbl_get(T0bl,'mu_end_worst','min'); end
+        if ismember('PF_p95_worst', vn),      T0.PF_p95_worst      = tbl_get(T0bl,'PF_p95_worst','max'); end
+        if ismember('Q_q50_worst', vn),       T0.Q_q50_worst       = tbl_get(T0bl,'Q_q50_worst','max'); end
+        if ismember('Q_q95_worst', vn),       T0.Q_q95_worst       = tbl_get(T0bl,'Q_q95_worst','max'); end
+        if ismember('dP_orf_q50_worst', vn),  T0.dP_orf_q50_worst  = tbl_get(T0bl,'dP_orf_q50_worst','max'); end
+        if ismember('dP_orf_q95_worst', vn)
+            val = tbl_get(T0bl,'dP_orf_q95_worst','max');
+            if isempty(val), val = tbl_get(T0bl,'dP95_worst','max'); end
+            T0.dP_orf_q95_worst = val;
         end
-        % other diagnostics if present
-        try
-            if ismember('dP95_worst', vn),        T0.dP95_worst        = max(T0bl.dP95_worst); end
-            if ismember('Qcap95_worst', vn),      T0.Qcap95_worst      = max(T0bl.Qcap95_worst); end
-            if ismember('cav_pct_worst', vn),     T0.cav_pct_worst     = max(T0bl.cav_pct_worst); end
-            if ismember('T_end_worst', vn),       T0.T_end_worst       = max(T0bl.T_end_worst); end
-            if ismember('mu_end_worst', vn),      T0.mu_end_worst      = min(T0bl.mu_end_worst); end
-            if ismember('PF_p95_worst', vn) && ismember('PF_p95_worst', T0bl.Properties.VariableNames)
-                T0.PF_p95_worst = max(T0bl.PF_p95_worst);
+        if ismember('T_oil_end_worst', vn),   T0.T_oil_end_worst   = tbl_get(T0bl,'T_oil_end_worst','max'); end
+        if ismember('T_steel_end_worst', vn), T0.T_steel_end_worst = tbl_get(T0bl,'T_steel_end_worst','max'); end
+        if ismember('E_orifice_sum', vn),     T0.E_orifice_sum     = tbl_get(T0bl,'E_orifice_sum','sum'); end
+        if ismember('E_struct_sum', vn),      T0.E_struct_sum      = tbl_get(T0bl,'E_struct_sum','sum'); end
+        if ismember('energy_tot_sum', vn)
+            val = tbl_get(T0bl,'energy_tot_sum','sum');
+            if isempty(val)
+                val = tbl_get(T0bl,'E_orifice_sum','sum') + tbl_get(T0bl,'E_struct_sum','sum');
             end
-            if ismember('Q_q50_worst', vn) && ismember('Q_q50_worst', T0bl.Properties.VariableNames)
-                T0.Q_q50_worst = max(T0bl.Q_q50_worst);
-            end
-            if ismember('Q_q95_worst', vn) && ismember('Q_q95_worst', T0bl.Properties.VariableNames)
-                T0.Q_q95_worst = max(T0bl.Q_q95_worst);
-            end
-            if ismember('dP_orf_q50_worst', vn) && ismember('dP_orf_q50_worst', T0bl.Properties.VariableNames)
-                T0.dP_orf_q50_worst = max(T0bl.dP_orf_q50_worst);
-            end
-            if ismember('dP_orf_q95_worst', vn)
-                if ismember('dP_orf_q95_worst', T0bl.Properties.VariableNames)
-                    T0.dP_orf_q95_worst = max(T0bl.dP_orf_q95_worst);
-                else
-                    T0.dP_orf_q95_worst = max(T0bl.dP95_worst);
-                end
-            end
-            if ismember('T_oil_end_worst', vn) && ismember('T_oil_end_worst', T0bl.Properties.VariableNames)
-                T0.T_oil_end_worst = max(T0bl.T_oil_end_worst);
-            end
-            if ismember('T_steel_end_worst', vn) && ismember('T_steel_end_worst', T0bl.Properties.VariableNames)
-                T0.T_steel_end_worst = max(T0bl.T_steel_end_worst);
-            end
-            if ismember('E_orifice_sum', vn) && ismember('E_orifice_sum', T0bl.Properties.VariableNames)
-                T0.E_orifice_sum = sum(T0bl.E_orifice_sum);
-            end
-            if ismember('E_struct_sum', vn) && ismember('E_struct_sum', T0bl.Properties.VariableNames)
-                T0.E_struct_sum = sum(T0bl.E_struct_sum);
-            end
-            if ismember('energy_tot_sum', vn)
-                if ismember('energy_tot_sum', T0bl.Properties.VariableNames)
-                    T0.energy_tot_sum = sum(T0bl.energy_tot_sum);
-                else
-                    try
-                        T0.energy_tot_sum = T0.E_orifice_sum + T0.E_struct_sum;
-                    catch, T0.energy_tot_sum = 0; end
-                end
-            end
-            if ismember('E_ratio', vn)
-                try
-                    T0.E_ratio = (T0.E_struct_sum>0) * (T0.E_orifice_sum / max(T0.E_struct_sum, eps));
-                catch, T0.E_ratio = 0; end
-            end
-            if ismember('P_mech_sum', vn) && ismember('P_mech_sum', T0bl.Properties.VariableNames)
-                T0.P_mech_sum = sum(T0bl.P_mech_sum);
-            end
-        catch
+            T0.energy_tot_sum = val;
         end
+        if ismember('E_ratio', vn)
+            eo = tbl_get(T0bl,'E_orifice_sum','sum'); es = tbl_get(T0bl,'E_struct_sum','sum');
+            T0.E_ratio = (es>0) * (eo / max(es,eps));
+        end
+        if ismember('P_mech_sum', vn),       T0.P_mech_sum = tbl_get(T0bl,'P_mech_sum','sum'); end
 
         % Prepend baseline row
         T = [T0; T];
@@ -767,5 +735,23 @@ function P = decode_params_from_x(params0_, x_)
     if isfield(P,'cfg') && isfield(P.cfg,'PF')
         P.cfg.PF.tau  = PF_tau;
         P.cfg.PF.gain = PF_gain;
+    end
+end
+
+function val = tbl_get(tbl, nm, op)
+    % Güvenli tablo sütunu okuma (yoksa boş döner)
+    val = [];
+    if ~istable(tbl) || ~any(strcmp(tbl.Properties.VariableNames, nm)), return; end
+    col = tbl.(nm);
+    if iscell(col)
+        try, col = cellfun(@double,col); catch, col = cellfun(@(x) double(x), col); end
+    end
+    if isnumeric(col)
+        switch op
+            case 'max', val = max(col(:));
+            case 'min', val = min(col(:));
+            case 'sum', val = sum(col(:));
+            otherwise,  val = col;
+        end
     end
 end

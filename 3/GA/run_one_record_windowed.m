@@ -1,31 +1,27 @@
-function out = run_one_record_windowed(rec, rec_raw, params, opts, prev_diag)
-%RUN_ONE_RECORD_WINDOWED Analyse one ground-motion record with windowed metrics.
-%   OUT = RUN_ONE_RECORD_WINDOWED(REC, REC_RAW, PARAMS, OPTS, PREV_DIAG) runs
-%   the nonlinear damper model for the scaled record REC and computes
-%   performance metrics restricted to an Arias intensity based time window.
-%   REC_RAW is the unscaled record used for optional comparison when
-%   OPTS.report_raw_vs_scaled is true. PARAMS bundles structural and damper
-%   properties (see PARAMETRELER.M). OPTS controls behaviour:
-%       window   - struct of options forwarded to MAKE_ARIAS_WINDOW
-%       report_raw_vs_scaled - if true, a dampers-free solution of REC_RAW is
-%                              also obtained for comparison
-%       store_metr0 - if true, metrics for the damperless system are stored
-%       thermal_reset - 'each', 'carry' or 'cooldown'
-%       cooldown_s   - cooldown duration for 'cooldown' mode [s]
-%   PREV_DIAG is an optional diagnostic structure from a previous call used
-%   to carry thermal state between records when requested.
+function out = run_one_record_windowed(rec, params, opts, prev_diag)
+%RUN_ONE_RECORD_WINDOWED Pencereli metriklerle tek yer hareketini analiz eder.
+%   OUT = RUN_ONE_RECORD_WINDOWED(REC, PARAMS, OPTS, PREV_DIAG) ölçekli kayıt
+%   REC için doğrusal olmayan sönümleyici modelini çalıştırır ve Arias yoğunluğu
+%   tabanlı bir zaman penceresi içinde performans metriklerini hesaplar. PARAMS
+%   yapısı, yapı ve sönümleyici özelliklerini (bkz. PARAMETRELER.M) içerir.
+%   OPTS davranışı kontrol eder:
+%       window        - MAKE_ARIAS_WINDOW fonksiyonuna iletilen ayarlar
+%       thermal_reset - 'each', 'carry' veya 'cooldown'
+%       cooldown_s    - 'cooldown' modu için soğuma süresi [s]
+%   PREV_DIAG, kayıtlara arasında termal durumu taşımak için isteğe bağlı bir
+%   diagnostiğe sahiptir.
 %
-%   Output fields of OUT:
-%       name, scale, SaT1, win, metr, diag, mu_results, weighted, worst, ts, ...
-%       qc_all_mu, T_start, T_end, mu_end, clamp_hits, PFA_top, IDR_max, ...
-%       dP_orf_q95, Qcap_ratio_q95, cav_pct, t5, t95, coverage
+%   OUT yapısı; name, scale, SaT1, win, metr, diag, mu_results, weighted,
+%   worst, ts, qc_all_mu, T_start, T_end, mu_end, clamp_hits, PFA_top,
+%   IDR_max, dP_orf_q95, Qcap_ratio_q95, cav_pct, t5, t95 ve coverage
+%   alanlarını içerir.
 %
-%   This function requires MCK_WITH_DAMPER_TS and COMPUTE_METRICS_WINDOWED
-%   on the MATLAB/Octave path.
+%   Bu fonksiyon, dosya sonunda yer alan MCK_WITH_DAMPER_TS yardımcı
+%   rutini ve COMPUTE_METRICS_WINDOWED fonksiyonunu kullanır.
 
-% default arguments
-if nargin < 5, prev_diag = []; end
-if nargin < 4 || isempty(opts), opts = struct(); end
+% varsayılan argümanlar
+if nargin < 4, prev_diag = []; end
+if nargin < 3 || isempty(opts), opts = struct(); end
 if ~isfield(opts,'mu_factors'), opts.mu_factors = [0.75 1.00 1.25]; end
 if ~isfield(opts,'mu_weights'), opts.mu_weights = [0.2 0.6 0.2]; end
 
@@ -60,7 +56,7 @@ assert(wsum>0,'mu_weights sum must be > 0.');
 mu_weights = mu_weights/wsum;
 mu_factors = opts.mu_factors(:)';
 
-%% ----------------------- Arias intensity window ----------------------
+%% ----------------------- Arias yoğunluğu penceresi ----------------------
 if isfield(opts,'window') && ~isempty(opts.window)
     wfields = fieldnames(opts.window);
     wargs = cell(1,2*numel(wfields));
@@ -91,9 +87,9 @@ catch
     % ignore errors; leave params unchanged
 end
 
-% raw-vs-scaled comparison removed (unused upstream)
+% ham ve ölçekli kayıt karşılaştırması kaldırıldı (üst seviyede kullanılmıyor)
 
-%% -------------------- Thermal reset handling -------------------------
+%% -------------------- Termal sıfırlama işlemleri -------------------------
 Tinit = params.T0_C;
 if isfield(opts,'thermal_reset')
     mode = opts.thermal_reset;
@@ -139,7 +135,7 @@ switch mode
         Tinit = params.T0_C;
 end
 
-%% ---------------------- Damperless solution -------------------------
+%% ---------------------- Sönümleyicisiz çözüm -------------------------
 [x0,a_rel0] = Utils.lin_MCK(rec.t, rec.ag, params.M, params.C0, params.K);
 ts0 = struct('dP_orf',zeros(numel(rec.t),nStories), ...
              'Q',zeros(numel(rec.t),nStories), ...
@@ -151,9 +147,9 @@ ts0 = struct('dP_orf',zeros(numel(rec.t),nStories), ...
 params0 = params; params0.diag = struct('T_oil',zeros(numel(rec.t),1), ...
                                        'mu',zeros(numel(rec.t),1), ...
                                        'c_lam',0);
-% store_metr0 removed (unused upstream)
+% store_metr0 kaldırıldı (üst seviyede kullanılmıyor)
 
-%% ----------------- Damper model with time series ---------------------
+%% ----------------- Zaman serili sönümleyici modeli ---------------------
 nMu = numel(mu_factors);
 mu_results = struct('mu_factor',cell(1,nMu));
 
@@ -228,7 +224,7 @@ for kf = 1:numel(fields)
     worst.which_mu.(fn) = mu_results(idx).mu_factor;
 end
 
-%% ----------------------- Assemble output ----------------------------
+%% ----------------------- Çıktıların derlenmesi ----------------------------
 out = struct();
 out.name  = rec.name;
 out.scale = Utils.getfield_default(rec,'scale',1);
@@ -275,4 +271,59 @@ catch
 end
 end
 
+%% =====================================================================
+%% mck_with_damper_ts Yerel Fonksiyonu
+%% =====================================================================
+function [x,a_rel,ts,diag] = mck_with_damper_ts(t,ag,M,C,K, k_sd,c_lam0, ...
+    use_orifice, orf, rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, ...
+    T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, ...
+    steel_to_oil_mass_ratio, toggle_gain, story_mask, n_dampers_per_story, ...
+    resFactor, cfg)
+%1) MCK_WITH_DAMPER çözümü
+[x,a_rel,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orifice, orf, ...
+    rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, T0_C, T_ref_C, b_mu, ...
+    c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, ...
+    toggle_gain, story_mask, n_dampers_per_story, resFactor, cfg);
 
+%2) Öykü vektörlerinin hazırlanması
+nStories = size(diag.drift,2);
+Rvec = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
+mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
+ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
+multi = (mask .* ndps).';
+Rvec = Rvec.';
+
+%3) Zaman serisi yapılarının oluşturulması
+ts = struct();
+ts.t = t;
+ts.drift = diag.drift;
+ts.dvel = diag.dvel;
+ts.story_force = diag.story_force;
+ts.PF = diag.PF;
+ts.Q = diag.Q;
+ts.dP_orf = diag.dP_orf;
+ts.Qcap_ratio = abs(diag.Q) ./ Qcap;
+ts.cav_mask = diag.dP_orf < 0;
+
+%4) Güç bileşenlerinin hesabı
+P_visc_per = diag.c_lam .* (diag.dvel.^2);
+ts.P_visc = sum(P_visc_per .* multi, 2);
+
+P_orf_per = diag.dP_orf .* diag.Q;
+ts.P_orf = sum(P_orf_per .* multi, 2);
+
+if isfield(diag,'P_sum')
+    ts.P_sum = diag.P_sum;
+elseif isfield(ts,'P_orf') && isfield(ts,'P_visc')
+    ts.P_sum = ts.P_orf + ts.P_visc;
+else
+    ts.P_sum = [];
+end
+
+%5) Enerji birikimlerinin hesaplanması
+P_struct = sum(diag.story_force .* diag.dvel, 2);
+ts.E_orf = cumtrapz(t, ts.P_orf);
+ts.E_struct = cumtrapz(t, P_struct);
+
+% DIAG yapısı değiştirilmeden geri döndürülür
+end
