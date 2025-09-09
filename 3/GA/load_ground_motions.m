@@ -21,7 +21,7 @@ function [records, scaled, meta] = load_ground_motions(T1, opts)
 %       scaled  - olceklenmis kayitlar
 %       meta    - islemlere dair ozet bilgiler
 
-%% 1) Girdi parametreleri
+%% Girdi Parametreleri
 if nargin < 2, opts = struct(); end
 hp_cut   = Utils.getfield_default(opts,'hp_cut',0.05);   % yuksek gecis [Hz]
 IM_mode  = Utils.getfield_default(opts,'IM_mode','band');
@@ -29,12 +29,12 @@ band_fac = Utils.getfield_default(opts,'band_fac',[0.8 1.2]);
 band_N   = Utils.getfield_default(opts,'band_N',15);
 s_bounds = Utils.getfield_default(opts,'s_bounds',[0.5 2]);
 
-%% 2) MAT dosyasini yukle
+%% MAT dosyasını Yükle
 raw = load('acc_matrix.mat');
 fn  = fieldnames(raw);
 records = struct('name',{},'t',{},'ag',{},'dt',{},'duration',{},'PGA',{},'PGV',{},'IM',{},'scale',{});
 
-%% 3) Her kayit icin on isleme
+%% Ön İşleme
 for k = 1:numel(fn)
     A = raw.(fn{k});
     t  = A(:,1);   ag = A(:,2);
@@ -70,7 +70,7 @@ for k = 1:numel(fn)
                              'IM',[],'scale',1); %#ok<AGROW>
 end
 
-%% 4) Yukleme ozetini yazdir
+%% Yükleme Özeti
 fprintf('Loaded %d ground-motion records:\n', numel(records));
 for k = 1:numel(records)
     r = records(k);
@@ -81,26 +81,14 @@ end
 scaled = [];
 meta = struct();
 
-%% 5) IM hesaplama ve olcekleme (T1 saglandiysa)
+%% IM Hesabı ve Ölçekleme (T1 sağlandığında)
 if nargin >= 1 && ~isempty(T1)
-    zeta = 0.05;
-
-    %% 5A) Her kayit icin IM hesapla
+    %% IM Hesabı
     for k = 1:numel(records)
-        t = records(k).t;  ag = records(k).ag;
-        if strcmpi(IM_mode,'band')
-            Tgrid = linspace(band_fac(1)*T1, band_fac(2)*T1, band_N);
-            Sa = zeros(size(Tgrid));
-            for i = 1:numel(Tgrid)
-                Sa(i) = calc_psa(t, ag, Tgrid(i), zeta);
-            end
-            records(k).IM = exp(mean(log(Sa+eps)));
-        else
-            records(k).IM = calc_psa(t, ag, T1, zeta);
-        end
+        records(k).IM = compute_IM(records(k), IM_mode, T1, band_fac, band_N);
     end
 
-    %% 5B) Hedef IM secimi ve TRIM
+    %% Hedef IM Seçimi ve TRIM
     IM = [records.IM];
     IM_low  = max(s_bounds(1)*IM);
     IM_high = min(s_bounds(2)*IM);
@@ -127,7 +115,7 @@ if nargin >= 1 && ~isempty(T1)
     targetIM  = min(max(targetIM0, IM_low), IM_high);
     doClip = (IM_low > IM_high);
 
-    %% 5C) Kayitlari olcekle
+    %% Ölçekleme
     scaled = records; n_clipped = 0; s_all = zeros(1,numel(records));
     for k = 1:numel(records)
         s_raw = targetIM / records(k).IM;
@@ -146,19 +134,10 @@ if nargin >= 1 && ~isempty(T1)
         scaled(k).s_clipped = doClip && (abs(s - s_raw) > 1e-12);
         scaled(k).trimmed   = false;
 
-        if strcmpi(IM_mode,'band')
-            Tgrid = linspace(band_fac(1)*T1, band_fac(2)*T1, band_N);
-            Sa = zeros(size(Tgrid));
-            for i = 1:numel(Tgrid)
-                Sa(i) = calc_psa(scaled(k).t, scaled(k).ag, Tgrid(i), zeta);
-            end
-            scaled(k).IM = exp(mean(log(Sa+eps)));
-        else
-            scaled(k).IM = calc_psa(scaled(k).t, scaled(k).ag, T1, zeta);
-        end
+        scaled(k).IM = compute_IM(scaled(k), IM_mode, T1, band_fac, band_N);
     end
 
-    %% 5D) Hata ve log
+    %% Hata ve Log
     err = abs([scaled.IM] - targetIM) / max(targetIM, eps) * 100;
     if strcmpi(IM_mode,'band')
         modeStr = 'band';
@@ -182,6 +161,26 @@ end
 end
 
 %% ==== Yerel Fonksiyonlar ====
+function IM = compute_IM(record, mode, T1, band_fac, band_N)
+%COMPUTE_IM Kayit icin hedef IM degerini hesaplar.
+%   IM = COMPUTE_IM(RECORD, MODE, T1, BAND_FAC, BAND_N) fonksiyonu,
+%   RECORD yapisi icindeki t ve ag alanlarini kullanarak belirlenen
+%   periyot moduna gore yapay spektral ivme (IM) dondurur.
+
+zeta = 0.05;
+t = record.t; ag = record.ag;
+if strcmpi(mode,'band')
+    Tgrid = linspace(band_fac(1)*T1, band_fac(2)*T1, band_N);
+    Sa = zeros(size(Tgrid));
+    for i = 1:numel(Tgrid)
+        Sa(i) = calc_psa(t, ag, Tgrid(i), zeta);
+    end
+    IM = exp(mean(log(Sa + eps)));
+else
+    IM = calc_psa(t, ag, T1, zeta);
+end
+end
+
 function Sa = calc_psa(t, ag, T, zeta)
 %CALC_PSA Tek bir kayit icin yapay spektral ivme hesabi.
 %   Sa = CALC_PSA(t, ag, T, zeta) fonksiyonu, T periyotlu ve zeta
