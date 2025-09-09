@@ -16,7 +16,8 @@ function [summary, all_out] = run_batch_windowed(scaled, params, opts)
 if nargin < 3, opts = struct(); end
 if ~isfield(opts,'mu_factors'), opts.mu_factors = [0.75 1.00 1.25]; end
 if ~isfield(opts,'mu_weights'), opts.mu_weights = [0.2 0.6 0.2]; end
-opts.thr = Utils.default_qc_thresholds(Utils.getfield_default(opts,'thr', struct()));
+if ~isfield(opts,'thr'), opts.thr = struct(); end
+opts.thr = Utils.default_qc_thresholds(opts.thr);
 
 do_export = isfield(opts,'do_export') && opts.do_export;
 if do_export

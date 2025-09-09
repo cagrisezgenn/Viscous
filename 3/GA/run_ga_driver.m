@@ -68,13 +68,14 @@ end
         meta.s_bounds   = Utils.getfield_default(S,'s_bounds',[]);
         meta.mu_factors = Utils.getfield_default(S,'mu_factors',[0.75 1.00 1.25]);
         meta.mu_weights = Utils.getfield_default(S,'mu_weights',[0.2 0.6 0.2]);
-        meta.thr       = Utils.default_qc_thresholds(Utils.getfield_default(S,'thr', struct()));
+        if ~isfield(S,'thr'), S.thr = struct(); end
+        meta.thr       = Utils.default_qc_thresholds(S.thr);
     else
         scaled = scaledOrSnap_local;
         params = params_local;
         meta = struct('IM_mode','', 'band_fac',[], 's_bounds',[], ...
                       'mu_factors',[0.75 1.00 1.25], 'mu_weights',[0.2 0.6 0.2], ...
-                      'thr', Utils.default_qc_thresholds());
+                      'thr', Utils.default_qc_thresholds(struct()));
         % Auto-prepare workspace if needed (no inputs provided)
         if (isempty(scaled) || isempty(params))
             try
@@ -127,11 +128,8 @@ end
     optsEval.thermal_reset = 'each';
     if ~isfield(optsEval,'mu_factors'), optsEval.mu_factors = meta.mu_factors; end
     if ~isfield(optsEval,'mu_weights'), optsEval.mu_weights = meta.mu_weights; end
-    if ~isfield(optsEval,'thr')
-        optsEval.thr = meta.thr;
-    else
-        optsEval.thr = Utils.default_qc_thresholds(optsEval.thr);
-    end
+    if ~isfield(optsEval,'thr'), optsEval.thr = meta.thr; end
+    optsEval.thr = Utils.default_qc_thresholds(optsEval.thr);
     %% GA Kurulumu
     % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
     if nargin < 4 || isempty(optsGA), optsGA = struct; end

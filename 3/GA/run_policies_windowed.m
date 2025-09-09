@@ -23,7 +23,8 @@ if ~isfield(opts,'rng_seed'), opts.rng_seed = 42; end
 if ~isfield(opts,'rank_metric'), opts.rank_metric = 'E_orifice_win'; end
 
 % QC eşikleri (Utils ile varsayılanlara tamamlanır)
-opts.thr = Utils.default_qc_thresholds(Utils.getfield_default(opts,'thr', struct()));
+if ~isfield(opts,'thr'), opts.thr = struct(); end
+opts.thr = Utils.default_qc_thresholds(opts.thr);
 
 % Sessizlik/çıktı bayrakları ve çıktı dizini
 quiet = isfield(opts,'quiet') && opts.quiet;
