@@ -117,6 +117,8 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     if ~isfield(optsEval,'mu_weights'), optsEval.mu_weights = meta.mu_weights; end
     if ~isfield(optsEval,'thr'), optsEval.thr = meta.thr; end
     optsEval.thr = Utils.default_qc_thresholds(optsEval.thr);
+    if ~isfield(optsEval,'use_orifice'), optsEval.use_orifice = true; end
+    if ~isfield(optsEval,'use_thermal'), optsEval.use_thermal = true; end
     % --- Hedef kat kuvvetlerini belirlemek için toggle_gain ile ön çalışma ---
     opts_target = optsEval;
     [summary_target, all_out_target] = run_batch_windowed(scaled, params, opts_target);
