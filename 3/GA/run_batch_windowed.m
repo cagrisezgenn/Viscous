@@ -112,10 +112,6 @@ T_end      = zeros(n,1);
 mu_end     = zeros(n,1);
 clamp_hits = zeros(n,1);
 
-F_story_target_pk = nan(n,1);
-F_story_actual_pk = nan(n,1);
-F_story_penalty   = nan(n,1);
-
 Dp_mm_col   = repmat(Utils.getfield_default(params,'Dp_mm',NaN), n,1);
 mu_ref_col  = repmat(Utils.getfield_default(params,'mu_ref',NaN), n,1);
 
@@ -127,13 +123,7 @@ worstIDR = -inf; worstIDR_name = ''; worstIDR_mu = NaN;
 prev_diag = [];
 for k = 1:n
     rec = scaled(k);
-    if isfield(opts,'F_story_target')
-        opts_i = opts;
-        opts_i.F_story_target = opts.F_story_target{k};
-    else
-        opts_i = opts;
-    end
-    out = run_one_record_windowed(rec, params, opts_i, prev_diag);
+    out = run_one_record_windowed(rec, params, opts, prev_diag);
     prev_diag = out.diag;
     all_out{k} = out; %#ok<AGROW>
 
@@ -154,10 +144,6 @@ for k = 1:n
     T_end(k)      = out.T_end;
     mu_end(k)     = out.mu_end;
     clamp_hits(k) = out.clamp_hits;
-
-    F_story_target_pk(k) = Utils.getfield_default(out,'F_story_target_pk',NaN);
-    F_story_actual_pk(k) = Utils.getfield_default(out,'F_story_actual_pk',NaN);
-    F_story_penalty(k)   = Utils.getfield_default(out,'F_story_penalty',NaN);
 
     m_nom = out.metr;
     PFA_nom(k)    = m_nom.PFA_top;
@@ -244,14 +230,14 @@ summary.table = table(names, scale, SaT1, t5, t95, coverage, rank_score, policy_
     PFA_worst, IDR_worst, dP95_worst, dP_orf_q50_worst, Qcap95_worst, Q_q95_worst, Q_q50_worst, PF_p95_worst, ...
     cav_pct_worst, x10_max_D_worst, a10abs_max_D_worst, E_orifice_sum, E_struct_sum, E_ratio, ...
     which_mu_PFA, which_mu_IDR, T_end_worst, mu_end_worst, qc_all_mu, ...
-    T_start, T_end, mu_end, clamp_hits, F_story_target_pk, F_story_actual_pk, F_story_penalty, Dp_mm_col, mu_ref_col, ...
+    T_start, T_end, mu_end, clamp_hits, Dp_mm_col, mu_ref_col, ...
     'VariableNames', {'name','scale','SaT1','t5','t95','coverage','rank_score','policy','order','cooldown_s', ...
     'PFA_nom','IDR_nom','dP95_nom','Qcap95_nom','cav_nom','zeta1_hot','z2_over_z1_hot','P_mech','Re_max', ...
     'PFA_w','IDR_w','dP95_w','Qcap95_w','Q_q95_w','Q_q50_w','dP50_w', ...
     'PFA_worst','IDR_worst','dP95_worst','dP_orf_q50_worst','Qcap95_worst','Q_q95_worst','Q_q50_worst','PF_p95_worst', ...
     'cav_pct_worst','x10_max_D_worst','a10abs_max_D_worst','E_orifice_sum','E_struct_sum','E_ratio', ...
     'which_mu_PFA','which_mu_IDR','T_end_worst','mu_end_worst','qc_all_mu', ...
-    'T_start','T_end','mu_end','clamp_hits','F_story_target','F_story','F_story_penalty','Dp_mm','mu_ref'});
+    'T_start','T_end','mu_end','clamp_hits','Dp_mm','mu_ref'});
 
 % Tüketicilerle uyumluluk için takma adlar
 summary.table.T_oil_end_worst = summary.table.T_end_worst;
