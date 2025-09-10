@@ -42,7 +42,7 @@ T1 = 2*pi/w(1);
 %% --- 2) Damper geometrisi ve malzeme ---
 Dp     = 0.125;     % Piston çapı [m]
 Lgap   = 0.055;     % Dış gövde/piston aralığı [m]
-d_o    = 3.0e-3;    % Orifis çapı [m]
+d_o    = 1.5e-3;    % Orifis çapı [m]
 Lori   = 0.10;      % Orifis uzunluğu [m]
 mu_ref = 0.9;       % Referans viskozite [Pa·s]
 
@@ -97,7 +97,7 @@ thermal.dT_max    = 80;              % Maksimum izin verilen ΔT [K]
 % Ek kütle/kapasite verileri
 steel_to_oil_mass_ratio = 1.5;       % Çelik/yağ kütle oranı
 n_dampers_per_story    = 1;          % Kat başına damper adedi (skaler veya (n-1)x1 vektör)
-toggle_gain            = 1.6;        % Toggle kazancı (skaler veya (n-1)x1 vektör)
+toggle_gain            = 1;        % Toggle kazancı (skaler veya (n-1)x1 vektör)
 story_mask             = ones(n-1,1);% Kat maskesi; 1=aktif, 0=damper yok
 cp_oil   = 1800;                     % Yağın özgül ısısı [J/(kg·K)]
 cp_steel = 500;                      % Çeliğin özgül ısısı [J/(kg·K)]
@@ -112,8 +112,8 @@ c_lam_min      = max(c_lam_min_abs, c_lam_min_frac*c_lam0);
 % Basınç-kuvvet filtresi (PF) ayarları
 cfg = struct();
 cfg.PF.mode      = 'ramp';
-cfg.PF.tau       = 1.0;
-cfg.PF.gain      = 0.85;
+cfg.PF.tau       = 0.05;
+cfg.PF.gain      = 1.0;
 cfg.PF.t_on      = 0;
 cfg.PF.auto_t_on = true;
 cfg.on.pressure_force     = true;

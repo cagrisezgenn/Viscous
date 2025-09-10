@@ -207,7 +207,9 @@ else
 end
 
 % Weighted and worst-case summaries (metric-specific min/max where appropriate)
-fields = {'PFA_top','IDR_max','dP_orf_q95','Qcap_ratio_q95','cav_pct','T_oil_end','mu_end'};
+fields = {'PFA_top','IDR_max','dP_orf_q95','dP_orf_q50','Q_q95','Q_q50','Qcap_ratio_q95', ...
+          'cav_pct','T_oil_end','mu_end', 'x10_max_D','a10abs_max_D', ...
+          'E_orifice_full','E_struct_full','E_ratio_full','PF_p95'};
 weighted = struct();
 worst = struct();
 worst.which_mu = struct();
@@ -252,8 +254,22 @@ out.cav_pct = metr.cav_pct;
 out.t5 = win.t5; out.t95 = win.t95; out.coverage = win.coverage;
 % chosen PF ramp onset (if set)
 try
-    if isfield(params,'cfg') && isfield(params.cfg,'PF') && isfield(params.cfg.PF,'t_on')
-        out.PF_t_on = params.cfg.PF.t_on;
+    if isfield(params,'cfg') && isfield(params.cfg,'PF')
+        if isfield(params.cfg.PF,'t_on')
+            out.PF_t_on = params.cfg.PF.t_on;
+        end
+        if isfield(params.cfg.PF,'tau')
+            out.PF_tau = params.cfg.PF.tau;
+        end
+        if isfield(params.cfg.PF,'gain')
+            out.PF_gain = params.cfg.PF.gain;
+        end
+        if isfield(params.cfg.PF,'mode')
+            out.PF_mode = params.cfg.PF.mode;
+        end
+        if isfield(params.cfg.PF,'auto_t_on')
+            out.PF_auto_t_on = logical(params.cfg.PF.auto_t_on);
+        end
     end
 catch
 end

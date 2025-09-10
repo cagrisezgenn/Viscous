@@ -115,7 +115,7 @@ thermal.dT_max    = 80;              % Maksimum izin verilen ΔT [K]
 % Ek kütle/kapasite verileri
 steel_to_oil_mass_ratio = 1.5;       % Çelik/yağ kütle oranı
 n_dampers_per_story    = 1;          % Kat başına damper adedi (skaler veya (n-1)x1 vektör)
-toggle_gain            = 1.6;        % Toggle kazancı (skaler veya (n-1)x1 vektör)
+toggle_gain            = 1;        % Toggle kazancı (skaler veya (n-1)x1 vektör)
 story_mask             = ones(n-1,1);% Kat maskesi; 1=aktif, 0=damper yok
 cp_oil   = 1800;                     % Yağın özgül ısısı [J/(kg·K)]
 cp_steel = 500;                      % Çeliğin özgül ısısı [J/(kg·K)]
