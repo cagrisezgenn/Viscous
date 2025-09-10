@@ -121,6 +121,9 @@ for k = 1:numel(all_out)
         if isfield(out,'PF_mode'),       mstruct.PF_mode = out.PF_mode; end
         if isfield(out,'PF_auto_t_on'),  mstruct.PF_auto_t_on = out.PF_auto_t_on; end
         mstruct.mu_mode = mu_mode; mstruct.mu_used = mu_used;
+        if isfield(out,'F_story_target_pk'), mstruct.F_story_target = out.F_story_target_pk; end
+        if isfield(out,'F_story_actual_pk'), mstruct.F_story = out.F_story_actual_pk; end
+        if isfield(out,'F_story_penalty'), mstruct.F_story_penalty = out.F_story_penalty; end
         % Yeni parametreleri isteğe bağlı olarak metriklere ekle
         param_fields = {'Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref'};
         for ii = 1:numel(param_fields)

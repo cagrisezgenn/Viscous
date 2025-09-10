@@ -1,17 +1,19 @@
-function [x,a_rel,ts,diag] = mck_with_damper_ts(t,ag,M,C,K, k_sd,c_lam0, use_orifice, orf, rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, n_dampers_per_story, resFactor, cfg)
+function [x,a_rel,ts,diag] = mck_with_damper_ts(t,ag,M,C,K,k_sd,c_lam0,use_orifice,orf,rho,Ap,Ao,Qcap,mu_ref,use_thermal,thermal,T0_C,T_ref_C,b_mu,c_lam_min,c_lam_cap,Lgap,cp_oil,cp_steel,steel_to_oil_mass_ratio,toggle_gain,story_mask,n_dampers_per_story,resFactor,cfg,F_story_target)
 %MCK_WITH_DAMPER_TS Wrapper around MCK_WITH_DAMPER returning time-series.
 %
 %   [X,A_REL,TS,DIAG] = MCK_WITH_DAMPER_TS(T,AG,M,C,K, ...) calls the existing
 %   MCK_WITH_DAMPER function to compute the structural response and then
 %   assembles a time-series structure TS containing various per–time-step
-%   diagnostics such as power and energy histories.  The original diagnostic
+%   diagnostics such as power and energy histories. The original diagnostic
 %   structure DIAG is returned unchanged.
 
-% Solve using the existing implementation
-[x,a_rel,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orifice, orf, rho, Ap, Ao, Qcap, mu_ref, ...
-    use_thermal, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
-    cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
-    n_dampers_per_story, resFactor, cfg);
+if nargin < 31 || isempty(F_story_target)
+    F_story_target = [];
+end
+
+[x,a_rel,diag] = mck_with_damper(t,ag,M,C,K,k_sd,c_lam0,use_orifice,orf,rho,Ap,Ao,Qcap,mu_ref,...
+    use_thermal,thermal,T0_C,T_ref_C,b_mu,c_lam_min,c_lam_cap,Lgap,cp_oil,cp_steel,steel_to_oil_mass_ratio,
+    toggle_gain,story_mask,n_dampers_per_story,resFactor,cfg,F_story_target);
 
 % Story vectors needed for power calculations
 nStories = size(diag.drift,2);
@@ -34,29 +36,22 @@ ts.Qcap_ratio = abs(diag.Q) ./ Qcap;
 ts.cav_mask = diag.dP_orf < 0;
 
 % Power components
-% Piston velocity for each damper
-
-% Viscous and orifice power (story-domain hydraulics; apply counts only)
- P_visc_per = diag.c_lam * (diag.dvel.^2);
- ts.P_visc = sum(P_visc_per .* multi, 2);
-
- P_orf_per = diag.dP_orf .* diag.Q;
- ts.P_orf = sum(P_orf_per .* multi, 2);
-
+P_visc_per = diag.c_lam .* (diag.dvel.^2);
+ts.P_visc = sum(P_visc_per .* multi, 2);
+P_orf_per = diag.dP_orf .* diag.Q;
+ts.P_orf = sum(P_orf_per .* multi, 2);
 if isfield(diag,'P_sum')
     ts.P_sum = diag.P_sum;
+elseif isfield(ts,'P_orf') && isfield(ts,'P_visc')
+    ts.P_sum = ts.P_orf + ts.P_visc;
 else
-    if isfield(ts,'P_orf') && isfield(ts,'P_visc')
-        ts.P_sum = ts.P_orf + ts.P_visc;
-    else
-        ts.P_sum = [];
-    end
+    ts.P_sum = [];
 end
 
 % Energy accumulations
- P_struct = sum(diag.story_force .* diag.dvel, 2);
- ts.E_orf = cumtrapz(t, ts.P_orf);
- ts.E_struct = cumtrapz(t, P_struct);
+P_struct = sum(diag.story_force .* diag.dvel, 2);
+ts.E_orf = cumtrapz(t, ts.P_orf);
+ts.E_struct = cumtrapz(t, P_struct);
 % mechanical energy integral not exported/consumed
 
 % DIAG is returned unchanged

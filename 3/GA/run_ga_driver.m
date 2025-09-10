@@ -117,6 +117,13 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     if ~isfield(optsEval,'mu_weights'), optsEval.mu_weights = meta.mu_weights; end
     if ~isfield(optsEval,'thr'), optsEval.thr = meta.thr; end
     optsEval.thr = Utils.default_qc_thresholds(optsEval.thr);
+    % --- Hedef kat kuvvetlerini belirlemek için toggle_gain ile ön çalışma ---
+    opts_target = optsEval;
+    [summary_target, all_out_target] = run_batch_windowed(scaled, params, opts_target);
+    F_story_target = cellfun(@(s) s.diag.story_force, all_out_target, 'UniformOutput', false);
+    optsEval.F_story_target = F_story_target;
+    try, assignin('base','F_story_target',F_story_target); catch, end
+    params.toggle_gain = ones(size(params.toggle_gain));
     %% GA Kurulumu
     % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
     if nargin < 4 || isempty(optsGA), optsGA = struct; end
@@ -217,16 +224,19 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
 
     % ceza bileşenleri (eval ile aynı)
     pen     = zeros(nF,1);
-    pen_dP  = zeros(nF,1); pen_Qcap = zeros(nF,1); pen_cav = zeros(nF,1); pen_T = zeros(nF,1); pen_mu = zeros(nF,1);
+    pen_dP  = zeros(nF,1); pen_Qcap = zeros(nF,1); pen_cav = zeros(nF,1); pen_T = zeros(nF,1); pen_mu = zeros(nF,1); pen_F = zeros(nF,1);
     lambda  = Utils.getfield_default(optsEval,'penalty_scale',10);
     pwr     = Utils.getfield_default(optsEval,'penalty_power',1.0);
-    W       = Utils.getfield_default(optsEval,'penalty_weights', struct('dP',1,'Qcap',1,'cav',2,'T',0.5,'mu',0.5));
+    W       = Utils.getfield_default(optsEval,'penalty_weights', struct('dP',1,'Qcap',1,'cav',2,'T',0.5,'mu',0.5,'F',1));
     rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
     rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
 
     Opost = struct('do_export',false,'quiet',true,'thermal_reset','each','order','natural', ...
                    'use_orifice', true, 'use_thermal', true, ...
                    'mu_factors', meta.mu_factors, 'mu_weights', meta.mu_weights, 'thr', meta.thr);
+    if isfield(optsEval,'F_story_target')
+        Opost.F_story_target = optsEval.F_story_target;
+    end
 
     parfor i = 1:nF
         Xi = quant_clamp_x(X(i,:));
@@ -276,6 +286,12 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
         catch ME
             warning('mu_end_worst okunamadı: %s', ME.message);
             v_mu = 1;
+        end
+        try
+            v_Fpen = Si.table.F_story_penalty;
+        catch ME
+            warning('F_story_penalty okunamadı: %s', ME.message);
+            v_Fpen = 0;
         end
 
         try
@@ -362,6 +378,7 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
         vv_cav  = v_cav(:);  if isempty(vv_cav), vv_cav = 0; end
         vv_Tend = v_Tend(:); if isempty(vv_Tend), vv_Tend = 0; end
         vv_mu   = v_mu(:);   if isempty(vv_mu), vv_mu = 1; end
+        vv_Fpen = v_Fpen(:); if isempty(vv_Fpen), vv_Fpen = 0; end
 
         pen_dP(i)   = mean(rel(vv_dP,   Opost.thr.dP95_max));
         pen_Qcap(i) = mean(rel(vv_Qcap, Opost.thr.Qcap95_max));
@@ -372,13 +389,14 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
         end
         pen_T(i)    = mean(rel(vv_Tend, Opost.thr.T_end_max));
         pen_mu(i)   = mean(rev(vv_mu,   Opost.thr.mu_end_min));
-        pen(i)      = lambda*(W.dP*pen_dP(i)+W.Qcap*pen_Qcap(i)+W.cav*pen_cav(i)+W.T*pen_T(i)+W.mu*pen_mu(i));
+        pen_F(i)    = mean(vv_Fpen);
+        pen(i)      = lambda*(W.dP*pen_dP(i)+W.Qcap*pen_Qcap(i)+W.cav*pen_cav(i)+W.T*pen_T(i)+W.mu*pen_mu(i)+W.F*pen_F(i));
     end
 
     % Satır başına dizilerden T tablosunu oluştur
-    T = array2table([X F pen pen_dP pen_Qcap pen_cav pen_T pen_mu], 'VariableNames', ...
+    T = array2table([X F pen pen_dP pen_Qcap pen_cav pen_T pen_mu pen_F], 'VariableNames', ...
        {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref', ...
-        'f1','f2','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu'});
+        'f1','f2','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu','pen_F'});
 
     T.x10_max_damperli    = x10pk;
     T.a10abs_max_damperli = a10pk;
@@ -548,7 +566,7 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     pwr     = Utils.getfield_default(optsEval,'penalty_power',1.0);
     rel = @(v,lim) max(0, (v - lim)./max(lim,eps)).^pwr;
     rev = @(v,lim) max(0, (lim - v)./max(lim,eps)).^pwr;
-    W = Utils.getfield_default(optsEval,'penalty_weights', struct('dP',1,'Qcap',1,'cav',2,'T',0.5,'mu',0.5));
+    W = Utils.getfield_default(optsEval,'penalty_weights', struct('dP',1,'Qcap',1,'cav',2,'T',0.5,'mu',0.5,'F',1));
     pen_dP   = isfield(thr,'dP95_max')   * mean(rel(dP95v,  thr.dP95_max));
     pen_Qcap = isfield(thr,'Qcap95_max') * mean(rel(qcapv,  thr.Qcap95_max));
     if isfield(thr,'cav_pct_max')
@@ -558,17 +576,22 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     end
     pen_T    = isfield(thr,'T_end_max')  * mean(rel(Tendv,  thr.T_end_max));
     pen_mu   = isfield(thr,'mu_end_min') * mean(rev(muendv, thr.mu_end_min));
-    pen = W.dP*pen_dP + W.Qcap*pen_Qcap + W.cav*pen_cav + W.T*pen_T + W.mu*pen_mu;
+    if ismember('F_story_penalty', S.table.Properties.VariableNames)
+        pen_F = mean(S.table.F_story_penalty);
+    else
+        pen_F = 0;
+    end
+    pen = W.dP*pen_dP + W.Qcap*pen_Qcap + W.cav*pen_cav + W.T*pen_T + W.mu*pen_mu + W.F*pen_F;
     % multiplicative penalty keeps scale of objectives
     f = [f1, f2] .* (1 + lambda*pen);
     % Build meta and enforce numeric penalties
     meta = struct('x',x,'f',f,'PFA_w_mean',f1,'IDR_w_mean',f2);
     Penalty   = lambda*pen;
-    pen_parts = struct('dP',pen_dP,'Qcap',pen_Qcap,'cav',pen_cav,'T',pen_T,'mu',pen_mu);
+    pen_parts = struct('dP',pen_dP,'Qcap',pen_Qcap,'cav',pen_cav,'T',pen_T,'mu',pen_mu,'F',pen_F);
     % --- penalties: force numeric (no NaNs)
     if ~exist('Penalty','var') || ~isfinite(Penalty), Penalty = 0; end
     if ~exist('pen_parts','var') || ~isstruct(pen_parts), pen_parts = struct(); end
-    pf = {'dP','Qcap','cav','T','mu'};
+    pf = {'dP','Qcap','cav','T','mu','F'};
     for ii=1:numel(pf)
         fn = pf{ii};
         if ~isfield(pen_parts,fn) || ~isfinite(pen_parts.(fn)), pen_parts.(fn) = 0; end
@@ -579,6 +602,7 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     meta.pen_cav  = pen_parts.cav;
     meta.pen_T    = pen_parts.T;
     meta.pen_mu   = pen_parts.mu;
+    meta.pen_F    = pen_parts.F;
     meta.pen_parts = pen_parts;
     % --- append damperli peak metrics (zeros if unavailable)
     x10pk = 0; a10pk = 0;
@@ -774,7 +798,12 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         if Opost.thr.cav_pct_max<=0, pen_cav_0 = max(0,cavW_0).^pwr; else, pen_cav_0 = rel(cavW_0,Opost.thr.cav_pct_max); end
         pen_T_0    = rel(Tend_0,  Opost.thr.T_end_max);
         pen_mu_0   = rev(muend_0, Opost.thr.mu_end_min);
-        pen_0      = lambda*(W.dP*pen_dP_0 + W.Qcap*pen_Qcap_0 + W.cav*pen_cav_0 + W.T*pen_T_0 + W.mu*pen_mu_0);
+        if ismember('F_story_penalty', T0bl.Properties.VariableNames)
+            pen_F_0 = mean(T0bl.F_story_penalty);
+        else
+            pen_F_0 = 0;
+        end
+        pen_0      = lambda*(W.dP*pen_dP_0 + W.Qcap*pen_Qcap_0 + W.cav*pen_cav_0 + W.T*pen_T_0 + W.mu*pen_mu_0 + W.F*pen_F_0);
 
         % Baz satırı için tablonun ilk satırını kopyala
         vn = T.Properties.VariableNames;
@@ -810,6 +839,7 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         assign('pen_cav', pen_cav_0);
         assign('pen_T',   pen_T_0);
         assign('pen_mu',  pen_mu_0);
+        assign('pen_F',   pen_F_0);
 
         % damper tepe değerleri
         try

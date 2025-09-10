@@ -141,6 +141,11 @@ end
 
 nMu = numel(mu_factors);
 mu_results = struct('mu_factor',cell(1,nMu));
+if isfield(opts,'F_story_target')
+    F_story_target = opts.F_story_target;
+else
+    F_story_target = [];
+end
 
 for i = 1:nMu
     f = mu_factors(i);
@@ -151,7 +156,7 @@ for i = 1:nMu
         params.A_o, params.Qcap_big, mu_ref_eff, opts.use_thermal, params.thermal, Tinit, ...
         params.T_ref_C, params.b_mu, params.c_lam_min, params.c_lam_cap, params.Lgap, ...
         params.cp_oil, params.cp_steel, params.steel_to_oil_mass_ratio, params.toggle_gain, ...
-        params.story_mask, params.n_dampers_per_story, params.resFactor, params.cfg);
+        params.story_mask, params.n_dampers_per_story, params.resFactor, params.cfg, F_story_target);
 
     params_m = params; params_m.diag = diag;
     metr_i = compute_metrics_windowed(rec.t, x, a_rel, rec.ag, ts, params.story_height, win, params_m);
@@ -167,6 +172,11 @@ for i = 1:nMu
     mu_results(i).c_lam0_eff  = c_lam0_eff;
     mu_results(i).metr        = metr_i;
     mu_results(i).diag        = diag;
+    if abs(f-1.0) < 1e-6
+        F_story_target_pk = max(abs(F_story_target(:)));
+        F_story_actual_pk = max(abs(diag.story_force(:)));
+        F_story_penalty   = diag.F_story_err;
+    end
     mu_results(i).qc.pass     = qc_pass;
 end
 
@@ -230,6 +240,15 @@ out.T_start = T_start;
 out.T_end = T_end;
 out.mu_end = mu_end;
 out.clamp_hits = clamp_hits;
+if exist('F_story_target_pk','var')
+    out.F_story_target_pk = F_story_target_pk;
+    out.F_story_actual_pk = F_story_actual_pk;
+    out.F_story_penalty   = F_story_penalty;
+else
+    out.F_story_target_pk = NaN;
+    out.F_story_actual_pk = max(abs(diag.story_force(:)));
+    out.F_story_penalty   = diag.F_story_err;
+end
 % kolaylık amaçlı telemetri alanları
 out.PFA_top = metr.PFA_top;
 out.IDR_max = metr.IDR_max;
@@ -277,12 +296,12 @@ function [x,a_rel,ts,diag] = mck_with_damper_ts(t,ag,M,C,K, k_sd,c_lam0,Lori, ..
     use_orifice, orf, rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, ...
     T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, ...
     steel_to_oil_mass_ratio, toggle_gain, story_mask, n_dampers_per_story, ...
-    resFactor, cfg)
+    resFactor, cfg, F_story_target)
 %1) MCK_WITH_DAMPER çözümü
 [x,a_rel,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orifice, orf, ...
     rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, T0_C, T_ref_C, b_mu, ...
     c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, ...
-    toggle_gain, story_mask, n_dampers_per_story, resFactor, cfg);
+    toggle_gain, story_mask, n_dampers_per_story, resFactor, cfg, F_story_target);
 
 %2) Öykü vektörlerinin hazırlanması
 nStories = size(diag.drift,2);
