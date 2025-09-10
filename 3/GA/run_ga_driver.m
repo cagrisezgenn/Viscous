@@ -137,18 +137,16 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     optsEval.dsig = dsig;
     obj = @(x) eval_design_fast(x, scaled, params, optsEval); % içerde kuantize/clamplar
 
-    collapseFcn = @(options,state,flag) ga_collapse_reseed(options,state,flag,lb,ub,optsEval,optsGA);
     options = optimoptions('gamultiobj', ...
        'PopulationSize',    Utils.getfield_default(optsGA,'PopulationSize',40), ...
-        'MaxGenerations',    Utils.getfield_default(optsGA,'MaxGenerations',30), ...
-        'CrossoverFraction', Utils.getfield_default(optsGA,'CrossoverFraction',0.6), ...
-        'MutationFcn',       Utils.getfield_default(optsGA,'MutationFcn',{@mutationgaussian,0.2,0.5}), ...
-        'ParetoFraction',    Utils.getfield_default(optsGA,'ParetoFraction',0.40), ...
-        'StallGenLimit',     Utils.getfield_default(optsGA,'StallGenLimit',20), ...
-        'DistanceMeasureFcn','distancecrowding', ...
-        'UseParallel',       Utils.getfield_default(optsGA,'UseParallel',true), ...
-        'OutputFcn',         collapseFcn, ...
-        'Display','iter','PlotFcn',[], 'FunctionTolerance',1e-4);
+       'MaxGenerations',    Utils.getfield_default(optsGA,'MaxGenerations',30), ...
+       'CrossoverFraction', Utils.getfield_default(optsGA,'CrossoverFraction',0.6), ...
+       'MutationFcn',       Utils.getfield_default(optsGA,'MutationFcn',{@mutationgaussian,0.2,0.5}), ...
+       'ParetoFraction',    Utils.getfield_default(optsGA,'ParetoFraction',0.4), ...
+       'StallGenLimit',     Utils.getfield_default(optsGA,'StallGenLimit',20), ...
+       'DistanceMeasureFcn','distancecrowding', ...
+       'UseParallel',       Utils.getfield_default(optsGA,'UseParallel',true), ...
+       'Display','iter','PlotFcn',[], 'FunctionTolerance',1e-4);
 
     %% Başlangıç Popülasyonu
     % Izgaraya hizalı ilk popülasyonu oluştur (tohumlarla birlikte).
@@ -523,15 +521,8 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     qcapv = S.table.Qcap95_worst;
     cavv  = S.table.cav_pct_worst;
     if any(dP95v > 1e9) || any(qcapv > 0.90) || any(cavv > 0.01)
-        basePen = Utils.getfield_default(optsEval,'hard_penalty',1e6);
-        if Utils.getfield_default(optsEval,'graded_hard_penalty',false)
-            ex = mean([max(dP95v/1e9 - 1,0), max(qcapv/0.90 - 1,0), max(cavv/0.01 - 1,0)]);
-            f = basePen * (1 + ex) * [1 1];
-        else
-            ex = 0;
-            f = basePen * [1 1];
-        end
-        meta = struct('x',x,'f',f,'hard_kill',true,'hard_excess',ex);
+        f = [1e6, 1e6];
+        meta = struct('x',x,'f',f,'hard_kill',true);
         % --- penalties: ensure numeric zeros for hard-kill
         meta.pen      = 0;
         meta.pen_dP   = 0;
@@ -1043,24 +1034,4 @@ function safe_write(obj, filepath, writeFcn)
 % Verilen yazma fonksiyonunu hataya karşı korumalı olarak çağırır
     Utils.try_warn(@() writeFcn(obj, filepath), ...
         sprintf('Yazma hatası (%s)', filepath));
-end
-
-function [state, options, optchanged] = ga_collapse_reseed(options, state, flag, lb, ub, optsEval, optsGA)
-% Detect collapse where entire generation receives hard penalties and reseed or stop.
-    optchanged = false;
-    if ~strcmp(flag,'iter'), return; end
-    basePen = Utils.getfield_default(optsEval,'hard_penalty',1e6);
-    if all(all(state.Score >= basePen))
-        warning('[GA] Population collapsed (gen %d); all individuals infeasible.', state.Generation);
-        if Utils.getfield_default(optsGA,'ReseedCollapsed',true)
-            newPop = lb + rand(size(state.Population)).*(ub - lb);
-            for ii = 1:size(newPop,1)
-                newPop(ii,:) = quant_clamp_x(newPop(ii,:));
-            end
-            state.Population = newPop;
-            state.Score(:,:) = NaN;
-        else
-            state.StopFlag = 'Population collapsed';
-        end
-    end
 end
