@@ -104,8 +104,14 @@ metr.E_ratio_win   = metr.E_orifice_win / max(metr.E_struct_win, eps);
 % Yağ sıcaklığı ve viskozite gibi termal büyüklükler değerlendirilir.
 if isfield(params,'diag') && isfield(params.diag,'T_oil')
     metr.T_oil_end = params.diag.T_oil(w_last);
+    if isfield(params.diag,'T_steel')
+        metr.T_steel_end = params.diag.T_steel(w_last);
+    else
+        metr.T_steel_end = metr.T_oil_end;
+    end
 else
     metr.T_oil_end = NaN;
+    metr.T_steel_end = NaN;
 end
 if isfield(params,'diag') && isfield(params.diag,'mu')
     metr.mu_end = params.diag.mu(w_last);

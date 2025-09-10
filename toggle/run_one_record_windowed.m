@@ -207,7 +207,9 @@ else
 end
 
 % Weighted and worst-case summaries (metric-specific min/max where appropriate)
-fields = {'PFA_top','IDR_max','dP_orf_q95','Qcap_ratio_q95','cav_pct','T_oil_end','mu_end'};
+fields = {'PFA_top','IDR_max','dP_orf_q95','dP_orf_q50','Q_q95','Q_q50','Qcap_ratio_q95', ...
+          'cav_pct','T_oil_end','T_steel_end','mu_end','x10_max_D','a10abs_max_D', ...
+          'E_orifice_full','E_struct_full','E_ratio_full','PF_p95'};
 weighted = struct();
 worst = struct();
 worst.which_mu = struct();

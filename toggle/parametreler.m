@@ -41,17 +41,25 @@ T1 = 2*pi/w(1);
 
 %% --- 2) Damper geometrisi ve malzeme ---
 Dp     = 0.125;     % Piston çapı [m]
+Dp_vals   = Dp;     % Tarama aralığı
 Lgap   = 0.055;     % Dış gövde/piston aralığı [m]
+Lgap_vals = Lgap;   % Tarama aralığı
 d_o    = 1.5e-3;    % Orifis çapı [m]
+d_o_vals = d_o;     % Tarama aralığı
 Lori   = 0.10;      % Orifis uzunluğu [m]
+Lori_vals = Lori;   % Tarama aralığı
 mu_ref = 0.9;       % Referans viskozite [Pa·s]
+mu_ref_vals = mu_ref; % Tarama aralığı
 
 Kd     = 1.6e9;     % Hidrolik sertlik katsayısı [N/m]
 Ebody  = 2.1e11;    % Gövde elastisite modülü [Pa]
 Gsh    = 79e9;      % Körük kayma modülü [Pa]
 d_w    = 12e-3;     % Yay teli çapı [m]
+d_w_vals = d_w;     % Tarama aralığı
 D_m    = 80e-3;     % Yay orta çapı [m]
+D_m_vals = D_m;     % Tarama aralığı
 n_turn = 8;         % Yay tur sayısı [-]
+n_turn_vals = n_turn; % Tarama aralığı
 
 % Türetilen sabitler (lineer eşdeğer)
 Ap    = pi*Dp^2/4;                    % Piston alanı [m^2]
@@ -64,18 +72,27 @@ c_lam0 = 12*mu_ref*Lori*Ap^2/d_o^4;   % Laminer eşdeğer sönüm (T0)
 
 %% --- 3) Orifis ve termal parametreleri ---
 rho   = 850;       % Yağ yoğunluğu [kg/m^3]
+rho_vals = rho;    % Tarama aralığı
 n_orf = 6;         % Kat başına orifis sayısı
+n_orf_vals = n_orf; % Tarama aralığı
 A_o   = n_orf * (pi*d_o^2/4);     % Toplam orifis alanı [m^2]
 
 % Orifis katsayıları
 orf = struct();
 orf.Cd0   = 0.61;                    % Re → 0 limitindeki boşalım katsayısı
+orf_Cd0_vals = orf.Cd0;              % Tarama aralığı
 orf.CdInf = 0.80;                    % Yüksek Re için boşalım katsayısı
+orf_CdInf_vals = orf.CdInf;          % Tarama aralığı
 orf.Rec   = 3000;                    % Kritik Reynolds sayısı
+orf_Rec_vals = orf.Rec;              % Tarama aralığı
 orf.p_exp = 1.1;                     % Geçiş eğrisinin eğimi
+orf_p_exp_vals = orf.p_exp;          % Tarama aralığı
 orf.p_amb = 1.0e5;                   % Ortam basıncı [Pa]
+orf_p_amb_vals = orf.p_amb;          % Tarama aralığı
 orf.p_cav_eff = 2.0e3;               % Etkin kavitasyon eşiği [Pa]
+orf_p_cav_eff_vals = orf.p_cav_eff;  % Tarama aralığı
 orf.cav_sf    = 0.90;                % Kavitasyon emniyet katsayısı
+orf_cav_sf_vals = orf.cav_sf;        % Tarama aralığı
 orf.d_o   = d_o;                     % Re düzeltmesi için çap [m]
 orf.veps  = 0.10;                    % Düşük hız yumuşatma [m/s]
 
@@ -88,6 +105,7 @@ T_ref_C   = 25;                      % Referans sıcaklık [°C]
 b_mu      = -0.013;                  % Viskozite-sıcaklık katsayısı
 thermal = struct();
 thermal.hA_W_perK = 450;             % Konvektif ısı kaybı katsayısı
+thermal_hA_vals = thermal.hA_W_perK; % Tarama aralığı
 thermal.T_env_C   = 25;              % Ortam sıcaklığı [°C]
 thermal.max_iter  = 3;               % ΔT iterasyon sayısı
 thermal.tol_K     = 0.5;             % Yakınsama toleransı [K]
@@ -113,7 +131,9 @@ c_lam_min      = max(c_lam_min_abs, c_lam_min_frac*c_lam0);
 cfg = struct();
 cfg.PF.mode      = 'ramp';
 cfg.PF.tau       = 0.05;
+cfg_PF_tau_vals  = cfg.PF.tau;       % Tarama aralığı
 cfg.PF.gain      = 1.0;
+cfg_PF_gain_vals = cfg.PF.gain;      % Tarama aralığı
 cfg.PF.t_on      = 0;
 cfg.PF.auto_t_on = true;
 cfg.on.pressure_force     = true;
