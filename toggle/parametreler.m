@@ -42,7 +42,7 @@ T1 = 2*pi/w(1);
 %% --- 2) Damper geometrisi ve malzeme ---
 Dp     = 0.125;     % Piston çapı [m]
 Lgap   = 0.055;     % Dış gövde/piston aralığı [m]
-d_o    = 1.5e-3;    % Orifis çapı [m]
+d_o    = [0.75e-3 1.5e-3 3e-3]; % Orifis çapı [m] (tarama için dizi)
 Lori   = 0.10;      % Orifis uzunluğu [m]
 mu_ref = 0.9;       % Referans viskozite [Pa·s]
 
@@ -60,12 +60,12 @@ k_s   = Ebody*Ap/Lgap;                % Gövde sertliği [N/m]
 k_hyd = 1/(1/k_h + 1/k_s);            % Seri bağlanmış eşdeğer
 k_p   = Gsh*d_w^4/(8*n_turn*D_m^3);   % Yay (körük) sertliği [N/m]
 k_sd  = k_hyd + k_p;                  % Toplam seri damper sertliği [N/m]
-c_lam0 = 12*mu_ref*Lori*Ap^2/d_o^4;   % Laminer eşdeğer sönüm (T0)
+c_lam0 = 12*mu_ref*Lori*Ap^2 ./ d_o.^4;   % Laminer eşdeğer sönüm (T0)
 
 %% --- 3) Orifis ve termal parametreleri ---
 rho   = 850;       % Yağ yoğunluğu [kg/m^3]
 n_orf = 6;         % Kat başına orifis sayısı
-A_o   = n_orf * (pi*d_o^2/4);     % Toplam orifis alanı [m^2]
+A_o   = n_orf * (pi*d_o.^2/4);     % Toplam orifis alanı [m^2]
 
 % Orifis katsayıları
 orf = struct();
@@ -76,7 +76,7 @@ orf.p_exp = 1.1;                     % Geçiş eğrisinin eğimi
 orf.p_amb = 1.0e5;                   % Ortam basıncı [Pa]
 orf.p_cav_eff = 2.0e3;               % Etkin kavitasyon eşiği [Pa]
 orf.cav_sf    = 0.90;                % Kavitasyon emniyet katsayısı
-orf.d_o   = d_o;                     % Re düzeltmesi için çap [m]
+orf.d_o   = d_o(:);                  % Re düzeltmesi için çap [m]
 orf.veps  = 0.10;                    % Düşük hız yumuşatma [m/s]
 
 % Akış satürasyonu (sayısal kararlılık için)
@@ -96,8 +96,8 @@ thermal.dT_max    = 80;              % Maksimum izin verilen ΔT [K]
 
 % Ek kütle/kapasite verileri
 steel_to_oil_mass_ratio = 1.5;       % Çelik/yağ kütle oranı
-n_dampers_per_story    = 1;          % Kat başına damper adedi (skaler veya (n-1)x1 vektör)
-toggle_gain            = 1.6;        % Toggle kazancı (skaler veya (n-1)x1 vektör)
+n_dampers_per_story    = [1 2 3];    % Kat başına damper adedi (tarama için dizi)
+toggle_gain            = [1.4 1.6 1.8];      % Toggle kazancı (tarama için dizi)
 story_mask             = ones(n-1,1);% Kat maskesi; 1=aktif, 0=damper yok
 cp_oil   = 1800;                     % Yağın özgül ısısı [J/(kg·K)]
 cp_steel = 500;                      % Çeliğin özgül ısısı [J/(kg·K)]
@@ -118,3 +118,6 @@ cfg.PF.t_on      = 0;
 cfg.PF.auto_t_on = true;
 cfg.on.pressure_force     = true;
 cfg.on.pf_resistive_only = true;  % sadece rezistif (viskoz+orifis) bileşeni filtrele
+
+% Tarama yapılacak parametrelerin isim listesi
+sweep_vars = {'n_dampers_per_story','toggle_gain','d_o'};
