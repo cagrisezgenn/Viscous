@@ -25,8 +25,6 @@ if nargin < 4, prev_diag = []; end
 if nargin < 3 || isempty(opts), opts = struct(); end
 if ~isfield(opts,'mu_factors'), opts.mu_factors = [0.75 1.00 1.25]; end
 if ~isfield(opts,'mu_weights'), opts.mu_weights = [0.2 0.6 0.2]; end
-if ~isfield(opts,'use_orifice'), opts.use_orifice = true; end
-if ~isfield(opts,'use_thermal'), opts.use_thermal = true; end
 
 % Türetilmiş damper sabitlerini güncelle
 params = Utils.recompute_damper_params(params);
