@@ -56,15 +56,15 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
         meta.IM_mode    = Utils.getfield_default(S,'IM_mode','');
         meta.band_fac   = Utils.getfield_default(S,'band_fac',[]);
         meta.s_bounds   = Utils.getfield_default(S,'s_bounds',[]);
-        meta.mu_factors = Utils.getfield_default(S,'mu_factors',[0.75 1.00 1.25]);
-        meta.mu_weights = Utils.getfield_default(S,'mu_weights',[0.2 0.6 0.2]);
+        meta.mu_factors = Utils.getfield_default(S,'mu_factors',1.00);
+        meta.mu_weights = Utils.getfield_default(S,'mu_weights',1);
         if ~isfield(S,'thr'), S.thr = struct(); end
         meta.thr       = Utils.default_qc_thresholds(S.thr);
     else
         scaled = scaledOrSnap_local;
         params = params_local;
         meta = struct('IM_mode','', 'band_fac',[], 's_bounds',[], ...
-                      'mu_factors',[0.75 1.00 1.25], 'mu_weights',[0.2 0.6 0.2], ...
+                      'mu_factors',1.00, 'mu_weights',1, ...
                       'thr', Utils.default_qc_thresholds(struct()));
         % Gerekirse çalışma alanını otomatik hazırla (giriş sağlanmadığında)
         if (isempty(scaled) || isempty(params))
@@ -123,8 +123,8 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     rng(42);
 
     % Karar vektörü: [d_o_mm, n_orf, PF_tau, PF_gain, Cd0, CdInf, p_exp, Lori_mm, hA_W_perK, Dp_mm, d_w_mm, D_m_mm, n_turn, mu_ref]
-    lb = [2.80, 3, 0.02, 0.6, 0.50, 0.75, 0.80, 60, 200, 97, 8, 56, 3, 0.60];
-    ub = [3.70, 6, 0.1, 1.6, 0.70, 0.95, 1.40, 140, 800, 162, 16, 112, 10, 2.5];
+    lb = [2.00, 2, 0.01, 0.5, 0.40, 0.65, 0.80, 40, 150, 90, 7, 55, 3, 0.30];
+ub = [4.50,12, 0.12, 2.2, 0.80, 1.10, 1.50,180,1000,195,18,140,15, 1.60];
     IntCon = [2 13];  % n_orf ve n_turn tam sayı
 
     % Veri seti imzası üret (önbellek anahtarı)
@@ -138,15 +138,15 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     obj = @(x) eval_design_fast(x, scaled, params, optsEval); % içerde kuantize/clamplar
 
     options = optimoptions('gamultiobj', ...
-       'PopulationSize',    Utils.getfield_default(optsGA,'PopulationSize',40), ...
-       'MaxGenerations',    Utils.getfield_default(optsGA,'MaxGenerations',30), ...
-       'CrossoverFraction', Utils.getfield_default(optsGA,'CrossoverFraction',0.6), ...
-       'MutationFcn',       Utils.getfield_default(optsGA,'MutationFcn',{@mutationgaussian,0.2,0.5}), ...
-       'ParetoFraction',    Utils.getfield_default(optsGA,'ParetoFraction',0.4), ...
-       'StallGenLimit',     Utils.getfield_default(optsGA,'StallGenLimit',20), ...
+       'PopulationSize',    Utils.getfield_default(optsGA,'PopulationSize',120), ...
+       'MaxGenerations',    Utils.getfield_default(optsGA,'MaxGenerations',80), ...
+       'CrossoverFraction', Utils.getfield_default(optsGA,'CrossoverFraction',0.9), ...
+       'MutationFcn',       Utils.getfield_default(optsGA,'MutationFcn',{@mutationgaussian,0.1,0.3}), ...
+       'ParetoFraction',    Utils.getfield_default(optsGA,'ParetoFraction',0.5), ...
+       'StallGenLimit',     Utils.getfield_default(optsGA,'StallGenLimit',40), ...
        'DistanceMeasureFcn','distancecrowding', ...
        'UseParallel',       Utils.getfield_default(optsGA,'UseParallel',true), ...
-       'Display','iter','PlotFcn',[], 'FunctionTolerance',1e-4);
+       'Display','iter','PlotFcn',[], 'FunctionTolerance',1e-5);
 
     %% Başlangıç Popülasyonu
     % Izgaraya hizalı ilk popülasyonu oluştur (tohumlarla birlikte).
@@ -155,9 +155,14 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
             step_vec = [0.1 NaN 0.01 0.02 0.01 0.01 0.05 1 25 1 0.5 5 NaN 0.05];
             P0 = Utils.initial_pop_grid(lb, ub, options.PopulationSize, step_vec);
             % Tohumlar (yeni sınırlar içinde uygulanabilir)
-            seed = [ 2.80 5 1.00 0.85 0.61 0.80 1.10 100 450 125 12 80 8 0.90;
-                     3.20 5 1.00 0.85 0.61 0.80 1.10 100 450 125 12 80 8 0.90;
-                     3.60 6 1.00 0.85 0.61 0.80 1.10 100 450 125 12 80 8 0.90 ];
+           seed = [
+ 2.50  4  0.03 0.60 0.50 0.75 0.80  60 200  95  7  55  3 0.40;   % alt sınırların köşesi
+ 3.90  8  0.12 1.90 0.75 1.00 1.50 160 900 195 18 125 12 1.50;   % üst sınırların köşesi
+ 3.20  6  0.08 1.25 0.60 0.85 1.15 100 550 145 12  90  8 1.00;   % ortalama değerler
+ 2.80  4  0.04 0.90 0.55 0.80 1.00  80 300 120  9  70  6 0.70;   % düşük n_orf / n_turn
+ 3.40  7  0.09 1.60 0.65 0.90 1.30 140 700 170 16 110 10 1.30;   % yüksek PF_gain ve n_turn
+ 2.60  5  0.06 1.10 0.60 0.82 1.20  50 250 100 10  60  5 0.90;   % düşük Lori_mm, orta diğerleri
+];
             ns = min(size(seed,1), size(P0,1));
             P0(1:ns,:) = seed(1:ns,:);
             % Önceki Pareto'yu kullanmak için en son ga_front.csv dosyasını okumayı dene
@@ -454,21 +459,7 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     x(2)  = round(max(x(2),1));        % n_orf tam sayı, >=1
     if numel(x) >=13, x(13) = round(max(x(13),1)); end
 
-    % Kuantizasyondan sonra GA sınırlarına sıkıştır
-    x(1) = min(max(x(1), 2.80), 3.60);
-    x(2) = min(max(x(2), 5), 8);
-    x(3) = min(max(x(3), 0.95), 1.10);
-    x(4) = min(max(x(4), 0.78), 0.90);
-    x(5) = min(max(x(5), 0.50), 0.70);
-    x(6) = min(max(x(6), 0.75), 0.95);
-    x(7) = min(max(x(7), 0.80), 1.40);
-    if numel(x) >= 8,  x(8)  = min(max(x(8),60),140);  end
-    if numel(x) >= 9,  x(9)  = min(max(x(9),200),800); end
-    if numel(x) >=10,  x(10) = min(max(x(10),100),160);end
-    if numel(x) >=11,  x(11) = min(max(x(11),8),16);   end
-    if numel(x) >=12,  x(12) = min(max(x(12),60),100); end
-    if numel(x) >=13,  x(13) = min(max(x(13),6),12);   end
-    if numel(x) >=14,  x(14) = min(max(x(14),0.60),1.20); end
+    
 
     persistent memo;
     if isempty(memo), memo = containers.Map(); end
@@ -494,8 +485,8 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     O.thermal_reset = 'each';
     O.order = 'natural';
     O.use_orifice = true; O.use_thermal = true;
-    if ~isfield(O,'mu_factors'), O.mu_factors = [0.75 1.00 1.25]; end
-    if ~isfield(O,'mu_weights'), O.mu_weights = [0.2 0.6 0.2]; end
+    if ~isfield(O,'mu_factors'), O.mu_factors = 1.00; end
+    if ~isfield(O,'mu_weights'), O.mu_weights = 1; end
 
     % Güvenli değerlendirme (GA sırasında IO yok)
     try

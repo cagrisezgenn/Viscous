@@ -23,8 +23,8 @@ function out = run_one_record_windowed(rec, params, opts, prev_diag)
 % varsayılan argümanlar
 if nargin < 4, prev_diag = []; end
 if nargin < 3 || isempty(opts), opts = struct(); end
-if ~isfield(opts,'mu_factors'), opts.mu_factors = [0.75 1.00 1.25]; end
-if ~isfield(opts,'mu_weights'), opts.mu_weights = [0.2 0.6 0.2]; end
+if ~isfield(opts,'mu_factors'), opts.mu_factors = 1; end
+if ~isfield(opts,'mu_weights'), opts.mu_weights = 1; end
 
 % Türetilmiş damper sabitlerini güncelle
 params = Utils.recompute_damper_params(params);
