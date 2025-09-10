@@ -146,7 +146,7 @@ ub = [4.50,12, 0.12, 2.2, 0.80, 1.10, 1.50,180,1000,195,18,140,15, 1.60];
        'StallGenLimit',     Utils.getfield_default(optsGA,'StallGenLimit',40), ...
        'DistanceMeasureFcn','distancecrowding', ...
        'UseParallel',       Utils.getfield_default(optsGA,'UseParallel',true), ...
-       'Display','iter','PlotFcn',[], 'FunctionTolerance',1e-5);
+       'Display','iter','PlotFcn',[], 'OutputFcn',@gaoutfun, 'FunctionTolerance',1e-5);
 
     %% Başlangıç Popülasyonu
     % Izgaraya hizalı ilk popülasyonu oluştur (tohumlarla birlikte).
@@ -436,6 +436,46 @@ ub = [4.50,12, 0.12, 2.2, 0.80, 1.10, 1.50,180,1000,195,18,140,15, 1.60];
             'README yazımı sırasında thr bilgisi eklenemedi');
         fprintf(fid, 'Note: No simulations during packaging. Fitness evals had no IO.\n');
         fclose(fid);
+    end
+
+    function [state, options, optchanged] = gaoutfun(options, state, flag)
+        persistent hist dsig_local
+        optchanged = false;
+        switch flag
+            case 'init'
+                hist = [];
+                dsig_local = 0;
+                try
+                    dsig_local = sum([scaled.IM]) + sum([scaled.PGA]);
+                catch
+                    dsig_local = 0;
+                end
+            case 'iter'
+                f1 = state.Score(:,1);
+                f2 = state.Score(:,2);
+                nPop = size(state.Population,1);
+                pen = nan(nPop,1);
+                for ii = 1:nPop
+                    xi = quant_clamp_x(state.Population(ii,:));
+                    key = jsonencode([xi, dsig_local]);
+                    meta = memo_store('get', key);
+                    if ~isempty(meta) && isfield(meta,'pen')
+                        pen(ii) = meta.pen;
+                    end
+                end
+                [bestPen, idx] = min(pen);
+                bestF1 = f1(idx);
+                bestF2 = f2(idx);
+                fprintf('Gen %d: f1=%.4g f2=%.4g pen=%.4g\n', state.Generation, bestF1, bestF2, bestPen);
+                hist = [hist; bestF1, bestF2, bestPen];
+                try
+                    subplot(3,1,1); plot(hist(:,1),'b-'); ylabel('f1'); title('Best f1');
+                    subplot(3,1,2); plot(hist(:,2),'r-'); ylabel('f2'); title('Best f2');
+                    subplot(3,1,3); plot(hist(:,3),'k-'); ylabel('pen'); xlabel('Generation'); title('Best penalty');
+                    drawnow;
+                catch
+                end
+        end
     end
 end
 
