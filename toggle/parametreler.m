@@ -62,20 +62,20 @@ n_turn = 8;         % Yay tur sayısı [-]
 n_turn_vals = n_turn; % Tarama aralığı
 
 % Türetilen sabitler (lineer eşdeğer)
-Ap    = pi*Dp^2/4;                    % Piston alanı [m^2]
-k_h   = Kd*Ap^2/Lgap;                 % Hidrolik sertlik [N/m]
-k_s   = Ebody*Ap/Lgap;                % Gövde sertliği [N/m]
-k_hyd = 1/(1/k_h + 1/k_s);            % Seri bağlanmış eşdeğer
-k_p   = Gsh*d_w^4/(8*n_turn*D_m^3);   % Yay (körük) sertliği [N/m]
+Ap    = pi*(Dp.^2)/4;                 % Piston alanı [m^2]
+k_h   = Kd*(Ap.^2)./Lgap;             % Hidrolik sertlik [N/m]
+k_s   = Ebody*Ap./Lgap;               % Gövde sertliği [N/m]
+k_hyd = 1./(1./k_h + 1./k_s);         % Seri bağlanmış eşdeğer
+k_p   = Gsh*(d_w.^4)./(8*n_turn.*D_m.^3); % Yay (körük) sertliği [N/m]
 k_sd  = k_hyd + k_p;                  % Toplam seri damper sertliği [N/m]
-c_lam0 = 12*mu_ref*Lori*Ap^2/d_o^4;   % Laminer eşdeğer sönüm (T0)
+c_lam0 = 12*mu_ref*Lori*(Ap.^2)./(d_o.^4); % Laminer eşdeğer sönüm (T0)
 
 %% --- 3) Orifis ve termal parametreleri ---
 rho   = 850;       % Yağ yoğunluğu [kg/m^3]
 rho_vals = rho;    % Tarama aralığı
 n_orf = 6;         % Kat başına orifis sayısı
 n_orf_vals = n_orf; % Tarama aralığı
-A_o   = n_orf * (pi*d_o^2/4);     % Toplam orifis alanı [m^2]
+A_o   = n_orf.*(pi*(d_o.^2)/4);   % Toplam orifis alanı [m^2]
 
 % Orifis katsayıları
 orf = struct();

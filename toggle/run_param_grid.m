@@ -79,26 +79,31 @@ for i = 1:size(comb,1)
 
     % --- Simülasyon ---
     out = run_one_record_windowed(rec, [], params, opts);
-    w = out.worst;
+    w = out.worst; m = out.metr; d = out.diag;
 
     % Koruma amaçlı yardımcılar
-    if isfield(w,'x10_max_D'), x10 = w.x10_max_D; elseif isfield(w,'x10_pk_D'), x10 = w.x10_pk_D; else, x10 = NaN; end
-    if isfield(w,'a10abs_max_D'), a10 = w.a10abs_max_D; elseif isfield(w,'a10abs_pk_D'), a10 = w.a10abs_pk_D; else, a10 = NaN; end
-    dP95 = Utils.getfield_default(w,'dP_orf_q95',NaN);
+    x10  = Utils.getfield_default(m,'x10_max_D', ...
+                Utils.getfield_default(m,'x10_pk_D',NaN));
+    a10  = Utils.getfield_default(m,'a10abs_max_D', ...
+                Utils.getfield_default(m,'a10abs_pk_D',NaN));
+    dP95   = Utils.getfield_default(w,'dP_orf_q95',NaN);
     Qcap95 = Utils.getfield_default(w,'Qcap_ratio_q95',NaN);
-    cav   = Utils.getfield_default(w,'cav_pct',NaN);
-    Tend  = Utils.getfield_default(w,'T_oil_end',NaN);
-    muend = Utils.getfield_default(w,'mu_end',NaN);
-    PFp95 = Utils.getfield_default(w,'PF_p95',NaN);
-    Qq50  = Utils.getfield_default(w,'Q_q50',NaN);
-    Qq95  = Utils.getfield_default(w,'Q_q95',NaN);
-    dPq50 = Utils.getfield_default(w,'dP_orf_q50',NaN);
-    dPq95 = Utils.getfield_default(w,'dP_orf_q95',dP95);
-    Tsteel= Utils.getfield_default(w,'T_steel_end',NaN);
-    Eor   = Utils.getfield_default(w,'E_orifice_full',NaN);
-    Estr  = Utils.getfield_default(w,'E_struct_full',NaN);
-    Eratio= Utils.getfield_default(w,'E_ratio_full',NaN);
-    Etot  = Eor + Estr;
+    cav    = Utils.getfield_default(w,'cav_pct',NaN);
+    Tend   = Utils.getfield_default(w,'T_oil_end', ...
+                Utils.getfield_default(m,'T_oil_end',NaN));
+    muend  = Utils.getfield_default(w,'mu_end', ...
+                Utils.getfield_default(m,'mu_end',NaN));
+    PFp95 = Utils.getfield_default(m,'PF_p95',NaN);
+    Qq50  = Utils.getfield_default(m,'Q_q50',NaN);
+    Qq95  = Utils.getfield_default(m,'Q_q95',NaN);
+    dPq50 = Utils.getfield_default(m,'dP_orf_q50',NaN);
+    dPq95 = Utils.getfield_default(w,'dP_orf_q95', ...
+                Utils.getfield_default(m,'dP_orf_q95',NaN));
+    if isfield(d,'T_steel'), Tsteel = d.T_steel(end); else, Tsteel = NaN; end
+    Eor   = Utils.getfield_default(m,'E_orifice_full',NaN);
+    Estr  = Utils.getfield_default(m,'E_struct_full',NaN);
+    Eratio= Utils.getfield_default(m,'E_ratio_full',NaN);
+    Etot  = Utils.getfield_default(m,'energy_tot', Eor + Estr);
 
     % Sonuç satırı
     param_vals = comb(i,:);
