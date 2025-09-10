@@ -14,6 +14,13 @@ function [sizing, P_sized, S_worst] = make_sizing_case_simple(scaled, params, ga
     Cd_init       = getf(opts,'Cd_init', getf(getf(params,'orf',struct()),'CdInf',0.70));
     mu_nom        = getf(opts,'mu_nom', getf(params,'mu_ref',0.9));
 
+    % GA lower bounds and retry controls
+    d_o_lb     = 2.8e-3;                          % [m] 2.8 mm lower bound
+    n_orf_lb   = max(5, min(n_orf_set));           % minimum orifice count
+    Ao_lb      = n_orf_lb * (pi * d_o_lb^2 / 4);   % corresponding area
+    dp_frac_min  = 0.20;                           % minimum dp_allow_frac
+    dp_frac_step = 0.05;                           % step for retries
+
     % Lock PF and toggle gains into P
     P = params;
     nStories = size(P.M,1)-1;
@@ -33,14 +40,42 @@ function [sizing, P_sized, S_worst] = make_sizing_case_simple(scaled, params, ga
     O.thr = Utils.default_qc_thresholds(struct());
     S_worst = run_batch_windowed(scaled, P, O);
 
-    % Extract worst Q95 and pressure targets
-    [Q95_worst, dp_kv_target, dp_cap] = find_Q95_worst_local(S_worst, O, dp_allow_frac);
+    % Extract worst Q95 and pressure target cap
+    [Q95_worst, ~, dp_cap] = find_Q95_worst_local(S_worst, O, dp_allow_frac);
 
-    % Select orifice size and laminar length
+    % Select orifice size and laminar length with GA bound checks
     rho = P.rho;  % density
-    best = select_orifice_local(Q95_worst, dp_kv_target, Cd_init, n_orf_set, dmm_step, alpha_lam, mu_nom, rho);
-    % Update Cd/Re one iteration
-    best = update_Re_Cd_local(best, Q95_worst, dp_kv_target, mu_nom, P, dmm_step, rho);
+    dp_frac = dp_allow_frac;   % working copy
+    n_set   = n_orf_set;
+    success = false;
+    for retry = 1:10
+        dp_kv_target = dp_frac * dp_cap;
+        best = select_orifice_local(Q95_worst, dp_kv_target, Cd_init, n_set, dmm_step, alpha_lam, mu_nom, rho);
+        best = update_Re_Cd_local(best, Q95_worst, dp_kv_target, mu_nom, P, dmm_step, rho);
+        if best.d_o >= d_o_lb && best.A_o >= Ao_lb
+            success = true;
+            break;
+        end
+        if any(n_set > n_orf_lb) && best.d_o < d_o_lb
+            n_set = n_orf_lb;             % try fewer orifices
+            continue;
+        elseif dp_frac - dp_frac_step >= dp_frac_min
+            dp_frac = dp_frac - dp_frac_step;   % allow less dp, enlarge Ao
+            continue;
+        else
+            break;
+        end
+    end
+    if ~success
+        warning('make_sizing_case_simple:bounds', ...
+            'Unable to meet GA lower bounds (d_o≥%.1f mm, A_o≥%.2g m^2); enforcing minima.', ...
+            d_o_lb*1e3, Ao_lb);
+        best.d_o = max(best.d_o, d_o_lb);
+        best.n_orf = max(best.n_orf, n_orf_lb);
+        best.A_o = best.n_orf * (pi*best.d_o^2/4);
+        best.Lori = alpha_lam * dp_kv_target * (pi * best.d_o^4) * best.n_orf / max(128*mu_nom*abs(Q95_worst),eps);
+    end
+    dp_kv_target = dp_frac * dp_cap;  % final dp target after retries
 
     % Build sized params
     P_sized = P;
@@ -50,6 +85,7 @@ function [sizing, P_sized, S_worst] = make_sizing_case_simple(scaled, params, ga
     P_sized.A_o     = best.A_o;
     P_sized.Lori    = best.Lori;
     P_sized.Qcap_big= max(getf(getf(P_sized,'orf',struct()),'CdInf',0.8) * P_sized.A_o, 1e-9) * sqrt(2 * 1.0e9 / P_sized.rho);
+    P_sized.dp_allow_frac = dp_frac;
 
     % Sizing report
     sizing = struct();
@@ -63,6 +99,8 @@ function [sizing, P_sized, S_worst] = make_sizing_case_simple(scaled, params, ga
     sizing.L_orif       = best.Lori;
     sizing.Qcap_big     = P_sized.Qcap_big;
     sizing.alpha_lam    = alpha_lam;
+    sizing.dp_allow_frac= dp_frac;
+    sizing.meets_bounds = success;
     sizing.notes        = 'Sizing (simple bridge)';
 end
 
