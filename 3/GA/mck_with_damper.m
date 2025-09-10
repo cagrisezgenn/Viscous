@@ -1,7 +1,7 @@
 function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
     use_thermal, thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
-    n_dampers_per_story, resFactor, cfg)
+    n_dampers_per_story, resFactor, cfg, F_story_target)
 %% Girdi Parametreleri
     n = size(M,1); r = ones(n,1);
     agf = griddedInterpolant(t,ag,'linear','nearest');
@@ -9,6 +9,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
     opts= odeset('RelTol',1e-3,'AbsTol',1e-6);
 
     % Kat vektörleri
+    if nargin < 32 || isempty(F_story_target), F_story_target = []; end
     nStories = n-1;
     Rvec = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
     mask = story_mask(:);  if numel(mask)==1,  mask  = mask *ones(nStories,1); end
@@ -51,6 +52,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
 
     % Geometri ölçeklendirmesi R sadece montajda uygulanır
     F_story = F_p .* (Rvec .* multi);
+    F_story_err = story_force_error(F_story, F_story_target);
     P_visc_per = c_lam * (dvel.^2);
     P_sum = sum( (P_visc_per + P_orf_per) .* multi, 2 );
     energy = cumtrapz(t,P_sum);
@@ -85,7 +87,10 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
     diag = struct('drift',drift,'dvel',dvel,'story_force',F_story,'Q',Q, ...
         'dP_orf',dP_orf,'PF',F_p,'T_oil',Tser,'mu',mu, ...
         'energy',energy,'P_sum',P_sum,'c_lam',c_lam,'Lori',Lori, ...
-        'E_orifice',E_orifice,'E_struct',E_struct);
+        'E_orifice',E_orifice,'E_struct',E_struct,'F_story_err',F_story_err);
+    if ~isempty(F_story_target)
+        diag.F_story_target = F_story_target;
+    end
 
 %% İç Fonksiyonlar
     function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)
@@ -129,5 +134,14 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
         F_orf = dP_orf .* params.Ap .* sgn;
         Q = params.Ap * sqrt(dvel.^2 + params.orf.veps^2);
         P_orf_per = dP_orf .* Q;
+    end
+    function err = story_force_error(F_actual, F_target)
+        if nargin < 2 || isempty(F_target)
+            err = 0;
+            return;
+        end
+        n = min(size(F_actual,1), size(F_target,1));
+        diff = F_actual(1:n,:) - F_target(1:n,:);
+        err = sqrt(mean(diff(:).^2));
     end
 end
