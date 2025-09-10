@@ -30,10 +30,19 @@
     [sizing, P_sized, S_worst] = make_sizing_case_simple(scaled, params, gainsPF, Sopt); %#ok<ASGLU>
 
     %% 3) GA iÃ§in tohum ve kÄ±sa rafine
-    x0 = encode_x_from_params(P_sized);
     step_vec = [0.1 NaN 0.01 0.02 0.01 0.01 0.05 1 25 1 0.5 5 NaN 0.05];
     lb = [2.80, 5, 0.95, 0.78, 0.50, 0.75, 0.80, 60, 200, 100, 8, 60, 6, 0.60];
     ub = [3.60, 8, 1.10, 0.90, 0.70, 0.95, 1.40, 140, 800, 160, 16, 100, 12, 1.20];
+
+    % Tohum parametreleri GA sÄ±nÄ±rlarÄ± iÃ§inde mi kontrol et
+    x0 = encode_x_from_params(P_sized);
+    out_of_range = (x0 < lb) | (x0 > ub);
+    if any(out_of_range)
+        lb(out_of_range) = min(lb(out_of_range), x0(out_of_range));
+        ub(out_of_range) = max(ub(out_of_range), x0(out_of_range));
+        fprintf('Deterministic design outside GA bounds; expanding bounds.\n');
+    end
+
     % KomÅŸuluk Ã¶rnekleri (nicemli, sÄ±nÄ±rda kÄ±rpÄ±lmÄ±ÅŸ)
     % Komşuluk örnekleri (nicemli, sınırda kırpılmış) — yerel fonksiyon qclamp_local kullanılır
     Nseed = 40; P0 = zeros(Nseed, numel(x0));
