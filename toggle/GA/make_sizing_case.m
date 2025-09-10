@@ -7,7 +7,7 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
 % Girdiler
 %   scaled  - GA'da kullanılan ölçeklenmiş yer hareketleri
 %   params  - yapı + damper temel parametre yapısı
-%   gainsPF - {g_lo,g_mid,g_hi, PF_tau, PF_gain} alanlarını içeren yapı
+%   gainsPF - {g, PF_tau, PF_gain} alanlarını içeren yapı
 %   opts    - isteğe bağlı ayarlar:
 %               dp_allow_frac (varsayılan 0.60)
 %               alpha_lam     (varsayılan 0.15)
@@ -56,11 +56,11 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
                     f2n = (f2v - min(f2v)) ./ max(eps, (max(f2v)-min(f2v)));
                     [~,row] = min(hypot(f1n, f2n));
                 end
-                req = {'g_lo','g_mid','g_hi','PF_tau','PF_gain'};
+                req = {'g','PF_tau','PF_gain'};
                 assert(all(ismember(req, Tbest.Properties.VariableNames)), ...
                     'make_sizing_case:auto: required columns missing in GA CSV');
-                gainsPF = struct('g_lo',Tbest.g_lo(row), 'g_mid',Tbest.g_mid(row), ...
-                                 'g_hi',Tbest.g_hi(row), 'PF_tau',Tbest.PF_tau(row), ...
+                gainsPF = struct('g',Tbest.g(row), ...
+                                 'PF_tau',Tbest.PF_tau(row), ...
                                  'PF_gain',Tbest.PF_gain(row));
             catch ME
                 error('make_sizing_case:auto_init','Failed to auto-infer gains/PF from GA outputs: %s', ME.message);
@@ -89,11 +89,9 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
 
     %% Adım 1: PF ve Geometri Kazançlarını Sabitleme
     P = params;
-    % kazançlar -> toggle_gain (alt 3, orta, üst 2 kat)
+    % kazançlar -> toggle_gain
     nStories = size(P.M,1)-1;
-    tg = ones(nStories,1) * gainsPF.g_mid;
-    loN = min(3,nStories); if loN>0, tg(1:loN) = gainsPF.g_lo; end
-    hiN = min(2,nStories); if hiN>0, tg(end-hiN+1:end) = gainsPF.g_hi; end
+    tg = ones(nStories,1) * gainsPF.g;
     P.toggle_gain = tg;
     % PF parametreleri
     if isfield(P,'cfg') && isfield(P.cfg,'PF')
@@ -275,7 +273,7 @@ function [updates, T] = sizing_param_diff(P_old, P_sized, gainsPF, sizing)
     new_tau   = getf(gainsPF,'PF_tau',NaN);
     new_gain  = getf(gainsPF,'PF_gain',NaN);
 
-    % --- toggle_gain vektörü (alt=3, üst=2 kat) -------------------------
+    % --- toggle_gain vektörü -------------------------------------------
     try
         nStories = size(P_old.M,1)-1;
     catch
@@ -283,14 +281,11 @@ function [updates, T] = sizing_param_diff(P_old, P_sized, gainsPF, sizing)
     end
     old_tg = old_tg(:);
     if isempty(old_tg)
-        old_tg = ones(nStories,1)*getf(gainsPF,'g_mid',1);
+        old_tg = ones(nStories,1)*getf(gainsPF,'g',1);
     elseif isscalar(old_tg)
         old_tg = repmat(old_tg,nStories,1);
     end
-    tg = ones(nStories,1)*getf(gainsPF,'g_mid',1);
-    loN = min(3,nStories); if loN>0, tg(1:loN) = getf(gainsPF,'g_lo',1); end
-    hiN = min(2,nStories); if hiN>0, tg(end-hiN+1:end) = getf(gainsPF,'g_hi',1); end
-    new_tg = tg;
+    new_tg = ones(nStories,1)*getf(gainsPF,'g',1);
 
     % --- Skaler eşitlik denetimi ---------------------------------------
     function tf = eqnum(a,b)

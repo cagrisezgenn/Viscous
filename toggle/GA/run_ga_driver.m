@@ -121,9 +121,9 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     if nargin < 4 || isempty(optsGA), optsGA = struct; end
     rng(42);
 
-    % Karar vektörü: [d_o_mm, n_orf, g_lo, g_mid, g_hi, PF_tau, PF_gain]
-    lb = [2.80, 5, 3.60, 3.80, 1.50, 0.95, 0.78];
-    ub = [3.60, 6, 4.00, 4.00, 3.60, 1.10, 0.90];
+    % Karar vektörü: [d_o_mm, n_orf, g, PF_tau, PF_gain]
+    lb = [2.80, 5, 3.60, 0.95, 0.78];
+    ub = [3.60, 6, 4.00, 1.10, 0.90];
     IntCon = 2;  % yalnız n_orf tam sayı
 
     % Veri seti imzası üret (önbellek anahtarı)
@@ -151,12 +151,12 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     % Izgaraya hizalı ilk popülasyonu oluştur (tohumlarla birlikte).
     try
         if ~isfield(optsGA,'InitialPopulationMatrix') || isempty(optsGA.InitialPopulationMatrix)
-            step_vec = [0.1 NaN 0.05 0.05 0.05 0.05 0.02];
+            step_vec = [0.1 NaN 0.05 0.05 0.02];
             P0 = Utils.initial_pop_grid(lb, ub, options.PopulationSize, step_vec);
             % Tohumlar (yeni sınırlar içinde uygulanabilir)
-            seed = [ 2.80 5 3.60 3.80 1.50 0.95 0.78;
-                     3.20 5 3.80 3.90 2.50 1.00 0.82;
-                     3.60 6 4.00 4.00 3.60 1.10 0.90 ];
+            seed = [ 2.80 5 3.60 0.95 0.78;
+                     3.20 5 3.80 1.00 0.82;
+                     3.60 6 4.00 1.10 0.90 ];
             ns = min(size(seed,1), size(P0,1));
             P0(1:ns,:) = seed(1:ns,:);
             % Önceki Pareto'yu kullanmak için en son ga_front.csv dosyasını okumayı dene
@@ -167,7 +167,7 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
                     latest = fullfile(dd(ix).folder, dd(ix).name, 'ga_front.csv');
                     if exist(latest,'file')
                         Tprev = readtable(latest);
-                        cols = {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain'};
+                        cols = {'d_o_mm','n_orf','g','PF_tau','PF_gain'};
                         if all(ismember(cols, Tprev.Properties.VariableNames))
                             Xprev = Tprev{:, cols};
                             % mevcut ızgaraya sıkıştır ve nicemle
@@ -376,7 +376,7 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
 
     % Satır başına dizilerden T tablosunu oluştur
     T = array2table([X F pen pen_dP pen_Qcap pen_cav pen_T pen_mu], 'VariableNames', ...
-       {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','f1','f2', ...
+       {'d_o_mm','n_orf','g','PF_tau','PF_gain','f1','f2', ...
         'pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu'});
 
     T.x10_max_damperli    = x10pk;
@@ -410,9 +410,9 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
         for i = 1:numel(idx)
             P = params_list{i};
             row = table(P.orf.d_o*1e3, P.n_orf, ...
-                X(idx(i),3),X(idx(i),4),X(idx(i),5),X(idx(i),6),X(idx(i),7), ...
+                X(idx(i),3),X(idx(i),4),X(idx(i),5), ...
                 P.A_o, P.Qcap_big, 'VariableNames', ...
-                {'d_o_mm','n_orf','g_lo','g_mid','g_hi','PF_tau','PF_gain','A_o','Qcap_big'});
+                {'d_o_mm','n_orf','g','PF_tau','PF_gain','A_o','Qcap_big'});
             top = [top; row]; %#ok<AGROW>
         end
         safe_write(top, fullfile(outdir,'ga_topK.csv'), @writetable);
@@ -437,21 +437,17 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     x = x(:)';
     % kuantize et
     x(1) = Utils.quantize_step(x(1),0.05);  % d_o_mm
-    x(3) = Utils.quantize_step(x(3),0.05);  % g_lo
-    x(4) = Utils.quantize_step(x(4),0.05);  % g_mid
-    x(5) = Utils.quantize_step(x(5),0.05);  % g_hi
-    x(6) = Utils.quantize_step(x(6),0.01);  % PF_tau
-    x(7) = Utils.quantize_step(x(7),0.02);  % PF_gain
+    x(3) = Utils.quantize_step(x(3),0.05);  % g
+    x(4) = Utils.quantize_step(x(4),0.01);  % PF_tau
+    x(5) = Utils.quantize_step(x(5),0.02);  % PF_gain
     x(2) = round(max(x(2),1));              % n_orf tam sayı, >=1
 
     % Kuantizasyondan sonra GA sınırlarına sıkıştır
     x(1) = min(max(x(1), 2.80), 3.60);
     x(2) = min(max(x(2), 5), 6);
     x(3) = min(max(x(3), 3.60), 4.00);
-    x(4) = min(max(x(4), 3.80), 4.00);
-    x(5) = min(max(x(5), 1.50), 3.60);
-    x(6) = min(max(x(6), 0.95), 1.10);
-    x(7) = min(max(x(7), 0.78), 0.90);
+    x(4) = min(max(x(4), 0.95), 1.10);
+    x(5) = min(max(x(5), 0.78), 0.90);
 
     persistent memo;
     if isempty(memo), memo = containers.Map(); end
@@ -648,7 +644,7 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
     rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
     try
         % Build X0 from params (with sensible fallbacks)
-        X0 = nan(1,7);
+        X0 = nan(1,5);
         % d_o_mm and n_orf
         try
             if isfield(params,'orf') && isfield(params.orf,'d_o') && ~isempty(params.orf.d_o)
@@ -670,40 +666,29 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             warning('n_orf çıkarılamadı: %s', ME.message);
             X0(2) = 5;
         end
-        % g_lo, g_mid, g_hi from toggle_gain if available
+        % g from toggle_gain if available
         try
             if isfield(params,'toggle_gain') && ~isempty(params.toggle_gain)
                 tg = params.toggle_gain(:);
-                nStories = numel(tg);
-                loN = min(3, nStories);
-                hiN = min(2, nStories);
-                midStart = min(loN+1, nStories);
-                midEnd   = max(nStories-hiN, midStart);
-                midIdx   = midStart:midEnd;
-                if isempty(midIdx)
-                    midIdx = min(round(nStories/2), nStories);
-                end
-                X0(3) = mean(tg(1:loN));
-                X0(4) = mean(tg(midIdx));
-                X0(5) = mean(tg(max(end-hiN+1,1):end));
+                X0(3) = mean(tg);
             else
-                X0(3:5) = [3.90 3.95 1.50];
+                X0(3) = 3.90;
             end
         catch ME
             warning('toggle_gain bilgisi okunamadı: %s', ME.message);
-            X0(3:5) = [3.90 3.95 1.50];
+            X0(3) = 3.90;
         end
         % PF parameters
         try
             if isfield(params,'cfg') && isfield(params.cfg,'PF')
-                X0(6) = Utils.getfield_default(params.cfg.PF,'tau',0.97);
-                X0(7) = Utils.getfield_default(params.cfg.PF,'gain',0.90);
+                X0(4) = Utils.getfield_default(params.cfg.PF,'tau',0.97);
+                X0(5) = Utils.getfield_default(params.cfg.PF,'gain',0.90);
             else
-                X0(6:7) = [0.97 0.90];
+                X0(4:5) = [0.97 0.90];
             end
         catch ME
             warning('PF parametreleri okunamadı: %s', ME.message);
-            X0(6:7) = [0.97 0.90];
+            X0(4:5) = [0.97 0.90];
         end
 
         % Simulate baseline with same post-eval options
@@ -738,11 +723,9 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         % karar değişkenleri
         assign('d_o_mm',  X0(1));
         assign('n_orf',   X0(2));
-        assign('g_lo',    X0(3));
-        assign('g_mid',   X0(4));
-        assign('g_hi',    X0(5));
-        assign('PF_tau',  X0(6));
-        assign('PF_gain', X0(7));
+        assign('g',       X0(3));
+        assign('PF_tau',  X0(4));
+        assign('PF_gain', X0(5));
 
         % amaç fonksiyonları
         assign('f1', f0(1));
@@ -889,18 +872,14 @@ function xq = quant_clamp_x(x)
     x = x(:)';
     x(1) = Utils.quantize_step(x(1),0.05);
     x(3) = Utils.quantize_step(x(3),0.05);
-    x(4) = Utils.quantize_step(x(4),0.05);
-    x(5) = Utils.quantize_step(x(5),0.05);
-    x(6) = Utils.quantize_step(x(6),0.01);
-    x(7) = Utils.quantize_step(x(7),0.02);
+    x(4) = Utils.quantize_step(x(4),0.01);
+    x(5) = Utils.quantize_step(x(5),0.02);
     x(2) = round(max(x(2),1));
     x(1) = min(max(x(1), 2.80), 3.60);
     x(2) = min(max(x(2), 5), 6);
     x(3) = min(max(x(3), 3.60), 4.00);
-    x(4) = min(max(x(4), 3.80), 4.00);
-    x(5) = min(max(x(5), 1.50), 3.60);
-    x(6) = min(max(x(6), 0.95), 1.10);
-    x(7) = min(max(x(7), 0.78), 0.90);
+    x(4) = min(max(x(4), 0.95), 1.10);
+    x(5) = min(max(x(5), 0.78), 0.90);
     xq = x;
 end
 
@@ -921,18 +900,15 @@ end
 
 function P = decode_params_from_x(params_base_, x_)
     d_o_mm = x_(1); n_orf = round(x_(2));
-    g_lo = x_(3); g_mid = x_(4); g_hi = x_(5);
-    PF_tau = x_(6); PF_gain = x_(7);
+    g = x_(3);
+    PF_tau = x_(4); PF_gain = x_(5);
     P = params_base_;
     P.orf.d_o = d_o_mm * 1e-3;         % mm'den m'ye
     P.n_orf   = n_orf;
     P.A_o     = P.n_orf * (pi * P.orf.d_o^2 / 4);
     P.Qcap_big= max(P.orf.CdInf * P.A_o, 1e-9) * sqrt(2 * 1.0e9 / P.rho);
     n  = size(P.M,1); nStories = n-1;
-    tg = ones(nStories,1) * g_mid;
-    loN = min(3, nStories); if loN > 0, tg(1:loN) = g_lo; end
-    hiN = min(2, nStories); if hiN > 0, tg(end-hiN+1:end) = g_hi; end
-    P.toggle_gain = tg;
+    P.toggle_gain = ones(nStories,1) * g;
     if isfield(P,'cfg') && isfield(P.cfg,'PF')
         P.cfg.PF.tau  = PF_tau;
         P.cfg.PF.gain = PF_gain;
