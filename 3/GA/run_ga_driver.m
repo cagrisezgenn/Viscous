@@ -139,14 +139,15 @@ ub = [4.50,12, 0.12, 2.2, 0.80, 1.10, 1.50,180,1000,195,18,140,15, 1.60];
 
     options = optimoptions('gamultiobj', ...
        'PopulationSize',    Utils.getfield_default(optsGA,'PopulationSize',120), ...
-       'MaxGenerations',    Utils.getfield_default(optsGA,'MaxGenerations',80), ...
+       'MaxGenerations',    Utils.getfield_default(optsGA,'MaxGenerations',50), ...
        'CrossoverFraction', Utils.getfield_default(optsGA,'CrossoverFraction',0.9), ...
        'MutationFcn',       Utils.getfield_default(optsGA,'MutationFcn',{@mutationgaussian,0.1,0.3}), ...
        'ParetoFraction',    Utils.getfield_default(optsGA,'ParetoFraction',0.5), ...
        'StallGenLimit',     Utils.getfield_default(optsGA,'StallGenLimit',40), ...
        'DistanceMeasureFcn','distancecrowding', ...
+       'OutputFcn',         @(options,state,flag) ga_out_best_pen(options,state,flag, scaled, params, optsEval), ...
        'UseParallel',       Utils.getfield_default(optsGA,'UseParallel',true), ...
-       'Display','iter','PlotFcn',[], 'OutputFcn',@gaoutfun, 'FunctionTolerance',1e-5);
+       'Display','iter','PlotFcn',[], 'FunctionTolerance',1e-5);
 
     %% Başlangıç Popülasyonu
     % Izgaraya hizalı ilk popülasyonu oluştur (tohumlarla birlikte).
@@ -438,45 +439,6 @@ ub = [4.50,12, 0.12, 2.2, 0.80, 1.10, 1.50,180,1000,195,18,140,15, 1.60];
         fclose(fid);
     end
 
-function [state, options, optchanged] = gaoutfun(options, state, flag)
-        persistent hist dsig_local
-        optchanged = false;
-        switch flag
-            case 'init'
-                hist = [];
-                dsig_local = 0;
-                try
-                    dsig_local = sum([scaled.IM]) + sum([scaled.PGA]);
-                catch
-                    dsig_local = 0;
-                end
-            case 'iter'
-                f1 = state.Score(:,1);
-                f2 = state.Score(:,2);
-                nPop = size(state.Population,1);
-                pen = nan(nPop,1);
-                for ii = 1:nPop
-                    xi = quant_clamp_x(state.Population(ii,:));
-                    key = jsonencode([xi, dsig_local]);
-                    meta = memo_store('get', key);
-                    if ~isempty(meta) && isfield(meta,'pen')
-                        pen(ii) = meta.pen;
-                    end
-                end
-                [bestPen, idx] = min(pen);
-                bestF1 = f1(idx);
-                bestF2 = f2(idx);
-                fprintf('Gen %d: f1=%.4g f2=%.4g pen=%.4g\n', state.Generation, bestF1, bestF2, bestPen);
-                hist = [hist; bestF1, bestF2, bestPen];
-                try
-                    subplot(3,1,1); plot(hist(:,1),'b-'); ylabel('f1'); title('Best f1');
-                    subplot(3,1,2); plot(hist(:,2),'r-'); ylabel('f2'); title('Best f2');
-                    subplot(3,1,3); plot(hist(:,3),'k-'); ylabel('pen'); xlabel('Generation'); title('Best penalty');
-                    drawnow;
-                catch
-                end
-        end
-    end
 end
 
 function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
@@ -1047,7 +1009,15 @@ function P = decode_params_from_x(params_base_, x_)
         P.cfg.PF.gain = PF_gain;
     end
 end
-
+function [state, options, optchanged] = ga_out_best_pen(options, state, flag, scaled, params, optsEval)
+    optchanged = false;
+    if strcmp(flag,'iter')
+        [~, idx] = min(sum(state.Score,2));
+        bestx = state.Population(idx,:);
+        [f_curr, meta_curr] = eval_design_fast(bestx, scaled, params, optsEval);
+        fprintf('Gen %d: f1=%g f2=%g pen=%g\n', state.Generation, f_curr(1), f_curr(2), meta_curr.pen);
+    end
+end
 function safe_write(obj, filepath, writeFcn)
 % Verilen yazma fonksiyonunu hataya karşı korumalı olarak çağırır
     Utils.try_warn(@() writeFcn(obj, filepath), ...
