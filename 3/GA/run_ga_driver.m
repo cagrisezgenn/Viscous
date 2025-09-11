@@ -146,6 +146,7 @@ ub = [4.50,12, 0.12, 2.2, 0.80, 1.10, 1.50,180,1000,195,18,140,15, 1.60];
        'StallGenLimit',     Utils.getfield_default(optsGA,'StallGenLimit',40), ...
        'DistanceMeasureFcn','distancecrowding', ...
        'UseParallel',       Utils.getfield_default(optsGA,'UseParallel',true), ...
+       'OutputFcn',         @(options,state,flag) gaoutfun(options,state,flag,dsig), ...
        'Display','iter','PlotFcn',[], 'FunctionTolerance',1e-5);
 
     %% Başlangıç Popülasyonu
@@ -927,6 +928,19 @@ function write_pareto_results(T, outdir)
         end
     catch ME
         warning('write_pareto_results (knee hesaplama) hatası: %s', ME.message);
+    end
+end
+
+function [state, options, optchanged] = gaoutfun(options, state, flag, dsig)
+    optchanged = false;
+    if strcmp(flag, 'iter')
+        [~, idx] = min(sum(state.Score, 2));
+        xb = quant_clamp_x(state.Population(idx, :));
+        key = jsonencode([xb, dsig]);
+        meta = memo_store('get', key);
+        if ~isempty(meta) && isfield(meta, 'PFA_w_mean') && isfield(meta, 'IDR_w_mean') && isfield(meta, 'pen')
+            fprintf('f1=%.4g f2=%.4g pen=%.4g\n', meta.PFA_w_mean, meta.IDR_w_mean, meta.pen);
+        end
     end
 end
 
