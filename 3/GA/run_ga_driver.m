@@ -146,8 +146,7 @@ ub = [4.50,12, 0.12, 2.2, 0.80, 1.10, 1.50,180,1000,195,18,140,15, 1.60];
        'StallGenLimit',     Utils.getfield_default(optsGA,'StallGenLimit',40), ...
        'DistanceMeasureFcn','distancecrowding', ...
        'UseParallel',       Utils.getfield_default(optsGA,'UseParallel',true), ...
-       'OutputFcn',         @(options,state,flag) gaoutfun(options,state,flag,dsig), ...
-       'Display','iter','PlotFcn',[], 'FunctionTolerance',1e-5);
+       'Display','iter','PlotFcn',[], 'OutputFcn',@gaoutfun, 'FunctionTolerance',1e-5);
 
     %% Başlangıç Popülasyonu
     % Izgaraya hizalı ilk popülasyonu oluştur (tohumlarla birlikte).
@@ -437,6 +436,46 @@ ub = [4.50,12, 0.12, 2.2, 0.80, 1.10, 1.50,180,1000,195,18,140,15, 1.60];
             'README yazımı sırasında thr bilgisi eklenemedi');
         fprintf(fid, 'Note: No simulations during packaging. Fitness evals had no IO.\n');
         fclose(fid);
+    end
+
+function [state, options, optchanged] = gaoutfun(options, state, flag)
+        persistent hist dsig_local
+        optchanged = false;
+        switch flag
+            case 'init'
+                hist = [];
+                dsig_local = 0;
+                try
+                    dsig_local = sum([scaled.IM]) + sum([scaled.PGA]);
+                catch
+                    dsig_local = 0;
+                end
+            case 'iter'
+                f1 = state.Score(:,1);
+                f2 = state.Score(:,2);
+                nPop = size(state.Population,1);
+                pen = nan(nPop,1);
+                for ii = 1:nPop
+                    xi = quant_clamp_x(state.Population(ii,:));
+                    key = jsonencode([xi, dsig_local]);
+                    meta = memo_store('get', key);
+                    if ~isempty(meta) && isfield(meta,'pen')
+                        pen(ii) = meta.pen;
+                    end
+                end
+                [bestPen, idx] = min(pen);
+                bestF1 = f1(idx);
+                bestF2 = f2(idx);
+                fprintf('Gen %d: f1=%.4g f2=%.4g pen=%.4g\n', state.Generation, bestF1, bestF2, bestPen);
+                hist = [hist; bestF1, bestF2, bestPen];
+                try
+                    subplot(3,1,1); plot(hist(:,1),'b-'); ylabel('f1'); title('Best f1');
+                    subplot(3,1,2); plot(hist(:,2),'r-'); ylabel('f2'); title('Best f2');
+                    subplot(3,1,3); plot(hist(:,3),'k-'); ylabel('pen'); xlabel('Generation'); title('Best penalty');
+                    drawnow;
+                catch
+                end
+        end
     end
 end
 
@@ -931,18 +970,6 @@ function write_pareto_results(T, outdir)
     end
 end
 
-function [state, options, optchanged] = gaoutfun(options, state, flag, dsig)
-    optchanged = false;
-    if strcmp(flag, 'iter')
-        [~, idx] = min(sum(state.Score, 2));
-        xb = quant_clamp_x(state.Population(idx, :));
-        key = jsonencode([xb, dsig]);
-        meta = memo_store('get', key);
-        if ~isempty(meta) && isfield(meta, 'PFA_w_mean') && isfield(meta, 'IDR_w_mean') && isfield(meta, 'pen')
-            fprintf('f1=%.4g f2=%.4g pen=%.4g\n', meta.PFA_w_mean, meta.IDR_w_mean, meta.pen);
-        end
-    end
-end
 
 function xq = quant_clamp_x(x)
     % Apply the same quantization/clamps as in eval
@@ -962,21 +989,7 @@ function xq = quant_clamp_x(x)
     if numel(x) >=14,  x(14) = Utils.quantize_step(x(14),0.05); end
     x(2) = round(max(x(2),1));
     if numel(x) >=13, x(13) = round(max(x(13),1)); end
-    x(1) = min(max(x(1), 2.80), 3.60);
-    x(2) = min(max(x(2), 5), 8);
-    x(3) = min(max(x(3), 0.95), 1.10);
-    x(4) = min(max(x(4), 0.78), 0.90);
-    x(5) = min(max(x(5), 0.50), 0.70);
-    x(6) = min(max(x(6), 0.75), 0.95);
-    x(7) = min(max(x(7), 0.80), 1.40);
-    if numel(x) >= 8,  x(8)  = min(max(x(8),60),140);  end
-    if numel(x) >= 9,  x(9)  = min(max(x(9),200),800); end
-    if numel(x) >=10,  x(10) = min(max(x(10),100),160);end
-    if numel(x) >=11,  x(11) = min(max(x(11),8),16);   end
-    if numel(x) >=12,  x(12) = min(max(x(12),60),100); end
-    if numel(x) >=13,  x(13) = min(max(x(13),6),12);   end
-    if numel(x) >=14,  x(14) = min(max(x(14),0.60),1.20); end
-    xq = x;
+        xq = x;
 end
 
 function out = memo_store(cmd, key, val)
