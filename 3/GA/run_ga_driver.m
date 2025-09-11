@@ -220,6 +220,7 @@ ub = [4.50,12, 0.12, 2.2, 0.80, 1.10, 1.50,180,1000,195,18,140,15, 1.60];
     PFp95  = zeros(nF,1);  Qq50 = zeros(nF,1);  Qq95 = zeros(nF,1);
     dPq50  = zeros(nF,1);  dPq95w = zeros(nF,1); Toil = zeros(nF,1); Tsteel = zeros(nF,1);
     Etot   = zeros(nF,1);  Eor = zeros(nF,1);   Estr  = zeros(nF,1); Eratio = zeros(nF,1); Pmech = zeros(nF,1);
+    PFAw   = zeros(nF,1);  IDRw  = zeros(nF,1);
 
     % ceza bileşenleri (eval ile aynı)
     pen     = zeros(nF,1);
@@ -240,6 +241,18 @@ ub = [4.50,12, 0.12, 2.2, 0.80, 1.10, 1.50,180,1000,195,18,140,15, 1.60];
         Si = run_batch_windowed(scaled, Pi, Opost);
 
         % Tablo sütunlarını güvenle al
+        try
+            v_PFA = Si.table.PFA_w;
+        catch ME
+            warning('PFA_w okunamadı: %s', ME.message);
+            v_PFA = NaN;
+        end
+        try
+            v_IDR = Si.table.IDR_w;
+        catch ME
+            warning('IDR_w okunamadı: %s', ME.message);
+            v_IDR = NaN;
+        end
         try
             v_x10 = Si.table.x10_max_D_worst;
         catch ME
@@ -335,6 +348,9 @@ ub = [4.50,12, 0.12, 2.2, 0.80, 1.10, 1.50,180,1000,195,18,140,15, 1.60];
             v_Pm = 0;
         end
 
+        PFAw(i) = mean(v_PFA(:));
+        IDRw(i) = mean(v_IDR(:));
+
         % Aggregate across records (dataset) to scalars per design
         x10pk(i)  = max(v_x10(:));
         a10pk(i)  = max(v_a10(:));
@@ -382,9 +398,9 @@ ub = [4.50,12, 0.12, 2.2, 0.80, 1.10, 1.50,180,1000,195,18,140,15, 1.60];
     end
 
     % Satır başına dizilerden T tablosunu oluştur
-    T = array2table([X F pen pen_dP pen_Qcap pen_cav pen_T pen_mu], 'VariableNames', ...
+    T = array2table([X F PFAw IDRw pen pen_dP pen_Qcap pen_cav pen_T pen_mu], 'VariableNames', ...
        {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref', ...
-        'f1','f2','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu'});
+        'f1','f2','PFA_w','IDR_w','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu'});
 
     T.x10_max_damperli    = x10pk;
     T.a10abs_max_damperli = a10pk;
@@ -756,6 +772,16 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         f0 = [NaN NaN];
         [f0, ~] = Utils.try_warn(@() eval_design_fast(X0, scaled, params, Opost), ...
             'eval_design_fast temel çalıştırma hatası');
+        try
+            PFA_w0 = mean(T0bl.PFA_w);
+        catch
+            PFA_w0 = NaN;
+        end
+        try
+            IDR_w0 = mean(T0bl.IDR_w);
+        catch
+            IDR_w0 = NaN;
+        end
         % Penalty parts (same formula)
         dP95_0   = max(T0bl.dP95_worst);
         Qcap95_0 = max(T0bl.Qcap95_worst);
@@ -795,6 +821,8 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         % amaç fonksiyonları
         assign('f1', f0(1));
         assign('f2', f0(2));
+        assign('PFA_w', PFA_w0);
+        assign('IDR_w', IDR_w0);
 
         % cezalar
         assign('pen',     pen_0);
