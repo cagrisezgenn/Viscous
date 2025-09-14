@@ -103,7 +103,7 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
 
     %% Adım 2: Sabit Kazançlarla Sistem Değerlendirmesi
     O = struct('do_export',false,'quiet',true,'thermal_reset','each','order','natural', ...
-               'mu_factors',[0.75 1.00 1.25], 'mu_weights',[0.2 0.6 0.2], 'thr', []);
+               'thr', []);
     S_worst = run_batch_windowed(scaled, P, O);
 
     %% Adım 3: Q95 ve Basınç Sınırlarının Belirlenmesi
@@ -160,11 +160,8 @@ function [Q95_worst, dp_kv_target, dp_cap] = find_Q95_worst(S_worst, O, dp_allow
     Q95_worst = NaN;
     try
         vars = S_worst.table.Properties.VariableNames;
-        if ismember('Q_q95_worst', vars)
-            v = S_worst.table.Q_q95_worst;
-            Q95_worst = max(v(:));
-        elseif ismember('Q_q95_w', vars)
-            v = S_worst.table.Q_q95_w;
+        if ismember('Q_q95', vars)
+            v = S_worst.table.Q_q95;
             Q95_worst = max(v(:));
         end
     catch
