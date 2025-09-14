@@ -38,6 +38,15 @@ classdef Utils
             y = 0.5*(a + b - sqrt((a - b).^2 + epsm.^2));
         end
 
+        function epsm = softmin_eps(cfg)
+            if nargin < 1 || ~isstruct(cfg)
+                cfg = struct();
+            end
+            num  = Utils.getfield_default(cfg,'num',struct());
+            epsm = Utils.getfield_default(num,'softmin_eps',1e5);
+            epsm = max(1e3, double(epsm));
+        end
+
         function w = pf_weight(t, cfg)
             w = cfg.on.pressure_force * (1 - exp(-max(t - cfg.PF.t_on, 0) ./ max(cfg.PF.tau, 1e-6)));
         end
@@ -175,6 +184,29 @@ classdef Utils
                     vals = lb(i) + rand(N,1).*(ub(i)-lb(i));
                 end
                 P(:,i) = vals;
+            end
+        end
+
+        %% Default QC Thresholds
+        function thr = default_qc_thresholds(optsThr)
+            % Return default quality-control thresholds and fill missing fields.
+            % Example: thr = Utils.default_qc_thresholds(struct('dP95_max',40e6));
+
+            if nargin < 1 || isempty(optsThr)
+                optsThr = struct();
+            end
+
+            thr = struct();
+            thr.dP95_max   = Utils.getfield_default(optsThr,'dP95_max',50e6);
+            thr.Qcap95_max = Utils.getfield_default(optsThr,'Qcap95_max',0.5);
+            thr.cav_pct_max= Utils.getfield_default(optsThr,'cav_pct_max',0);
+            thr.T_end_max  = Utils.getfield_default(optsThr,'T_end_max',75);
+            thr.mu_end_min = Utils.getfield_default(optsThr,'mu_end_min',0.5);
+
+            % Preserve any additional fields
+            extra = setdiff(fieldnames(optsThr), fieldnames(thr));
+            for ii = 1:numel(extra)
+                thr.(extra{ii}) = optsThr.(extra{ii});
             end
         end
     end
