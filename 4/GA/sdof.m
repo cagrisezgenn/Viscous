@@ -8,9 +8,13 @@ clear; clc; close all;
 %% Load base parameters
 parametreler;  % loads structural and damper parameters and computes T1
 
-%% Override with GA best parameters from ga_front.csv
+%% Override with GA best parameters from GA output
 try
-    tbl = readtable('ga_knee.csv');
+    if exist('ga_knee.csv','file')
+        tbl = readtable('ga_knee.csv');
+    else
+        tbl = readtable('ga_front.csv');
+    end
     xb = tbl(1,:);
 
     d_o   = xb.d_o_mm/1000;      % [m]
@@ -134,8 +138,7 @@ x10_max_d    = max(abs(x10_orf));
 a10abs_max_0 = max(abs(a10_0));
 a10abs_max_d = max(abs(a10_orf));
 
-fprintf('Self-check zeta1: %.3f %% (dampersiz) vs %.3f %% (damperli)\n', 100*zeta0, 100*zeta_d);
-fprintf('x10_max  (dampersiz)   = %.4g m\n', x10_max_0);
-fprintf('x10_max  (damperli)    = %.4g m\n', x10_max_d);
-fprintf('a10abs_max  (dampersiz)= %.4g m/s^2\n', a10abs_max_0);
-fprintf('a10abs_max  (damperli) = %.4g m/s^2\n', a10abs_max_d);
+fprintf(['Self-check zeta1: %.3f%% (dampersiz) vs %.3f%% (damperli); ' ...
+         'x10_{max}0=%.4g m; x10_{max}d=%.4g m; ' ...
+         'a10abs_{max}0=%.4g m/s^2; a10abs_{max}d=%.4g m/s^2\n'], ...
+        100*zeta0, 100*zeta_d, x10_max_0, x10_max_d, a10abs_max_0, a10abs_max_d);
