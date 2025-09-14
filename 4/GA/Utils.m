@@ -98,8 +98,9 @@ classdef Utils
             k_sd_simple = k_hyd + k_p;      % tek damper
             k_sd_adv    = nd * (k_hyd + k_p);% paralel nd
 
-            % Laminer sabit (tek damper referansı)
-            c_lam0 = 12 * params.mu_ref * params.Lori * Ap^2 / (params.orf.d_o^4);
+            % Laminer referans direnci ve eşdeğer sönüm
+            R_lam_ref = (128 * params.mu_ref * params.Lori / (pi * params.orf.d_o^4)) / max(nd*params.n_orf,1);
+            c_eff_ref = (Ap_eff^2) * R_lam_ref;
 
             % Çıkışlar (geriye uyumlu alan adlarıyla)
             params.Ap = Ap;
@@ -112,7 +113,9 @@ classdef Utils
             % Adım 2 öncesi: k_sd paralel etkili (nd içselleştirilmiş) seçilir
             params.k_sd = k_sd_adv;
 
-            params.c_lam0 = c_lam0;
+            % Yeni laminer parametreleri
+            params.R_lam_ref = R_lam_ref;
+            params.c_lam0 = c_eff_ref; % geri uyumlu alan adı
         end
 
         %% Lineer MCK Çözümü
