@@ -125,11 +125,13 @@ switch mode
             td = 0;
         end
         hA = params.thermal.hA_W_perK;
-        Tenv = params.thermal.T_env_C;
-        Tinit = Tenv + (Tprev - Tenv) * exp(-hA*td / C_th);
+    Tenv = params.thermal.T_env_C;
+    Tinit = Tenv + (Tprev - Tenv) * exp(-hA*td / C_th);
     otherwise
         Tinit = params.T0_C;
 end
+
+params.thermal.T0_C = Tinit;
 
 %% Sönümleyicisiz Çözüm
 % Lineer MCK sistemi sönümleyici olmadan çözülür.
@@ -164,7 +166,7 @@ for i = 1:nMu
     end
     [x,a_rel,ts,diag] = mck_with_damper_ts(rec.t, rec.ag, params.M, params.C0, params.K, ...
         params.k_sd, c_lam0_eff, params.Lori, opts.use_orifice, params.orf, params.rho, params.Ap, ...
-        params.A_o, params.Qcap_big, mu_ref_eff, opts.use_thermal, params.thermal, Tinit, ...
+        params.A_o, params.Qcap_big, mu_ref_eff, opts.use_thermal, params.thermal, ...
         params.T_ref_C, params.b_mu, params.c_lam_min, params.c_lam_cap, params.Lgap, ...
         params.cp_oil, params.cp_steel, params.steel_to_oil_mass_ratio, ...
         params.story_mask, params.n_dampers_per_story, params.resFactor, params.cfg);
@@ -195,7 +197,7 @@ diag = mu_results(nom_idx).diag;
 T_start = Tinit;
 if isfield(diag,'T_oil')
     T_end = diag.T_oil(end);
-    Tmax = params.T0_C + params.thermal.dT_max;
+    Tmax = params.thermal.T0_C + params.thermal.dT_max;
     clamp_hits = sum(diff(diag.T_oil >= Tmax) > 0);
 else
     T_end = NaN;
@@ -291,14 +293,14 @@ end
 %% =====================================================================
 function [x,a_rel,ts,diag] = mck_with_damper_ts(t,ag,M,C,K, k_sd,c_lam0,Lori, ...
     use_orifice, orf, rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, ...
-    T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, ...
+    T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, ...
     steel_to_oil_mass_ratio, story_mask, n_dampers_per_story, ...
     resFactor, cfg)
 %1) MCK_WITH_DAMPER çözümü
 [x,a_rel,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orifice, orf, ...
-    rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, T0_C, T_ref_C, b_mu, ...
+    rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, T_ref_C, b_mu, ...
     c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, ...
- story_mask, n_dampers_per_story, resFactor, cfg);
+    story_mask, n_dampers_per_story, resFactor, cfg);
 
 %2) Öykü vektörlerinin hazırlanması
 nStories = size(diag.drift,2);

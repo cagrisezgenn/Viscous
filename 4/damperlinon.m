@@ -59,14 +59,14 @@ ag   = recs(irec).ag;
 % Lineer (termal kapalı tutarak)
 [x_lin,a_lin,diag_lin] = mck_with_damper( ...
     t,ag,M,C0,K, k_sd, c_lam0, Lori, false, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
-    false, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
+    false, thermal, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
     cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
     n_dampers_per_story, resFactor, cfg);
 
 % Orifisli (+ termal anahtarına göre)
 [x_orf,a_orf,diag_orf] = mck_with_damper( ...
     t,ag,M,C0,K, k_sd, c_lam0, Lori, use_orifice, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
-    use_thermal, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
+    use_thermal, thermal, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
     cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
     n_dampers_per_story, resFactor, cfg);
 
@@ -163,7 +163,7 @@ end
 
 function [x,a,diag] = mck_with_damper( ...
     t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
-    use_thermal, thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap, Lgap, ...
+    use_thermal, thermal, T_ref_C,b_mu, c_lam_min,c_lam_cap, Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
     n_dampers_per_story, resFactor, cfg)
 
@@ -183,7 +183,7 @@ function [x,a,diag] = mck_with_damper( ...
     Mvec  = 2:n;                        % üst düğümler
 
     % --- Termal arayıncı başlangıç ---
-    T      = T0_C;              % anlık sıcaklık tahmini
+    T      = thermal.T0_C;              % anlık sıcaklık tahmini
     dT_est = 0;                 % toplam artış tahmini
 
     % Döngü: termal kapalıysa tek atım
@@ -247,15 +247,15 @@ function [x,a,diag] = mck_with_damper( ...
         C_th = max(m_oil_tot*cp_oil + m_steel_tot*cp_steel, eps);
 
         Nt  = numel(t);
-        Tser= zeros(Nt,1); Tser(1)= T0_C;
+        Tser= zeros(Nt,1); Tser(1)= thermal.T0_C;
         dtv = diff(t);
         for k=1:Nt-1
             Pk = 0.5*(P_sum(k) + P_sum(k+1));
             Tser(k+1) = Tser(k) + dtv(k) * ( Pk/C_th - (thermal.hA_W_perK/C_th)*(Tser(k) - thermal.T_env_C) );
             % anlık clamp (süzülmüş taşmaları kes)
-            Tser(k+1) = min(max(Tser(k+1), T0_C), T0_C + thermal.dT_max);
+            Tser(k+1) = min(max(Tser(k+1), thermal.T0_C), thermal.T0_C + thermal.dT_max);
         end
-        dT_new = Tser(end) - T0_C;
+        dT_new = Tser(end) - thermal.T0_C;
         % son değer clamp
         dT_new = min(max(dT_new, 0), thermal.dT_max);
 
@@ -266,7 +266,7 @@ function [x,a,diag] = mck_with_damper( ...
         end
         % relaxation
         dT_est = thermal.relax*dT_new + (1-thermal.relax)*dT_est;
-        T      = T0_C + dT_est;
+        T      = thermal.T0_C + dT_est;
         % (opsiyonel) bir sonraki iterasyon için başlangıç durumu:
         % z0 = z(end,:).';
     end

@@ -87,6 +87,7 @@ T0_C      = 25;                      % Başlangıç sıcaklığı [°C]
 T_ref_C   = 25;                      % Referans sıcaklık [°C]
 b_mu      = -0.013;                  % Viskozite-sıcaklık katsayısı
 thermal = struct();
+thermal.T0_C = T0_C;
 thermal.hA_W_perK = 450;             % Konvektif ısı kaybı katsayısı
 thermal.T_env_C   = 25;              % Ortam sıcaklığı [°C]
 thermal.max_iter  = 3;               % ΔT iterasyon sayısı

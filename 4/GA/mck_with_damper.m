@@ -1,5 +1,5 @@
 function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
-    use_thermal, thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
+    use_thermal, thermal, T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, story_mask, ...
     n_dampers_per_story, resFactor, cfg)
 %% Girdi Parametreleri
@@ -16,7 +16,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
     Nvec = 1:nStories; Mvec = 2:n;
 
     % Başlangıç sıcaklığı ve viskozitesi
-    Tser = T0_C*ones(numel(t),1);
+    Tser = thermal.T0_C*ones(numel(t),1);
     mu_abs = mu_ref;
     c_lam = c_lam0;
 
@@ -85,7 +85,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
     m_steel_tot = steel_to_oil_mass_ratio*m_oil_tot;
     C_oil   = max(m_oil_tot*cp_oil,   eps);
     C_steel = max(m_steel_tot*cp_steel, eps);
-    T_o = Tser; T_s = T0_C*ones(numel(t),1);
+    T_o = Tser; T_s = thermal.T0_C*ones(numel(t),1);
     hA_os   = Utils.getfield_default(thermal, 'hA_os',    thermal.hA_W_perK);
     hA_o_env= Utils.getfield_default(thermal, 'hA_o_env', thermal.hA_W_perK);
     hA_s_env= Utils.getfield_default(thermal, 'hA_s_env', thermal.hA_W_perK);
@@ -96,8 +96,8 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
         dT_s = ( + hA_os*(T_o(k)-T_s(k)) - hA_s_env*(T_s(k)-thermal.T_env_C) ) / C_steel;
         T_o(k+1) = T_o(k) + dtv(k)*dT_o;
         T_s(k+1) = T_s(k) + dtv(k)*dT_s;
-        T_o(k+1) = min(max(T_o(k+1), T0_C), T0_C + thermal.dT_max);
-        T_s(k+1) = min(max(T_s(k+1), T0_C), T0_C + thermal.dT_max);
+        T_o(k+1) = min(max(T_o(k+1), thermal.T0_C), thermal.T0_C + thermal.dT_max);
+        T_s(k+1) = min(max(T_s(k+1), thermal.T0_C), thermal.T0_C + thermal.dT_max);
     end
     mu = mu_ref*exp(b_mu*(T_o - T_ref_C));
 

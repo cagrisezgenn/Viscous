@@ -1,4 +1,4 @@
-function [x,a_rel,ts,diag] = mck_with_damper_ts(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orifice, orf, rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, n_dampers_per_story, resFactor, cfg)
+function [x,a_rel,ts,diag] = mck_with_damper_ts(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orifice, orf, rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, n_dampers_per_story, resFactor, cfg)
 %MCK_WITH_DAMPER_TS Wrapper around MCK_WITH_DAMPER returning time-series.
 %
 %   [X,A_REL,TS,DIAG] = MCK_WITH_DAMPER_TS(T,AG,M,C,K, ...) calls the existing
@@ -9,7 +9,7 @@ function [x,a_rel,ts,diag] = mck_with_damper_ts(t,ag,M,C,K, k_sd,c_lam0,Lori, us
 
 % Solve using the existing implementation
 [x,a_rel,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orifice, orf, rho, Ap, Ao, Qcap, mu_ref, ...
-    use_thermal, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
+    use_thermal, thermal, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
     cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
     n_dampers_per_story, resFactor, cfg);
 

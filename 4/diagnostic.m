@@ -19,7 +19,7 @@ use_thermal = true;
 
 [x0,a0] = lin_MCK(t,ag,M,C0,K);
 [x,a,diag_out] = mck_with_damper(t,ag,M,C0,K, k_sd,c_lam0, Lori, use_orifice, orf, rho, Ap, A_o, Qcap_big, mu_ref, ...
-    use_thermal, thermal, T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
+    use_thermal, thermal, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, ...
     cp_oil, cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
     n_dampers_per_story, resFactor, cfg);
 
@@ -67,7 +67,7 @@ end
 
 %% Damper model with diagnostics
 function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
-    use_thermal, thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
+    use_thermal, thermal, T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
     n_dampers_per_story, resFactor, cfg)
 
@@ -86,7 +86,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
     Nvec = 1:nStories; Mvec = 2:n;
 
     % Initial temperature and viscosity
-    Tser = T0_C*ones(numel(t),1);
+    Tser = thermal.T0_C*ones(numel(t),1);
     mu_abs = mu_ref;
     c_lam = c_lam0;
     epsm   = Utils.softmin_eps(cfg);
@@ -147,7 +147,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
     for k=1:numel(t)-1
         Pk = 0.5*(P_sum(k)+P_sum(k+1));
         Tser(k+1) = Tser(k) + dtv(k)*( Pk/C_th - (thermal.hA_W_perK/C_th)*(Tser(k)-thermal.T_env_C) );
-        Tser(k+1) = min(max(Tser(k+1), T0_C), T0_C + thermal.dT_max);
+        Tser(k+1) = min(max(Tser(k+1), thermal.T0_C), thermal.T0_C + thermal.dT_max);
     end
     mu = mu_ref*exp(b_mu*(Tser - T_ref_C));
 
