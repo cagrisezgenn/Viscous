@@ -9,6 +9,23 @@ classdef Utils
             y = 0.5*(a + b - sqrt((a - b).^2 + epsm.^2));
         end
 
+        %% Softmin epsilon (�l�ekli)
+        function epsm = softmin_eps(cfg)
+            % SOFTMIN_EPS  dP yumu�atma epsilonu (�l�ekli) d�nd�r�r.
+            %  epsm = c_eps * num.dP_cap; c_eps varsay�lan 0.03.
+            try
+                c_eps = Utils.getfield_default(cfg.num,'softmin_ceps',0.03);
+                dPcap = Utils.getfield_default(cfg.num,'dP_cap',NaN);
+                if isfinite(dPcap) && dPcap>0
+                    epsm = max(1e3, c_eps * dPcap);
+                else
+                    epsm = 1e5; % emniyetli varsay�lan
+                end
+            catch
+                epsm = 1e5;
+            end
+        end
+
         %% Orantılı Pencere Ağırlığı
         function w = pf_weight(t, cfg)
             % Basınç kuvveti için orantılı pencere ağırlığı hesaplar.
@@ -98,9 +115,8 @@ classdef Utils
             k_sd_simple = k_hyd + k_p;      % tek damper
             k_sd_adv    = nd * (k_hyd + k_p);% paralel nd
 
-            % Laminer referans direnci ve eşdeğer sönüm
-            R_lam_ref = (128 * params.mu_ref * params.Lori / (pi * params.orf.d_o^4)) / max(nd*params.n_orf,1);
-            c_eff_ref = (Ap_eff^2) * R_lam_ref;
+            % Laminer sabit (tek damper referansı)
+            c_lam0 = 12 * params.mu_ref * params.Lori * Ap^2 / (params.orf.d_o^4);
 
             % Çıkışlar (geriye uyumlu alan adlarıyla)
             params.Ap = Ap;
@@ -113,9 +129,7 @@ classdef Utils
             % Adım 2 öncesi: k_sd paralel etkili (nd içselleştirilmiş) seçilir
             params.k_sd = k_sd_adv;
 
-            % Yeni laminer parametreleri
-            params.R_lam_ref = R_lam_ref;
-            params.c_lam0 = c_eff_ref; % geri uyumlu alan adı
+            params.c_lam0 = c_lam0;
         end
 
         %% Lineer MCK Çözümü

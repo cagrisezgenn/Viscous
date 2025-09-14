@@ -40,12 +40,8 @@ end
 
 % Konsol başlığı
 try
-    imode = Utils.getfield_default(opts,'IM_mode','');
-    band  = Utils.getfield_default(opts,'band_fac',[NaN NaN]);
-    sb    = Utils.getfield_default(opts,'s_bounds',[NaN NaN]);
     if ~quiet
         fprintf('Run @ %s | outdir=%s\n', ts, outdir);
-        fprintf('IM_mode=%s, band=[%.3g,%.3g], s_bounds=[%.2f,%.2f]\n', imode, band(1), band(2), sb(1), sb(2));
         fprintf('policies=%s | orders=%s | cooldown_s_list=%s | rng_seed=%d\n', ...
             strjoin(opts.policies,','), strjoin(opts.orders,','), sprintf('%d ', opts.cooldown_s_list), opts.rng_seed);
         if isfield(opts,'TRIM_names') && ~isempty(opts.TRIM_names)

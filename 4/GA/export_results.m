@@ -10,18 +10,9 @@ if ~exist(outdir,'dir'), mkdir(outdir); end
 % Türetilmiş damper sabitlerini güncelle
 params = Utils.recompute_damper_params(params);
 
-%% Meta
+%% Meta (IM alanlarını varsayılanlarla doldurma kaldırıldı)
 try
-    % IM ve kırpma bilgileri (boşsa varsayılan değerler kullanılır)
-    IM_mode  = Utils.getfield_default(opts,'IM_mode','band');
-    if isempty(IM_mode), IM_mode = 'band'; end
-
-    band_fac = Utils.getfield_default(opts,'band_fac',[0.8 1.2]);
-    if isempty(band_fac), band_fac = [0.8 1.2]; end
-
-    s_bounds = Utils.getfield_default(opts,'s_bounds',[0.5 2.0]);
-    if isempty(s_bounds), s_bounds = [0.5 2.0]; end
-
+    % TRIM bilgisi opsiyonel
     TRIM_names = Utils.getfield_default(opts,'TRIM_names',{});
     if isempty(TRIM_names), TRIM_names = {}; end
 
@@ -32,7 +23,7 @@ try
     catch
     end
 
-    % Anlık görüntü için qc özet bilgileri (geçen/kalan ve en kötü 3 kayıt)
+    % qc özet bilgisi
     try
         pass = sum(summary.table.qc_all_mu);
         fail = height(summary.table) - pass;
@@ -44,9 +35,8 @@ try
         qc_meta = struct();
     end
 
-    % snapshot.mat kaydı (P varsa dahil et)
+    % snapshot.mat kaydı (P varsa dahil et) — IM_mode/band_fac/s_bounds yazılmaz
     snap = struct('params',params,'opts',opts,'scaled',scaled, ...
-                  'IM_mode',IM_mode,'band_fac',band_fac,'s_bounds',s_bounds, ...
                   'TRIM_names',{TRIM_names},'params_derived',params_derived,'qc_meta',qc_meta);
     if ~isempty(varargin)
         snap.P = varargin{1};
@@ -66,7 +56,7 @@ s_cl = arrayfun(@(s) Utils.getfield_default(s,'s_clipped',0), scaled)';
 trimmed = arrayfun(@(s) Utils.getfield_default(s,'trimmed',0), scaled)';
 tbl = table(names, dt, dur, PGA, PGV, IM, sc, s_cl, trimmed, ...
     'VariableNames',{'name','dt','dur','PGA','PGV','IM','scale','s_clipped','trimmed'});
-% Ölçeklenmiş kayıt özetini CSV olarak yaz
+% ölçeklenmiş kayıt özetini CSV olarak yaz
 safe_write(tbl, fullfile(outdir,'scaled_index.csv'), @writetable);
 
 %% Özetler
@@ -108,7 +98,7 @@ for k = 1:numel(all_out)
         mu_mode = Utils.getfield_default(out,'mu_mode','nominal');   % sadece etiket için
         mu_used = Utils.getfield_default(out,'mu_used',1.0);
         mstruct = struct('PFA_top',m.PFA_top,'IDR_max',m.IDR_max, ...
-                         'dP95',m.dP_resist_q95,'Qcap95',m.Qcap_ratio_q95, ...
+                         'dP95',m.dP_orf_q95,'Qcap95',m.Qcap_ratio_q95, ...
                          'cav_pct',m.cav_pct,'T_end',out.T_end,'mu_end',out.mu_end, ...
                          'P_mech',Utils.getfield_default(m,'P_mech',NaN), ...
                          'Re_max',Utils.getfield_default(m,'Re_max',NaN), ...

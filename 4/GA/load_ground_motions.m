@@ -26,8 +26,8 @@ if nargin < 2, opts = struct(); end
 hp_cut   = Utils.getfield_default(opts,'hp_cut',0.05);   % yuksek gecis [Hz]
 IM_mode  = Utils.getfield_default(opts,'IM_mode','band');
 band_fac = Utils.getfield_default(opts,'band_fac',[0.8 1.2]);
-band_N   = Utils.getfield_default(opts,'band_N',15);
-s_bounds = Utils.getfield_default(opts,'s_bounds',[0.3 1.7]);
+band_N   = Utils.getfield_default(opts,'band_N',21);
+s_bounds = Utils.getfield_default(opts,'s_bounds',[0.2 2.2]);
 
 %% MAT dosyasını Yükle
 raw = load('acc_matrix.mat');

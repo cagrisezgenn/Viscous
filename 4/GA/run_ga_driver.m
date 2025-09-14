@@ -1,4 +1,4 @@
-function [X,F,gaout] = run_ga_driver(scaledOrSnap, params, optsEval, optsGA)
+    function [X,F,gaout] = run_ga_driver(scaledOrSnap, params, optsEval, optsGA)
 % === Parpool Açılışı (temizlik + iş parçacığı sınırı) ===
 Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılamadı');
 %RUN_GA_DRIVER Hibrit GA sürücüsü: anlık görüntü yolu veya bellek içi
@@ -41,7 +41,7 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     % ---------- scaled/params/meta çözümü ----------
     if ischar(scaledOrSnap_local) || isstring(scaledOrSnap_local)
         S = load(char(scaledOrSnap_local), 'scaled','params','opts', ...
-                 'IM_mode','band_fac','s_bounds','mu_factors','mu_weights','thr');
+                 'mu_factors','mu_weights','thr');
         assert(isfield(S,'scaled') && ~isempty(S.scaled), ...
             'run_ga_driver: snapshot missing ''scaled''.');
         scaled = S.scaled;
@@ -53,9 +53,6 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
             params = params_local;
         end
         meta = struct();
-        meta.IM_mode    = Utils.getfield_default(S,'IM_mode','');
-        meta.band_fac   = Utils.getfield_default(S,'band_fac',[]);
-        meta.s_bounds   = Utils.getfield_default(S,'s_bounds',[]);
         meta.mu_factors = Utils.getfield_default(S,'mu_factors',1.00);
         meta.mu_weights = Utils.getfield_default(S,'mu_weights',1);
         if ~isfield(S,'thr'), S.thr = struct(); end
@@ -63,8 +60,7 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     else
         scaled = scaledOrSnap_local;
         params = params_local;
-        meta = struct('IM_mode','', 'band_fac',[], 's_bounds',[], ...
-                      'mu_factors',1.00, 'mu_weights',1, ...
+        meta = struct('mu_factors',1.00, 'mu_weights',1, ...
                       'thr', Utils.default_qc_thresholds(struct()));
         % Gerekirse çalışma alanını otomatik hazırla (giriş sağlanmadığında)
         if (isempty(scaled) || isempty(params))
@@ -75,9 +71,13 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
                 parametreler;
                 % Veri kümesini ölçekle (band/trim) ve dondur
                 try
-                    % Geniş veri ölçek aralığı ve band için ayarlar
-                    lm_opts = struct('IM_mode','band','band_fac',[0.8 1.2], 'band_N', 21, 's_bounds', [0.2 2.2]);
-                    [~, scaled] = load_ground_motions(T1, lm_opts);
+                    % Auto‑prep: dışarıdan sağlanmışsa yükleme seçeneklerini kullan
+                    if exist('optsGA','var') && isstruct(optsGA) && isfield(optsGA,'load_opts')
+                        [~, scaled] = load_ground_motions(T1, optsGA.load_opts);
+                    else
+                        % IM ayarlarını tamamen varsayılanlara bırak
+                        [~, scaled] = load_ground_motions(T1);
+                    end
                 catch ME
                     warning('Otomatik hazırlık: load_ground_motions başarısız: %s', ME.message);
                     % gerekirse ham veriye düş
@@ -114,7 +114,6 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     if nargin < 3 || isempty(optsEval), optsEval = struct; end
     optsEval.do_export     = false;
     optsEval.quiet         = true;
-    optsEval.thermal_reset = 'each';
     if ~isfield(optsEval,'mu_factors'), optsEval.mu_factors = meta.mu_factors; end
     if ~isfield(optsEval,'mu_weights'), optsEval.mu_weights = meta.mu_weights; end
     if ~isfield(optsEval,'thr'), optsEval.thr = meta.thr; end
@@ -246,8 +245,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
     rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
 
-    Opost = struct('do_export',false,'quiet',true,'thermal_reset','each','order','natural', ...
-                   'use_orifice', true, 'use_thermal', true, ...
+    Opost = struct('do_export',false,'quiet',true, ...
                    'mu_factors', meta.mu_factors, 'mu_weights', meta.mu_weights, 'thr', meta.thr);
 
     parfor i = 1:nF
@@ -331,13 +329,9 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
             v_Qq95 = 0;
         end
         try
-            if ismember('dP_resist_q50_worst', Si.table.Properties.VariableNames)
-                v_dPq50 = Si.table.dP_resist_q50_worst;
-            else
-                v_dPq50 = Si.table.dP_orf_q50_worst;
-            end
+            v_dPq50 = Si.table.dP_orf_q50_worst;
         catch ME
-            warning('dP_resist_q50_worst okunamadı: %s', ME.message);
+            warning('dP_orf_q50_worst okunamadı: %s', ME.message);
             v_dPq50 = 0;
         end
         if ismember('T_oil_end_worst', Si.table.Properties.VariableNames)
@@ -426,11 +420,8 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     % extra diagnostics wanted
     T.dP95_worst          = dP95;     T.Qcap95_worst      = Qcap95;   T.cav_pct_worst = cavW;
     T.T_end_worst         = Tend;     T.mu_end_worst      = muend;    T.PF_p95_worst  = PFp95;
-    T.Q_q50_worst         = Qq50;     T.Q_q95_worst       = Qq95;     T.dP_resist_q50_worst = dPq50;
-    T.dP_resist_q95_worst = dPq95w;   T.T_oil_end_worst   = Toil;     T.T_steel_end_worst = Tsteel;
-    % backward compatibility
-    T.dP_orf_q50_worst = dPq50;
-    T.dP_orf_q95_worst = dPq95w;
+    T.Q_q50_worst         = Qq50;     T.Q_q95_worst       = Qq95;     T.dP_orf_q50_worst = dPq50;
+    T.dP_orf_q95_worst    = dPq95w;   T.T_oil_end_worst   = Toil;     T.T_steel_end_worst = Tsteel;
     T.energy_tot_sum      = Etot;     T.E_orifice_sum     = Eor;      T.E_struct_sum  = Estr;
     T.E_ratio             = Eratio;   T.P_mech_sum        = Pmech;
 
@@ -468,8 +459,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     fid=fopen(fullfile(outdir,'README.txt'),'w');
     if fid~=-1
         fprintf(fid, 'Hybrid GA run: %s\n', date_str);
-        fprintf(fid, 'IM_mode=%s, band_fac=%s, s_bounds=%s\n', ...
-            mat2str(meta.IM_mode), mat2str(meta.band_fac), mat2str(meta.s_bounds));
+        % IM meta istefe bagl1 olarak yaz1lm1yor (bypass kald1r1ld1)
         fprintf(fid, 'mu_factors=%s, mu_weights=%s\n', mat2str(meta.mu_factors), mat2str(meta.mu_weights));
         Utils.try_warn(@() fprintf(fid, 'thr=%s\n', jsonencode(meta.thr)), ...
             'README yazımı sırasında thr bilgisi eklenemedi');
@@ -523,9 +513,7 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     if nargin >= 4 && ~isempty(optsEval), O = optsEval; end
     O.do_export = false;
     O.quiet  = true;
-    O.thermal_reset = 'each';
-    O.order = 'natural';
-    O.use_orifice = true; O.use_thermal = true;
+    % policy/order vars referenced by run_batch_windowed default to each/natural
     if ~isfield(O,'mu_factors'), O.mu_factors = 1.00; end
     if ~isfield(O,'mu_weights'), O.mu_weights = 1; end
 
@@ -646,7 +634,7 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
             candCols = { ...
               'dP95_worst', 'Qcap95_worst', 'cav_pct_worst', 'T_end_worst', 'mu_end_worst', ...
               'PF_p95_worst', ...
-              'Q_q50_worst','Q_q95_worst','dP_resist_q50_worst','dP_resist_q95_worst', ...
+              'Q_q50_worst','Q_q95_worst','dP_orf_q50_worst','dP_orf_q95_worst', ...
               'T_oil_end_worst','T_steel_end_worst', ...
               'energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum' ...
             };
@@ -657,16 +645,8 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
                     S.table.T_oil_end_worst = S.table.T_end_worst; %#ok<AGROW>
                 end
                 if ismember('dP95_worst', S.table.Properties.VariableNames) && ...
-                   ~ismember('dP_resist_q95_worst', S.table.Properties.VariableNames)
-                    S.table.dP_resist_q95_worst = S.table.dP95_worst; %#ok<AGROW>
-                end
-                if ismember('dP_orf_q95_worst', S.table.Properties.VariableNames) && ...
-                   ~ismember('dP_resist_q95_worst', S.table.Properties.VariableNames)
-                    S.table.dP_resist_q95_worst = S.table.dP_orf_q95_worst; %#ok<AGROW>
-                end
-                if ismember('dP_orf_q50_worst', S.table.Properties.VariableNames) && ...
-                   ~ismember('dP_resist_q50_worst', S.table.Properties.VariableNames)
-                    S.table.dP_resist_q50_worst = S.table.dP_orf_q50_worst; %#ok<AGROW>
+                   ~ismember('dP_orf_q95_worst', S.table.Properties.VariableNames)
+                    S.table.dP_orf_q95_worst = S.table.dP95_worst; %#ok<AGROW>
                 end
                 if ismember('E_orifice_sum', S.table.Properties.VariableNames) && ...
                    ismember('E_struct_sum', S.table.Properties.VariableNames) && ...
@@ -901,27 +881,15 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             if ismember('Q_q95_worst', vn) && ismember('Q_q95_worst', T0bl.Properties.VariableNames)
                 assign('Q_q95_worst', max(T0bl.Q_q95_worst));
             end
-            if ismember('dP_resist_q50_worst', vn)
-                if ismember('dP_resist_q50_worst', T0bl.Properties.VariableNames)
-                    assign('dP_resist_q50_worst', max(T0bl.dP_resist_q50_worst));
-                elseif ismember('dP_orf_q50_worst', T0bl.Properties.VariableNames)
-                    assign('dP_resist_q50_worst', max(T0bl.dP_orf_q50_worst));
-                end
-            end
-            if ismember('dP_resist_q95_worst', vn)
-                if ismember('dP_resist_q95_worst', T0bl.Properties.VariableNames)
-                    assign('dP_resist_q95_worst', max(T0bl.dP_resist_q95_worst));
-                elseif ismember('dP_orf_q95_worst', T0bl.Properties.VariableNames)
-                    assign('dP_resist_q95_worst', max(T0bl.dP_orf_q95_worst));
-                elseif ismember('dP95_worst', T0bl.Properties.VariableNames)
-                    assign('dP_resist_q95_worst', max(T0bl.dP95_worst));
-                end
-            end
-            if ismember('dP_orf_q50_worst', vn)
-                assign('dP_orf_q50_worst', T0.dP_resist_q50_worst);
+            if ismember('dP_orf_q50_worst', vn) && ismember('dP_orf_q50_worst', T0bl.Properties.VariableNames)
+                assign('dP_orf_q50_worst', max(T0bl.dP_orf_q50_worst));
             end
             if ismember('dP_orf_q95_worst', vn)
-                assign('dP_orf_q95_worst', T0.dP_resist_q95_worst);
+                if ismember('dP_orf_q95_worst', T0bl.Properties.VariableNames)
+                    assign('dP_orf_q95_worst', max(T0bl.dP_orf_q95_worst));
+                else
+                    assign('dP_orf_q95_worst', max(T0bl.dP95_worst));
+                end
             end
             if ismember('T_oil_end_worst', vn) && ismember('T_oil_end_worst', T0bl.Properties.VariableNames)
                 assign('T_oil_end_worst', max(T0bl.T_oil_end_worst));
@@ -1124,6 +1092,3 @@ function safe_write(obj, filepath, writeFcn)
     Utils.try_warn(@() writeFcn(obj, filepath), ...
         sprintf('Yazma hatası (%s)', filepath));
 end
-
-
-

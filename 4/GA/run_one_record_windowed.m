@@ -14,7 +14,7 @@ function out = run_one_record_windowed(rec, params, opts, prev_diag)
 %
 %   OUT yapısı; name, scale, SaT1, win, metr, diag, mu_results, weighted,
 %   worst, ts, qc_all_mu, T_start, T_end, mu_end, clamp_hits, PFA_top,
-%   IDR_max, dP_resist_q95, Qcap_ratio_q95, cav_pct, t5, t95 ve coverage
+%   IDR_max, dP_orf_q95, Qcap_ratio_q95, cav_pct, t5, t95 ve coverage
 %   alanlarını içerir.
 %
 %   Bu fonksiyon, dosya sonunda yer alan MCK_WITH_DAMPER_TS yardımcı
@@ -28,13 +28,6 @@ if ~isfield(opts,'mu_weights'), opts.mu_weights = 1; end
 
 % Türetilmiş damper sabitlerini güncelle
 params = Utils.recompute_damper_params(params);
-
-% Ensure PF resistive slope parameter is available
-if ~isfield(params,'cfg') || ~isstruct(params.cfg), params.cfg = struct(); end
-if ~isfield(params.cfg,'PF') || ~isstruct(params.cfg.PF), params.cfg.PF = struct(); end
-if ~isfield(params.cfg.PF,'resistive_slope') || isempty(params.cfg.PF.resistive_slope)
-    params.cfg.PF.resistive_slope = 20;
-end
 
 if isfield(opts,'thermal_reset') && strcmpi(opts.thermal_reset,'cooldown')
     if ~isfield(opts,'cooldown_s') || isempty(opts.cooldown_s) || isnan(opts.cooldown_s)
@@ -170,8 +163,8 @@ for i = 1:nMu
         % sessiz geç
     end
     [x,a_rel,ts,diag] = mck_with_damper_ts(rec.t, rec.ag, params.M, params.C0, params.K, ...
-        params.k_sd, c_lam0_eff, params.Lori, opts.use_orifice, params.orf, params.rho, params.Ap, ...
-        params.A_o, params.Qcap_big, mu_ref_eff, opts.use_thermal, params.thermal, Tinit, ...
+        params.k_sd, c_lam0_eff, params.Lori, true, params.orf, params.rho, params.Ap, ...
+        params.A_o, params.Qcap_big, mu_ref_eff, true, params.thermal, Tinit, ...
         params.T_ref_C, params.b_mu, params.c_lam_min, params.c_lam_cap, params.Lgap, ...
         params.cp_oil, params.cp_steel, params.steel_to_oil_mass_ratio, ...
         params.story_mask, params.n_dampers_per_story, params.resFactor, params.cfg);
@@ -180,7 +173,7 @@ for i = 1:nMu
     metr_i = compute_metrics_windowed(rec.t, x, a_rel, rec.ag, ts, params.story_height, win, params_m);
 
     qc_pass = (metr_i.cav_pct <= thr.cav_pct_max) && ...
-              (metr_i.dP_resist_q95 <= thr.dP95_max) && ...
+              (metr_i.dP_orf_q95 <= thr.dP95_max) && ...
               (metr_i.Qcap_ratio_q95 <= thr.Qcap95_max) && ...
               (metr_i.T_oil_end <= thr.T_end_max) && ...
               (metr_i.mu_end >= thr.mu_end_min);
@@ -215,7 +208,7 @@ else
 end
 
 % Ağırlıklı ve en kötü durum özetleri (metrik bazında uygun min/maks)
-fields = {'PFA_top','IDR_max','dP_resist_q95','dP_resist_q50','Q_q95','Q_q50','Qcap_ratio_q95', ...
+fields = {'PFA_top','IDR_max','dP_orf_q95','dP_orf_q50','Q_q95','Q_q50','Qcap_ratio_q95', ...
           'cav_pct','T_oil_end','mu_end', 'x10_max_D','a10abs_max_D', ...
           'E_orifice_full','E_struct_full','E_ratio_full','PF_p95'};
 weighted = struct();
@@ -235,12 +228,6 @@ for kf = 1:numel(fields)
     end
     worst.which_mu.(fn) = mu_results(idx).mu_factor;
 end
-
-% backward compatibility aliases
-if isfield(weighted,'dP_resist_q95'), weighted.dP_orf_q95 = weighted.dP_resist_q95; end
-if isfield(weighted,'dP_resist_q50'), weighted.dP_orf_q50 = weighted.dP_resist_q50; end
-if isfield(worst,'dP_resist_q95'),   worst.dP_orf_q95   = worst.dP_resist_q95;   end
-if isfield(worst,'dP_resist_q50'),   worst.dP_orf_q50   = worst.dP_resist_q50;   end
 
 %% Çıktıların Derlenmesi
 out = struct();
@@ -262,8 +249,7 @@ out.clamp_hits = clamp_hits;
 % kolaylık amaçlı telemetri alanları
 out.PFA_top = metr.PFA_top;
 out.IDR_max = metr.IDR_max;
-out.dP_resist_q95 = metr.dP_resist_q95;
-out.dP_orf_q95 = out.dP_resist_q95; % backward compatibility
+out.dP_orf_q95 = metr.dP_orf_q95;
 out.Qcap_ratio_q95 = metr.Qcap_ratio_q95;
 out.cav_pct = metr.cav_pct;
 out.t5 = win.t5; out.t95 = win.t95; out.coverage = win.coverage;
@@ -328,11 +314,9 @@ ts.dvel = diag.dvel;
 ts.story_force = diag.story_force;
 ts.PF = diag.PF;
 ts.Q = diag.Q;
-ts.dP_resist = diag.dP_resist;
-ts.dP_kv = diag.dP_kv;
-ts.dP_orf = diag.dP_resist; % backward compatibility
+ts.dP_orf = diag.dP_orf;
 ts.Qcap_ratio = abs(diag.Q) ./ Qcap;
-ts.cav_mask = abs(diag.dP_kv) > diag.dP_cav;
+ts.cav_mask = diag.dP_orf < 0;
 
 %4) Güç bileşenlerinin hesabı
 P_visc_per = diag.c_lam .* (diag.dvel.^2);
@@ -341,7 +325,7 @@ ts.P_visc = sum(P_visc_per .* multi, 2);
 if isfield(diag,'P_orf_per') && ~isempty(diag.P_orf_per)
     P_orf_per = diag.P_orf_per;
 else
-    P_orf_per = abs(diag.dP_kv .* diag.Q);
+    P_orf_per = abs(diag.dP_orf .* diag.Q);
 end
 ts.P_orf = sum(P_orf_per .* multi, 2);
 

@@ -103,7 +103,6 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
 
     %% Adım 2: Sabit Kazançlarla Sistem Değerlendirmesi
     O = struct('do_export',false,'quiet',true,'thermal_reset','each','order','natural', ...
-               'use_orifice',true,'use_thermal',true, ...
                'mu_factors',[0.75 1.00 1.25], 'mu_weights',[0.2 0.6 0.2], 'thr', []);
     S_worst = run_batch_windowed(scaled, P, O);
 

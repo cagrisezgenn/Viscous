@@ -51,7 +51,7 @@ metr.IDR_max = max(max(abs(drift(idx,:))));
 % Her kat için yüzde 50 ve yüzde 95'lik değerler ile kavitasyon oranı
 % gibi istatistikler hesaplanır.
 
-abs_dP = abs(ts.dP_resist(idx,:));
+abs_dP = abs(ts.dP_orf(idx,:));
 abs_Q  = abs(ts.Q(idx,:));
 Qcap_ratio = abs_Q ./ max(params.Qcap_big, eps);
 abs_story_force = abs(ts.story_force(idx,:));
@@ -94,11 +94,8 @@ cav_mean = mean(ts.cav_mask(idx,:),1);
 ws = metr.which_story;
 
 % Kritik katın istatistiklerinin saklanması
-metr.dP_resist_q95      = dP_q95(ws);
-metr.dP_resist_q50      = dP_q50(ws);
-% backward compatibility aliases
-metr.dP_orf_q95      = metr.dP_resist_q95;
-metr.dP_orf_q50      = metr.dP_resist_q50;
+metr.dP_orf_q95      = dP_q95(ws);
+metr.dP_orf_q50      = dP_q50(ws);
 metr.Q_q95           = Q_q95(ws);
 metr.Q_q50           = Q_q50(ws);
 metr.Qcap_ratio_q95  = Qcap_ratio_q95(ws);
