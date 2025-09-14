@@ -55,7 +55,12 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
         dP_cav_loc= max( (p_up_loc - orf.p_cav_eff).*orf.cav_sf, 0 );
         F_p = F_lin + F_orf;
     else
-        F_p = F_lin; Q = 0*dvel; dP_orf = 0*dvel; P_orf_per = 0*dvel;
+        F_p = F_lin;
+        Q = 0*dvel;
+        dP_orf = 0*dvel;
+        P_orf_per = 0*dvel;
+        dP_kv_loc = 0*dvel;
+        dP_cav_loc = 0*dvel;
     end
 
     dp_pf = (c_lam*dvel + (F_p - k_sd*drift)) ./ Ap;
