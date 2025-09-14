@@ -38,6 +38,15 @@ classdef Utils
             y = 0.5*(a + b - sqrt((a - b).^2 + epsm.^2));
         end
 
+        function epsm = softmin_eps(cfg)
+            if nargin < 1 || ~isstruct(cfg)
+                cfg = struct();
+            end
+            num  = Utils.getfield_default(cfg,'num',struct());
+            epsm = Utils.getfield_default(num,'softmin_eps',1e5);
+            epsm = max(1e3, double(epsm));
+        end
+
         function w = pf_weight(t, cfg)
             w = cfg.on.pressure_force * (1 - exp(-max(t - cfg.PF.t_on, 0) ./ max(cfg.PF.tau, 1e-6)));
         end
