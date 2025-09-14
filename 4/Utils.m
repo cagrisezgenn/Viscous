@@ -177,5 +177,28 @@ classdef Utils
                 P(:,i) = vals;
             end
         end
+
+        %% Default QC Thresholds
+        function thr = default_qc_thresholds(optsThr)
+            % Return default quality-control thresholds and fill missing fields.
+            % Example: thr = Utils.default_qc_thresholds(struct('dP95_max',40e6));
+
+            if nargin < 1 || isempty(optsThr)
+                optsThr = struct();
+            end
+
+            thr = struct();
+            thr.dP95_max   = Utils.getfield_default(optsThr,'dP95_max',50e6);
+            thr.Qcap95_max = Utils.getfield_default(optsThr,'Qcap95_max',0.5);
+            thr.cav_pct_max= Utils.getfield_default(optsThr,'cav_pct_max',0);
+            thr.T_end_max  = Utils.getfield_default(optsThr,'T_end_max',75);
+            thr.mu_end_min = Utils.getfield_default(optsThr,'mu_end_min',0.5);
+
+            % Preserve any additional fields
+            extra = setdiff(fieldnames(optsThr), fieldnames(thr));
+            for ii = 1:numel(extra)
+                thr.(extra{ii}) = optsThr.(extra{ii});
+            end
+        end
     end
 end
