@@ -40,8 +40,7 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
 
     % ---------- scaled/params/meta çözümü ----------
     if ischar(scaledOrSnap_local) || isstring(scaledOrSnap_local)
-        S = load(char(scaledOrSnap_local), 'scaled','params','opts', ...
-                 'mu_factors','mu_weights','thr');
+        S = load(char(scaledOrSnap_local), 'scaled','params','opts','thr');
         assert(isfield(S,'scaled') && ~isempty(S.scaled), ...
             'run_ga_driver: snapshot missing ''scaled''.');
         scaled = S.scaled;
@@ -53,15 +52,12 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
             params = params_local;
         end
         meta = struct();
-        meta.mu_factors = Utils.getfield_default(S,'mu_factors',1.00);
-        meta.mu_weights = Utils.getfield_default(S,'mu_weights',1);
         if ~isfield(S,'thr'), S.thr = struct(); end
         meta.thr       = Utils.default_qc_thresholds(S.thr);
     else
         scaled = scaledOrSnap_local;
         params = params_local;
-        meta = struct('mu_factors',1.00, 'mu_weights',1, ...
-                      'thr', Utils.default_qc_thresholds(struct()));
+        meta = struct('thr', Utils.default_qc_thresholds(struct()));
         % Gerekirse çalışma alanını otomatik hazırla (giriş sağlanmadığında)
         if (isempty(scaled) || isempty(params))
             try
@@ -114,8 +110,6 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     if nargin < 3 || isempty(optsEval), optsEval = struct; end
     optsEval.do_export     = false;
     optsEval.quiet         = true;
-    if ~isfield(optsEval,'mu_factors'), optsEval.mu_factors = meta.mu_factors; end
-    if ~isfield(optsEval,'mu_weights'), optsEval.mu_weights = meta.mu_weights; end
     if ~isfield(optsEval,'thr'), optsEval.thr = meta.thr; end
     optsEval.thr = Utils.default_qc_thresholds(optsEval.thr);
     %% GA Kurulumu
@@ -245,8 +239,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
     rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
 
-    Opost = struct('do_export',false,'quiet',true, ...
-                   'mu_factors', meta.mu_factors, 'mu_weights', meta.mu_weights, 'thr', meta.thr);
+    Opost = struct('do_export',false,'quiet',true, 'thr', meta.thr);
 
     parfor i = 1:nF
         Xi = quant_clamp_x(X(i,:));
@@ -255,95 +248,87 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
 
         % Tablo sütunlarını güvenle al
         try
-            v_PFA = Si.table.PFA_w;
+            v_PFA = Si.table.PFA;
         catch ME
-            warning('PFA_w okunamadı: %s', ME.message);
+            warning('PFA okunamadı: %s', ME.message);
             v_PFA = NaN;
         end
         try
-            v_IDR = Si.table.IDR_w;
+            v_IDR = Si.table.IDR;
         catch ME
-            warning('IDR_w okunamadı: %s', ME.message);
+            warning('IDR okunamadı: %s', ME.message);
             v_IDR = NaN;
         end
         try
-            v_x10 = Si.table.x10_max_D_worst;
+            v_x10 = Si.table.x10_max_D;
         catch ME
-            warning('x10_max_D_worst okunamadı: %s', ME.message);
+            warning('x10_max_D okunamadı: %s', ME.message);
             v_x10 = 0;
         end
         try
-            v_a10 = Si.table.a10abs_max_D_worst;
+            v_a10 = Si.table.a10abs_max_D;
         catch ME
-            warning('a10abs_max_D_worst okunamadı: %s', ME.message);
+            warning('a10abs_max_D okunamadı: %s', ME.message);
             v_a10 = 0;
         end
 
         try
-            v_dP95 = Si.table.dP95_worst;
+            v_dP95 = Si.table.dP95;
         catch ME
-            warning('dP95_worst okunamadı: %s', ME.message);
+            warning('dP95 okunamadı: %s', ME.message);
             v_dP95 = 0;
         end
         try
-            v_Qcap = Si.table.Qcap95_worst;
+            v_Qcap = Si.table.Qcap95;
         catch ME
-            warning('Qcap95_worst okunamadı: %s', ME.message);
+            warning('Qcap95 okunamadı: %s', ME.message);
             v_Qcap = 0;
         end
         try
-            v_cav  = Si.table.cav_pct_worst;
+            v_cav  = Si.table.cav_pct;
         catch ME
-            warning('cav_pct_worst okunamadı: %s', ME.message);
+            warning('cav_pct okunamadı: %s', ME.message);
             v_cav = 0;
         end
         try
-            v_Tend = Si.table.T_end_worst;
+            v_Tend = Si.table.T_end;
         catch ME
-            warning('T_end_worst okunamadı: %s', ME.message);
+            warning('T_end okunamadı: %s', ME.message);
             v_Tend = 0;
         end
         try
-            v_mu   = Si.table.mu_end_worst;
+            v_mu   = Si.table.mu_end;
         catch ME
-            warning('mu_end_worst okunamadı: %s', ME.message);
+            warning('mu_end okunamadı: %s', ME.message);
             v_mu = 1;
         end
 
         try
-            v_PFp95 = Si.table.PF_p95_worst;
+            v_PFp95 = Si.table.PF_p95;
         catch ME
-            warning('PF_p95_worst okunamadı: %s', ME.message);
+            warning('PF_p95 okunamadı: %s', ME.message);
             v_PFp95 = 0;
         end
         try
-            v_Qq50  = Si.table.Q_q50_worst;
+            v_Qq50  = Si.table.Q_q50;
         catch ME
-            warning('Q_q50_worst okunamadı: %s', ME.message);
+            warning('Q_q50 okunamadı: %s', ME.message);
             v_Qq50 = 0;
         end
         try
-            v_Qq95  = Si.table.Q_q95_worst;
+            v_Qq95  = Si.table.Q_q95;
         catch ME
-            warning('Q_q95_worst okunamadı: %s', ME.message);
+            warning('Q_q95 okunamadı: %s', ME.message);
             v_Qq95 = 0;
         end
         try
-            v_dPq50 = Si.table.dP_orf_q50_worst;
+            v_dPq50 = Si.table.dP50;
         catch ME
-            warning('dP_orf_q50_worst okunamadı: %s', ME.message);
+            warning('dP50 okunamadı: %s', ME.message);
             v_dPq50 = 0;
         end
-        if ismember('T_oil_end_worst', Si.table.Properties.VariableNames)
-            v_Toil = Si.table.T_oil_end_worst;
-        else
-            v_Toil = [];
-        end
-        if ismember('T_steel_end_worst', Si.table.Properties.VariableNames)
-            v_Tsteel = Si.table.T_steel_end_worst;
-        else
-            v_Tsteel = [];
-        end
+        v_Toil = [];
+        v_Tsteel = [];
 
         if ismember('E_orifice_sum', Si.table.Properties.VariableNames)
             v_Eor = Si.table.E_orifice_sum;
@@ -413,15 +398,15 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     % Satır başına dizilerden T tablosunu oluştur
     T = array2table([X F PFAw IDRw pen pen_dP pen_Qcap pen_cav pen_T pen_mu], 'VariableNames', ...
        {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref','PF_t_on', ...
-        'f1','f2','PFA_w','IDR_w','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu'});
+        'f1','f2','PFA','IDR','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu'});
 
     T.x10_max_damperli    = x10pk;
     T.a10abs_max_damperli = a10pk;
     % extra diagnostics wanted
-    T.dP95_worst          = dP95;     T.Qcap95_worst      = Qcap95;   T.cav_pct_worst = cavW;
-    T.T_end_worst         = Tend;     T.mu_end_worst      = muend;    T.PF_p95_worst  = PFp95;
-    T.Q_q50_worst         = Qq50;     T.Q_q95_worst       = Qq95;     T.dP_orf_q50_worst = dPq50;
-    T.dP_orf_q95_worst    = dPq95w;   T.T_oil_end_worst   = Toil;     T.T_steel_end_worst = Tsteel;
+    T.dP95          = dP95;     T.Qcap95      = Qcap95;   T.cav_pct = cavW;
+    T.T_end         = Tend;     T.mu_end      = muend;    T.PF_p95  = PFp95;
+    T.Q_q50         = Qq50;     T.Q_q95       = Qq95;     T.dP50 = dPq50;
+    T.dP_orf_q95    = dPq95w;   T.T_oil_end   = Toil;     T.T_steel_end = Tsteel;
     T.energy_tot_sum      = Etot;     T.E_orifice_sum     = Eor;      T.E_struct_sum  = Estr;
     T.E_ratio             = Eratio;   T.P_mech_sum        = Pmech;
 
@@ -460,7 +445,6 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     if fid~=-1
         fprintf(fid, 'Hybrid GA run: %s\n', date_str);
         % IM meta istefe bagl1 olarak yaz1lm1yor (bypass kald1r1ld1)
-        fprintf(fid, 'mu_factors=%s, mu_weights=%s\n', mat2str(meta.mu_factors), mat2str(meta.mu_weights));
         Utils.try_warn(@() fprintf(fid, 'thr=%s\n', jsonencode(meta.thr)), ...
             'README yazımı sırasında thr bilgisi eklenemedi');
         fprintf(fid, 'Note: No simulations during packaging. Fitness evals had no IO.\n');
@@ -514,8 +498,6 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     O.do_export = false;
     O.quiet  = true;
     % policy/order vars referenced by run_batch_windowed default to each/natural
-    if ~isfield(O,'mu_factors'), O.mu_factors = 1.00; end
-    if ~isfield(O,'mu_weights'), O.mu_weights = 1; end
 
     % Güvenli değerlendirme (GA sırasında IO yok)
     try
@@ -537,9 +519,9 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     end
 
     % --- HARD FILTER (erken eleme) ---
-    dP95v = S.table.dP95_worst;
-    qcapv = S.table.Qcap95_worst;
-    cavv  = S.table.cav_pct_worst;
+    dP95v = S.table.dP95;
+    qcapv = S.table.Qcap95;
+    cavv  = S.table.cav_pct;
     if any(dP95v > 1e9) || any(qcapv > 0.90) || any(cavv > 0.01)
         f = [1e6, 1e6];
         meta = struct('x',x,'f',f,'hard_kill',true);
@@ -555,8 +537,8 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
         return;
     end
 
-    f1 = mean(S.table.PFA_w);
-    f2 = mean(S.table.IDR_w);
+    f1 = mean(S.table.PFA);
+    f2 = mean(S.table.IDR);
     thr = O.thr;
     dP95v   = S.table.dP95_worst;    
     qcapv   = S.table.Qcap95_worst;
@@ -582,7 +564,7 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     % multiplicative penalty keeps scale of objectives
     f = [f1, f2] .* (1 + lambda*pen);
     % Build meta and enforce numeric penalties
-    meta = struct('x',x,'f',f,'PFA_w_mean',f1,'IDR_w_mean',f2);
+    meta = struct('x',x,'f',f,'PFA_mean',f1,'IDR_mean',f2);
     Penalty   = lambda*pen;
     pen_parts = struct('dP',pen_dP,'Qcap',pen_Qcap,'cav',pen_cav,'T',pen_T,'mu',pen_mu);
     % --- penalties: force numeric (no NaNs)
@@ -784,21 +766,21 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         [f0, ~] = Utils.try_warn(@() eval_design_fast(X0, scaled, params, Opost), ...
             'eval_design_fast temel çalıştırma hatası');
         try
-            PFA_w0 = mean(T0bl.PFA_w);
+            PFA0 = mean(T0bl.PFA);
         catch
-            PFA_w0 = NaN;
+            PFA0 = NaN;
         end
         try
-            IDR_w0 = mean(T0bl.IDR_w);
+            IDR0 = mean(T0bl.IDR);
         catch
-            IDR_w0 = NaN;
+            IDR0 = NaN;
         end
         % Penalty parts (same formula)
-        dP95_0   = max(T0bl.dP95_worst);
-        Qcap95_0 = max(T0bl.Qcap95_worst);
-        cavW_0   = max(T0bl.cav_pct_worst);
-        Tend_0   = max(T0bl.T_end_worst);
-        muend_0  = min(T0bl.mu_end_worst);
+        dP95_0   = max(T0bl.dP95);
+        Qcap95_0 = max(T0bl.Qcap95);
+        cavW_0   = max(T0bl.cav_pct);
+        Tend_0   = max(T0bl.T_end);
+        muend_0  = min(T0bl.mu_end);
         pen_dP_0   = rel(dP95_0,  Opost.thr.dP95_max);
         pen_Qcap_0 = rel(Qcap95_0,Opost.thr.Qcap95_max);
         if Opost.thr.cav_pct_max<=0, pen_cav_0 = max(0,cavW_0).^pwr; else, pen_cav_0 = rel(cavW_0,Opost.thr.cav_pct_max); end
@@ -832,8 +814,8 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         % amaç fonksiyonları
         assign('f1', f0(1));
         assign('f2', f0(2));
-        assign('PFA_w', PFA_w0);
-        assign('IDR_w', IDR_w0);
+        assign('PFA', PFA0);
+        assign('IDR', IDR0);
 
         % cezalar
         assign('pen',     pen_0);
