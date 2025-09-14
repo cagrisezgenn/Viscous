@@ -52,7 +52,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
         if use_orf
             orf_loc = orf;
             params = struct('Ap_eff',Ap,'orf',orf_loc,'rho',rho,...
-                            'Ao',Ao,'mu',mu_abs,'Lori',Lori);
+                            'Ao',Ao,'mu',mu_abs,'Lori',Lori,'nd',ndps);
             % Quadratic drop computed from orifice model
             [dP_lam, dP_kv_loc, Q, ~] = calc_orifice_force(dvel, params);
             % Cavitation-limited pressure drop
@@ -147,7 +147,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
                 dP_resist_ = R_lam_ * Q_;
             else
                 params = struct('Ap_eff',Ap,'Ao',Ao,'orf',orf,'rho',rho,...
-                                'mu',mu_abs_loc,'Lori',Lori);
+                                'mu',mu_abs_loc,'Lori',Lori,'nd',ndps);
                 [dP_lam_, dP_kv_, Q_, ~] = calc_orifice_force(dvel_, params);
                 p_up_loc_  = orf.p_amb + abs(F_lin_)./max(Ap,1e-12);
                 dP_cav_loc_= max( (p_up_loc_ - orf.p_cav_eff).*orf.cav_sf, 0 );
@@ -170,14 +170,18 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
     function [dP_lam, dP_kv, Q, P_orf_per] = calc_orifice_force(dvel, params)
         % Laminar and quadratic pressure drops based on Q = Ap_eff*dvel.
 
-        Q = params.Ap_eff * dvel;
+        nd = Utils.getfield_default(params,'nd',1);
+        Q = params.Ap_eff .* dvel;
 
         d_o = max(params.orf.d_o, 1e-12);
-        n_orf = max(params.Ao / (pi*d_o^2/4), 1);
-        R_lam = (128 * params.mu * params.Lori) / (pi * d_o^4 * n_orf);
-        dP_lam = R_lam * Q;
+        Ao_single = pi*d_o.^2/4;
+        n_orf_single = max(params.Ao ./ Ao_single, 1);
+        n_total = nd .* n_orf_single;
+        R_lam = (128 * params.mu * params.Lori) ./ (pi * d_o.^4 .* n_total);
+        dP_lam = R_lam .* Q;
 
-        Re   = (params.rho .* abs(Q) .* d_o) ./ max(params.Ao*params.mu,1e-12);
+        Ao_tot = params.Ao .* nd;
+        Re   = (params.rho .* abs(Q) .* d_o) ./ max(Ao_tot*params.mu,1e-12);
         Cd0   = params.orf.Cd0;
         CdInf = params.orf.CdInf;
         p_exp = params.orf.p_exp;
@@ -185,7 +189,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
         Cd    = CdInf - (CdInf - Cd0) ./ (1 + (Re./max(Rec,1)).^p_exp);
         Cd    = max(min(Cd, 1.2), 0.2);
 
-        dP_kv  = params.rho ./ (2*(Cd.*params.Ao).^2) .* Q .* abs(Q);
+        dP_kv  = params.rho ./ (2*(Cd.*Ao_tot).^2) .* Q .* abs(Q);
         P_orf_per = dP_kv .* Q;
     end
 end
