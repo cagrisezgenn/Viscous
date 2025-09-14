@@ -331,9 +331,13 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
             v_Qq95 = 0;
         end
         try
-            v_dPq50 = Si.table.dP_orf_q50_worst;
+            if ismember('dP_resist_q50_worst', Si.table.Properties.VariableNames)
+                v_dPq50 = Si.table.dP_resist_q50_worst;
+            else
+                v_dPq50 = Si.table.dP_orf_q50_worst;
+            end
         catch ME
-            warning('dP_orf_q50_worst okunamadı: %s', ME.message);
+            warning('dP_resist_q50_worst okunamadı: %s', ME.message);
             v_dPq50 = 0;
         end
         if ismember('T_oil_end_worst', Si.table.Properties.VariableNames)
@@ -422,8 +426,11 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     % extra diagnostics wanted
     T.dP95_worst          = dP95;     T.Qcap95_worst      = Qcap95;   T.cav_pct_worst = cavW;
     T.T_end_worst         = Tend;     T.mu_end_worst      = muend;    T.PF_p95_worst  = PFp95;
-    T.Q_q50_worst         = Qq50;     T.Q_q95_worst       = Qq95;     T.dP_orf_q50_worst = dPq50;
-    T.dP_orf_q95_worst    = dPq95w;   T.T_oil_end_worst   = Toil;     T.T_steel_end_worst = Tsteel;
+    T.Q_q50_worst         = Qq50;     T.Q_q95_worst       = Qq95;     T.dP_resist_q50_worst = dPq50;
+    T.dP_resist_q95_worst = dPq95w;   T.T_oil_end_worst   = Toil;     T.T_steel_end_worst = Tsteel;
+    % backward compatibility
+    T.dP_orf_q50_worst = dPq50;
+    T.dP_orf_q95_worst = dPq95w;
     T.energy_tot_sum      = Etot;     T.E_orifice_sum     = Eor;      T.E_struct_sum  = Estr;
     T.E_ratio             = Eratio;   T.P_mech_sum        = Pmech;
 
@@ -639,7 +646,7 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
             candCols = { ...
               'dP95_worst', 'Qcap95_worst', 'cav_pct_worst', 'T_end_worst', 'mu_end_worst', ...
               'PF_p95_worst', ...
-              'Q_q50_worst','Q_q95_worst','dP_orf_q50_worst','dP_orf_q95_worst', ...
+              'Q_q50_worst','Q_q95_worst','dP_resist_q50_worst','dP_resist_q95_worst', ...
               'T_oil_end_worst','T_steel_end_worst', ...
               'energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum' ...
             };
@@ -650,8 +657,16 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
                     S.table.T_oil_end_worst = S.table.T_end_worst; %#ok<AGROW>
                 end
                 if ismember('dP95_worst', S.table.Properties.VariableNames) && ...
-                   ~ismember('dP_orf_q95_worst', S.table.Properties.VariableNames)
-                    S.table.dP_orf_q95_worst = S.table.dP95_worst; %#ok<AGROW>
+                   ~ismember('dP_resist_q95_worst', S.table.Properties.VariableNames)
+                    S.table.dP_resist_q95_worst = S.table.dP95_worst; %#ok<AGROW>
+                end
+                if ismember('dP_orf_q95_worst', S.table.Properties.VariableNames) && ...
+                   ~ismember('dP_resist_q95_worst', S.table.Properties.VariableNames)
+                    S.table.dP_resist_q95_worst = S.table.dP_orf_q95_worst; %#ok<AGROW>
+                end
+                if ismember('dP_orf_q50_worst', S.table.Properties.VariableNames) && ...
+                   ~ismember('dP_resist_q50_worst', S.table.Properties.VariableNames)
+                    S.table.dP_resist_q50_worst = S.table.dP_orf_q50_worst; %#ok<AGROW>
                 end
                 if ismember('E_orifice_sum', S.table.Properties.VariableNames) && ...
                    ismember('E_struct_sum', S.table.Properties.VariableNames) && ...
@@ -886,15 +901,27 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             if ismember('Q_q95_worst', vn) && ismember('Q_q95_worst', T0bl.Properties.VariableNames)
                 assign('Q_q95_worst', max(T0bl.Q_q95_worst));
             end
-            if ismember('dP_orf_q50_worst', vn) && ismember('dP_orf_q50_worst', T0bl.Properties.VariableNames)
-                assign('dP_orf_q50_worst', max(T0bl.dP_orf_q50_worst));
+            if ismember('dP_resist_q50_worst', vn)
+                if ismember('dP_resist_q50_worst', T0bl.Properties.VariableNames)
+                    assign('dP_resist_q50_worst', max(T0bl.dP_resist_q50_worst));
+                elseif ismember('dP_orf_q50_worst', T0bl.Properties.VariableNames)
+                    assign('dP_resist_q50_worst', max(T0bl.dP_orf_q50_worst));
+                end
+            end
+            if ismember('dP_resist_q95_worst', vn)
+                if ismember('dP_resist_q95_worst', T0bl.Properties.VariableNames)
+                    assign('dP_resist_q95_worst', max(T0bl.dP_resist_q95_worst));
+                elseif ismember('dP_orf_q95_worst', T0bl.Properties.VariableNames)
+                    assign('dP_resist_q95_worst', max(T0bl.dP_orf_q95_worst));
+                elseif ismember('dP95_worst', T0bl.Properties.VariableNames)
+                    assign('dP_resist_q95_worst', max(T0bl.dP95_worst));
+                end
+            end
+            if ismember('dP_orf_q50_worst', vn)
+                assign('dP_orf_q50_worst', T0.dP_resist_q50_worst);
             end
             if ismember('dP_orf_q95_worst', vn)
-                if ismember('dP_orf_q95_worst', T0bl.Properties.VariableNames)
-                    assign('dP_orf_q95_worst', max(T0bl.dP_orf_q95_worst));
-                else
-                    assign('dP_orf_q95_worst', max(T0bl.dP95_worst));
-                end
+                assign('dP_orf_q95_worst', T0.dP_resist_q95_worst);
             end
             if ismember('T_oil_end_worst', vn) && ismember('T_oil_end_worst', T0bl.Properties.VariableNames)
                 assign('T_oil_end_worst', max(T0bl.T_oil_end_worst));
