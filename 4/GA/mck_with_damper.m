@@ -65,7 +65,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
 
     dp_pf = (c_lam*dvel + (F_p - k_sd*drift)) ./ Ap;
     if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
-        s = tanh(20*dvel);
+        s = tanh(cfg.PF.resistive_slope*dvel);
         dp_pf = s .* max(0, s .* dp_pf);
     end
     w_pf_vec = Utils.pf_weight(t, cfg) * cfg.PF.gain;
@@ -135,7 +135,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
         end
         dp_pf_ = (c_lam_loc*dvel_ + F_orf_) ./ Ap;
         if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
-            s = tanh(20*dvel_);
+            s = tanh(cfg.PF.resistive_slope*dvel_);
             dp_pf_ = s .* max(0, s .* dp_pf_);
         end
         w_pf = Utils.pf_weight(tt,cfg) * cfg.PF.gain;

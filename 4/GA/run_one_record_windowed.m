@@ -29,6 +29,13 @@ if ~isfield(opts,'mu_weights'), opts.mu_weights = 1; end
 % Türetilmiş damper sabitlerini güncelle
 params = Utils.recompute_damper_params(params);
 
+% Ensure PF resistive slope parameter is available
+if ~isfield(params,'cfg') || ~isstruct(params.cfg), params.cfg = struct(); end
+if ~isfield(params.cfg,'PF') || ~isstruct(params.cfg.PF), params.cfg.PF = struct(); end
+if ~isfield(params.cfg.PF,'resistive_slope') || isempty(params.cfg.PF.resistive_slope)
+    params.cfg.PF.resistive_slope = 20;
+end
+
 if isfield(opts,'thermal_reset') && strcmpi(opts.thermal_reset,'cooldown')
     if ~isfield(opts,'cooldown_s') || isempty(opts.cooldown_s) || isnan(opts.cooldown_s)
         opts.cooldown_s = 60;
