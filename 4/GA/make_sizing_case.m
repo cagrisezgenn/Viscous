@@ -89,12 +89,12 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
 
     %% Adım 1: PF ve Geometri Kazançlarını Sabitleme
     P = params;
-    % kazançlar -> toggle_gain (alt 3, orta, üst 2 kat)
+    % kazançlar ->  (alt 3, orta, üst 2 kat)
     nStories = size(P.M,1)-1;
     tg = ones(nStories,1) * gainsPF.g_mid;
     loN = min(3,nStories); if loN>0, tg(1:loN) = gainsPF.g_lo; end
     hiN = min(2,nStories); if hiN>0, tg(end-hiN+1:end) = gainsPF.g_hi; end
-    P.toggle_gain = tg;
+    P. = tg;
     % PF parametreleri
     if isfield(P,'cfg') && isfield(P.cfg,'PF')
         P.cfg.PF.tau  = gainsPF.PF_tau;
@@ -149,7 +149,7 @@ function [sizing, P_sized, S_worst] = make_sizing_case(scaled, params, gainsPF, 
         for i=1:numel(updates.lines)
             fprintf('  %s\n', updates.lines{i});
         end
-        fprintf('  %% toggle_gain vektörü:\n  toggle_gain = %s;  %% (n-1)x1\n', mat2str(updates.toggle_gain_vec,3));
+        fprintf('  %%  vektörü:\n   = %s;  %% (n-1)x1\n', mat2str(updates._vec,3));
     catch ME
         warning('sizing_param_diff failed: %s', ME.message);
     end
@@ -260,8 +260,7 @@ function [updates, T] = sizing_param_diff(P_old, P_sized, gainsPF, sizing)
     old_Qcap  = getf(P_old,'Qcap_big',NaN);
     old_tau   = getf(getf(getf(P_old,'cfg',struct()),'PF',struct()),'tau',NaN);
     old_gain  = getf(getf(getf(P_old,'cfg',struct()),'PF',struct()),'gain',NaN);
-    old_tg    = getf(P_old,'toggle_gain',[]);
-
+    
     % --- Yeni/önerilen değerleri topla ---------------------------------
     new_d_o   = getf(getf(P_sized,'orf',struct()),'d_o', getf(P_sized,'d_o',NaN));
     new_Lori  = getf(getf(P_sized,'orf',struct()),'L_orif', getf(P_sized,'Lori', getf(sizing,'L_orif',NaN)));
@@ -275,18 +274,15 @@ function [updates, T] = sizing_param_diff(P_old, P_sized, gainsPF, sizing)
     new_tau   = getf(gainsPF,'PF_tau',NaN);
     new_gain  = getf(gainsPF,'PF_gain',NaN);
 
-    % --- toggle_gain vektörü (alt=3, üst=2 kat) -------------------------
+    % ---  vektörü (alt=3, üst=2 kat) -------------------------
     try
         nStories = size(P_old.M,1)-1;
     catch
         nStories = numel(old_tg); if isempty(nStories) || nStories==0, nStories = 10; end
     end
-    old_tg = old_tg(:);
-    if isempty(old_tg)
-        old_tg = ones(nStories,1)*getf(gainsPF,'g_mid',1);
-    elseif isscalar(old_tg)
-        old_tg = repmat(old_tg,nStories,1);
-    end
+        if isempty(old_tg)
+            elseif isscalar(old_tg)
+            end
     tg = ones(nStories,1)*getf(gainsPF,'g_mid',1);
     loN = min(3,nStories); if loN>0, tg(1:loN) = getf(gainsPF,'g_lo',1); end
     hiN = min(2,nStories); if hiN>0, tg(end-hiN+1:end) = getf(gainsPF,'g_hi',1); end
@@ -333,12 +329,10 @@ function [updates, T] = sizing_param_diff(P_old, P_sized, gainsPF, sizing)
     end
     T = table(Name, Old, New, Template);
 
-    % --- toggle_gain farkı ----------------------------------------------
+    % ---  farkı ----------------------------------------------
     tg_changed = numel(old_tg)~=numel(new_tg) || any(abs(old_tg(:)-new_tg(:))>1e-6);
     if tg_changed
-        T = [T; table({"toggle_gain ((n-1)x1)"}, {mat2str(old_tg,3)}, {mat2str(new_tg,3)}, {''}, 'VariableNames', T.Properties.VariableNames)];
-        fprintf('\n[update] toggle_gain:\n  old: %s\n  new: %s\n', mat2str(old_tg,3), mat2str(new_tg,3));
-    end
+        T = [T; table({"        fprintf('\n    end
 
     % --- konsol çıktısı -------------------------------------------------
     fprintf('\n=== PARAMETRE GÜNCELLEME ÖNERİLERİ (sadece değişenler) ===\n');
@@ -371,8 +365,7 @@ function [updates, T] = sizing_param_diff(P_old, P_sized, gainsPF, sizing)
             end
         end
     end
-    updates.toggle_gain_vec = new_tg;
-end
+    end
 
 function safe_write(obj, filepath, writeFcn)
     try
@@ -381,4 +374,6 @@ function safe_write(obj, filepath, writeFcn)
         warning('Yazma hatası (%s): %s', filepath, ME.message);
     end
 end
+
+
 

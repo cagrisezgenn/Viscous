@@ -142,16 +142,11 @@ else
 end
 
 % ---------------- Sıcak viskozite ile modal sönüm -------------------
-req_fields = {'M','K','C0','k_sd','toggle_gain','story_mask','n_dampers_per_story'};
+req_fields = {'M','K','C0','k_sd'};
 if all(isfield(params,req_fields)) && isfield(params,'diag') && isfield(params.diag,'c_lam')
     M  = params.M;  K = params.K;  C0 = params.C0;
     k_sd = params.k_sd;
-    Rvec = params.toggle_gain(:);
     nStories = size(M,1) - 1;
-    if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
-    mask = params.story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
-    ndps = params.n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
-    multi = (mask .* ndps);
     c_lam = params.diag.c_lam;
 
     Kadd = zeros(size(M));
@@ -159,8 +154,8 @@ if all(isfield(params,req_fields)) && isfield(params,'diag') && isfield(params.d
     for i=1:nStories
         idx2 = [i i+1];
         % R katsayısı lineer olarak kullanılır (R), karesi (R^2) alınmaz
-        k_eq = k_sd * Rvec(i) * multi(i);
-        c_eq = c_lam * Rvec(i) * multi(i);
+        k_eq = k_sd;
+        c_eq = c_lam;
         kM = k_eq * [1 -1; -1 1];
         cM = c_eq * [1 -1; -1 1];
         Kadd(idx2,idx2) = Kadd(idx2,idx2) + kM;
@@ -209,3 +204,4 @@ function q = local_quantile(A, p)
 %   MATLAB'in QUANTILE fonksiyonunu çağırarak yüzdelik değeri döndürür.
 q = quantile(A, p);
 end
+

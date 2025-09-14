@@ -95,11 +95,10 @@ else
 end
 
 % soğuma seçeneği için termal kapasite hesaplanır
-nStories = size(params.M,1) - 1;
-Rvec = params.toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
-mask = params.story_mask(:);  if numel(mask)==1, mask = mask*ones(nStories,1); end
-ndps = params.n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
-multi = (mask .* ndps);
+ nStories = size(params.M,1) - 1;
+ mask = params.story_mask(:);  if numel(mask)==1, mask = mask*ones(nStories,1); end
+ ndps = params.n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
+ multi = (mask .* ndps);
 V_oil_per = params.resFactor * (params.Ap * (2*params.Lgap));
  m_oil_tot = sum(multi) * (params.rho * V_oil_per);
  m_steel_tot = params.steel_to_oil_mass_ratio * m_oil_tot;
@@ -146,11 +145,28 @@ for i = 1:nMu
     f = mu_factors(i);
     mu_ref_eff   = params.mu_ref  * f;
     c_lam0_eff   = params.c_lam0  * f;
+    % Adım 0: Yüksek sıcaklıkta μ düşüşüne karşı taban (opsiyonel)
+    try
+        if isfield(params,'cfg') && isfield(params.cfg,'on') && isfield(params.cfg.on,'mu_floor') && params.cfg.on.mu_floor
+            mu_min_phys = NaN;
+            if isfield(params.cfg,'num') && isfield(params.cfg.num,'mu_min_phys') && isfinite(params.cfg.num.mu_min_phys)
+                mu_min_phys = params.cfg.num.mu_min_phys;
+            end
+            if isfinite(mu_min_phys) && (mu_ref_eff < mu_min_phys)
+                mu_ref_eff = mu_min_phys;
+                % c_lam0 ~ μ ile orantılı olduğundan, tutarlılık için yeniden ölçekle
+                scale_mu = mu_ref_eff / max(params.mu_ref, eps);
+                c_lam0_eff = params.c_lam0 * scale_mu;
+            end
+        end
+    catch
+        % sessiz geç
+    end
     [x,a_rel,ts,diag] = mck_with_damper_ts(rec.t, rec.ag, params.M, params.C0, params.K, ...
         params.k_sd, c_lam0_eff, params.Lori, opts.use_orifice, params.orf, params.rho, params.Ap, ...
         params.A_o, params.Qcap_big, mu_ref_eff, opts.use_thermal, params.thermal, Tinit, ...
         params.T_ref_C, params.b_mu, params.c_lam_min, params.c_lam_cap, params.Lgap, ...
-        params.cp_oil, params.cp_steel, params.steel_to_oil_mass_ratio, params.toggle_gain, ...
+        params.cp_oil, params.cp_steel, params.steel_to_oil_mass_ratio, ...
         params.story_mask, params.n_dampers_per_story, params.resFactor, params.cfg);
 
     params_m = params; params_m.diag = diag;
@@ -276,21 +292,19 @@ end
 function [x,a_rel,ts,diag] = mck_with_damper_ts(t,ag,M,C,K, k_sd,c_lam0,Lori, ...
     use_orifice, orf, rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, ...
     T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, ...
-    steel_to_oil_mass_ratio, toggle_gain, story_mask, n_dampers_per_story, ...
+    steel_to_oil_mass_ratio, story_mask, n_dampers_per_story, ...
     resFactor, cfg)
 %1) MCK_WITH_DAMPER çözümü
 [x,a_rel,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orifice, orf, ...
     rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, T0_C, T_ref_C, b_mu, ...
     c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, ...
-    toggle_gain, story_mask, n_dampers_per_story, resFactor, cfg);
+ story_mask, n_dampers_per_story, resFactor, cfg);
 
 %2) Öykü vektörlerinin hazırlanması
 nStories = size(diag.drift,2);
-Rvec = toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
 mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
 ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
 multi = (mask .* ndps).';
-Rvec = Rvec.';
 
 %3) Zaman serisi yapılarının oluşturulması
 ts = struct();
@@ -308,7 +322,11 @@ ts.cav_mask = diag.dP_orf < 0;
 P_visc_per = diag.c_lam .* (diag.dvel.^2);
 ts.P_visc = sum(P_visc_per .* multi, 2);
 
-P_orf_per = diag.dP_orf .* diag.Q;
+if isfield(diag,'P_orf_per') && ~isempty(diag.P_orf_per)
+    P_orf_per = diag.P_orf_per;
+else
+    P_orf_per = abs(diag.dP_orf .* diag.Q);
+end
 ts.P_orf = sum(P_orf_per .* multi, 2);
 
 if isfield(diag,'P_sum')
@@ -326,3 +344,7 @@ ts.E_struct = cumtrapz(t, P_struct);
 
 % DIAG yapısı değiştirilmeden geri döndürülür
 end
+
+
+
+

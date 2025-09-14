@@ -192,8 +192,7 @@ end % export_results fonksiyon sonu
 function Cth = compute_Cth_effective(params)
     % Sıcaklık kapasitesinin etkin değerini hesaplar
     nStories = size(params.M,1) - 1;
-    Rvec = params.toggle_gain(:); if numel(Rvec)==1, Rvec = Rvec*ones(nStories,1); end
-    mask = params.story_mask(:);  if numel(mask)==1, mask = mask*ones(nStories,1); end
+        mask = params.story_mask(:);  if numel(mask)==1, mask = mask*ones(nStories,1); end
     ndps = params.n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
     multi = (mask .* ndps);
     V_oil_per = params.resFactor * (params.Ap * (2*params.Lgap));
@@ -210,3 +209,4 @@ function safe_write(obj, filepath, writeFcn)
         warning('Yazma hatası (%s): %s', filepath, ME.message);
     end
 end
+

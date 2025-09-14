@@ -13,7 +13,29 @@ classdef Utils
         function w = pf_weight(t, cfg)
             % Basınç kuvveti için orantılı pencere ağırlığı hesaplar.
             % Örnek kullanım: w = Utils.pf_weight(t, cfg);
-            w = cfg.on.pressure_force * (1 - exp(-max(t - cfg.PF.t_on, 0) ./ max(cfg.PF.tau, 1e-6)));
+            % Tek-kaynak PF ramp: compat_simple (eski) vs softplus (ileri)
+            if ~isstruct(cfg), cfg = struct(); end
+            if ~isfield(cfg,'on') || ~isstruct(cfg.on), cfg.on = struct(); end
+            if ~isfield(cfg.on,'pressure_force'), cfg.on.pressure_force = true; end
+            if ~isfield(cfg,'PF') || ~isstruct(cfg.PF), cfg.PF = struct(); end
+            if ~isfield(cfg.PF,'t_on'), cfg.PF.t_on = 0; end
+            if ~isfield(cfg.PF,'tau'),  cfg.PF.tau  = 1.0; end
+            if ~isfield(cfg,'compat_simple'), cfg.compat_simple = true; end
+
+            t = double(t); tau_floor = 1e-6;
+            if cfg.compat_simple
+                dt  = max(t - cfg.PF.t_on, 0);
+                tau = max(cfg.PF.tau, tau_floor);
+                w_local = 1 - exp(-dt ./ tau);
+            else
+                k = Utils.getfield_default(cfg.PF,'k', 0.01); k = max(k, tau_floor);
+                sp_dt  = (log1p(exp(-abs((t - cfg.PF.t_on)./k))) + max((t - cfg.PF.t_on)./k, 0));
+                dt  = sp_dt .* k;
+                sp_tau = (log1p(exp(-abs((cfg.PF.tau - tau_floor)./k))) + max((cfg.PF.tau - tau_floor)./k, 0));
+                tau = sp_tau .* k + tau_floor;
+                w_local = 1 - exp(-dt ./ tau);
+            end
+            w = cfg.on.pressure_force .* w_local;
         end
 
         %% Damper Sabitlerini Güncelle
@@ -41,17 +63,55 @@ classdef Utils
                 return; % eksik alanlar varsa hesaplama yapma
             end
 
+            % n_orf ve nd (paralel) güvenli varsayılanlar
+            if ~isfield(params,'n_orf') && isfield(params,'orf') && isfield(params.orf,'n_orf')
+                params.n_orf = params.orf.n_orf;
+            end
+            if ~isfield(params,'n_orf'), params.n_orf = 1; end
+            nd = 1;
+            if isfield(params,'nd') && isfinite(params.nd), nd = params.nd; end
+            if isfield(params,'n_parallel') && isfinite(params.n_parallel), nd = params.n_parallel; end
+            if isfield(params,'n_dampers_per_story')
+                nds = params.n_dampers_per_story;
+                if isnumeric(nds)
+                    if isscalar(nds), nd = nds; else, nd = max(1, round(max(nds(:)))); end
+                end
+            end
+            nd = max(1, round(nd));
+
+            % Alanlar (tek damper ve efektif)
             Ap = pi * params.Dp^2 / 4;
+            Ao_single = pi * params.orf.d_o^2 / 4;
+            Ao = params.n_orf * Ao_single;
+            Ap_eff = nd * Ap;
+            Ao_eff = nd * Ao;
+
+            % Hat atalet Lh (tek damper)
+            rho_loc = Utils.getfield_default(params,'rho',850);
+            Lh = rho_loc * params.Lori / max(Ao^2, 1e-18);
+
+            % Rijitlikler (tek damper)
             k_h = params.Kd * Ap^2 / params.Lgap;
             k_s = params.Ebody * Ap / params.Lgap;
             k_hyd = 1 / (1/k_h + 1/k_s);
             k_p = params.Gsh * params.d_w^4 / (8 * params.n_turn * params.D_m^3);
-            k_sd = k_hyd + k_p;
+            k_sd_simple = k_hyd + k_p;      % tek damper
+            k_sd_adv    = nd * (k_hyd + k_p);% paralel nd
+
+            % Laminer sabit (tek damper referansı)
             c_lam0 = 12 * params.mu_ref * params.Lori * Ap^2 / (params.orf.d_o^4);
 
+            % Çıkışlar (geriye uyumlu alan adlarıyla)
             params.Ap = Ap;
+            params.Ao = Ao; params.A_o = Ao;
+            params.Ap_eff = Ap_eff; params.Ao_eff = Ao_eff;
+            params.Lh = Lh;
             params.k_p = k_p;
-            params.k_sd = k_sd;
+            params.k_sd_simple = k_sd_simple;
+            params.k_sd_adv = k_sd_adv;
+            % Adım 2 öncesi: k_sd paralel etkili (nd içselleştirilmiş) seçilir
+            params.k_sd = k_sd_adv;
+
             params.c_lam0 = c_lam0;
         end
 

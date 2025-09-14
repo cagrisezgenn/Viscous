@@ -98,7 +98,6 @@ thermal.dT_max    = 80;              % Maksimum izin verilen ΔT [K]
 % Ek kütle/kapasite verileri
 steel_to_oil_mass_ratio = 1.5;       % Çelik/yağ kütle oranı
 n_dampers_per_story    = 1;          % Kat başına damper adedi (skaler veya (n-1)x1 vektör)
-toggle_gain            = 1;        % Toggle kazancı (skaler veya (n-1)x1 vektör)
 story_mask             = ones(n-1,1);% Kat maskesi; 1=aktif, 0=damper yok
 cp_oil   = 1800;                     % Yağın özgül ısısı [J/(kg·K)]
 cp_steel = 500;                      % Çeliğin özgül ısısı [J/(kg·K)]
@@ -118,4 +117,34 @@ cfg.PF.gain      = 0.85;
 cfg.PF.t_on      = 0;
 cfg.PF.auto_t_on = true;
 cfg.on.pressure_force     = true;
+% --- Ek konfigürasyon ve varsayılanlar (geri uyumlu) ---
+cfg.compat_simple = false;           % true: eski 4/GA ramp eğrisi; false: softplus
+% PF ramp ve klemp parametreleri
+cfg.PF.k               = 0.01;      % softplus yumuşatma ölçeği [s]
+cfg.PF.resistive_only  = false;     % PF yalnız dirençli bileşeni uygulasın
+cfg.PF.resistive_slope = 20;        % tanh(α*χ) eğimi [1/(m/s)]
+% Sayısal/fiziksel yardımcı parametreler
+cfg.on.mu_floor        = false;     % μ (viskozite) için fiziksel taban aç/kapa
+cfg.num = struct();
+cfg.num.softmin_eps    = 1e4;       % dP birleştirme yumuşatma ölçeği [Pa]
+cfg.num.mu_min_phys    = 0.6;      % μ(T) tabanı [Pa·s]
+cfg.num.dP_cap         = NaN;       % dP doygunluk kapasitesi (ileri adımlar için)
 cfg.on.pf_resistive_only = true;  % sadece rezistif (viskoz+orifis) bileşeni filtrele
+
+%% Faz 1: Parametreleri yapılandırılmış paketlere topla (geri uyumlu)
+% Not: Bu blok yalnızca referans amaçlıdır; mevcut akışı değiştirmez.
+geom = struct('Dp',Dp,'Lgap',Lgap,'Lori',Lori,'Kd',Kd,'Ebody',Ebody);
+sh   = struct('G',Gsh,'d_w',d_w,'D_m',D_m,'n_turn',n_turn);
+hyd  = struct();
+therm = struct('mu_ref',mu_ref,'T0_C',T0_C,'T_ref_C',T_ref_C, ...
+               'cp_oil',cp_oil,'cp_steel',cp_steel);
+
+% Türetilmiş sabitleri örnek amacıyla tek paket içinde yeniden hesapla
+try
+    params_pack = struct('Dp',Dp,'d_w',d_w,'D_m',D_m,'n_turn',n_turn, ...
+                         'mu_ref',mu_ref,'Lori',Lori,'Lgap',Lgap, ...
+                         'Kd',Kd,'Ebody',Ebody,'Gsh',Gsh,'orf',struct('d_o',d_o));
+    params_pack = Utils.recompute_damper_params(params_pack);
+catch
+end
+

@@ -14,8 +14,8 @@ function P = run_policies_windowed(scaled, params, opts)
 
 %% Girdi ve Varsayılan Ayarlar
 if nargin < 3, opts = struct(); end
-if ~isfield(opts,'mu_factors'), opts.mu_factors = [0.75 1.00 1.25]; end
-if ~isfield(opts,'mu_weights'), opts.mu_weights = [0.2 0.6 0.2]; end
+if ~isfield(opts,'mu_factors'), opts.mu_factors = 1.00; end
+if ~isfield(opts,'mu_weights'), opts.mu_weights = 1; end
 if ~isfield(opts,'policies'), opts.policies = {'each','carry','cooldown'}; end
 if ~isfield(opts,'orders'), opts.orders = {'natural','random','worst_first'}; end
 if ~isfield(opts,'cooldown_s_list'), opts.cooldown_s_list = [60 180 300]; end
@@ -66,13 +66,7 @@ try
     Qcap_big = Utils.getfield_default(params,'Qcap_big',NaN);
     hA = NaN; if isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), hA = params.thermal.hA_W_perK; end
     resFactor = Utils.getfield_default(params,'resFactor',NaN);
-    tg = Utils.getfield_default(params,'toggle_gain',NaN);
-    tgv = tg(:); tgmin = min(tgv); tgmed = median(tgv); tgmax = max(tgv);
-    if ~quiet
-        fprintf('Hydraulics: n_orf=%g, d_o~=%g m, A_o=%s, Qcap_big=%g, hA=%g, resFactor=%g, toggle_gain[min/med/max]=[%g %g %g]\n', ...
-            n_orf, d_o, mat2str(size(A_o)), Qcap_big, hA, resFactor, tgmin, tgmed, tgmax);
-    end
-catch ME
+    if ~quiet\n        fprintf('Hydraulics: n_orf=%g, d_o~=%g m, A_o=%s, Qcap_big=%g, hA=%g, resFactor=%g\n', n_orf, d_o, mat2str(size(A_o)), Qcap_big, hA, resFactor);\n    end\ncatch ME
     warning('run_policies_windowed echo params: %s', ME.message);
 end
 
@@ -235,3 +229,5 @@ end
 if ~quiet, fprintf('Saved to %s\n', outdir); end
 if do_export && ~quiet, diary off; end
 end
+
+
