@@ -53,7 +53,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
             orf_loc = orf;
             params = struct('Ap_eff',Ap,'orf',orf_loc,'rho',rho,...
                             'Ao',Ao,'mu',mu_abs,'Lori',Lori);
-            [dP_lam, dP_kv, Q, P_orf_per] = calc_orifice_force(dvel, params);
+            [dP_lam, dP_kv, Q, ~] = calc_orifice_force(dvel, params);
             % Ek diagnostikler: dP_kv ve dP_cav (kv ve kavitasyon limitleri)
             Re_loc   = (rho .* abs(Q) .* max(orf.d_o,1e-9)) ./ max(Ao*mu_abs,1e-9);
             Cd_loc0  = orf.Cd0; Cd_locInf = orf.CdInf; Rec_loc = orf.Rec; pexp_loc = orf.p_exp;
@@ -62,6 +62,8 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
             dP_kv_loc = rho ./ (2*(Cd_loc.*Ao).^2) .* Q .* abs(Q);
             p_up_loc  = orf.p_amb + abs(F_lin)./max(Ap,1e-12);
             dP_cav_loc= max( (p_up_loc - orf.p_cav_eff).*orf.cav_sf, 0 );
+            dP_kv = Utils.softmin(dP_kv_loc, dP_cav_loc, eps);
+            P_orf_per = dP_kv .* Q;
         else
             Q = Ap * dvel;
             dP_lam = R_lam * Q;
@@ -129,13 +131,14 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
     diag = struct('drift',drift,'dvel',dvel,'story_force',F_story,'Q',Q, ...
         'dP_resist',dP_resist,'dP_lam',dP_lam,'dP_orf',dP_resist,'PF',F_p,'T_oil',T_o,'T_steel',T_s,'mu',mu, ...
         'energy',energy,'P_sum',P_sum,'c_lam',c_lam,'Lori',Lori, ...
-        'P_orf_per',P_orf_per,'dP_kv',dP_kv_loc,'dP_cav',dP_cav_loc, ...
+        'P_orf_per',P_orf_per,'dP_kv',dP_kv,'dP_cav',dP_cav_loc, ...
         'E_orifice',E_orifice,'E_struct',E_struct);
 
 %% İç Fonksiyonlar
     function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)
         drift_ = x_(Mvec) - x_(Nvec);
         dvel_  = v_(Mvec) - v_(Nvec);
+        F_lin_ = k_sd*drift_;
         if isfield(cfg,'compat_simple') && cfg.compat_simple
             Q_ = Ap * dvel_;
             R_lam_ = c_lam_loc / max(Ap^2,1e-12);
@@ -150,6 +153,9 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
                 params = struct('Ap_eff',Ap,'Ao',Ao,'orf',orf,'rho',rho,...
                                 'mu',mu_abs_loc,'Lori',Lori);
                 [dP_lam_, dP_kv_, Q_, ~] = calc_orifice_force(dvel_, params);
+                p_up_loc_  = orf.p_amb + abs(F_lin_)./max(Ap,1e-12);
+                dP_cav_loc_= max( (p_up_loc_ - orf.p_cav_eff).*orf.cav_sf, 0 );
+                dP_kv_ = Utils.softmin(dP_kv_, dP_cav_loc_, eps);
                 dP_resist_ = dP_lam_ + dP_kv_;
             end
             dp_pf_ = dP_resist_;
