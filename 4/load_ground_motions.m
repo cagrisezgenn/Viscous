@@ -32,7 +32,7 @@ hp_cut   = Utils.getfield_default(opts,'hp_cut',0.05);   % high-pass [Hz]
 IM_mode  = Utils.getfield_default(opts,'IM_mode','band'); % 'T1' or 'band'
 band_fac = Utils.getfield_default(opts,'band_fac',[0.8 1.2]);
 band_N   = Utils.getfield_default(opts,'band_N',15);      % periods in band
-s_bounds = Utils.getfield_default(opts,'s_bounds',[0.4 1.7]);  % scale cap
+s_bounds = Utils.getfield_default(opts,'s_bounds',[0.3 1.7]);  % scale cap
 
 raw = load('acc_matrix.mat');
 fn  = fieldnames(raw);

@@ -118,7 +118,7 @@ if all(isfield(params,req_fields)) && isfield(params,'diag') && isfield(params.d
     mask = params.story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
     ndps = params.n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
     multi = (mask .* ndps);
-    c_lam = params.diag.c_lam;
+    c_lam = params.diag.c_lam; % 1xNs per-story laminar coeff
 
     Kadd = zeros(size(M));
     Cadd = zeros(size(M));

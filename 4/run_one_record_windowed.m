@@ -26,8 +26,8 @@ function out = run_one_record_windowed(rec, rec_raw, params, opts, prev_diag)
 % default arguments
 if nargin < 5, prev_diag = []; end
 if nargin < 4 || isempty(opts), opts = struct(); end
-if ~isfield(opts,'mu_factors'), opts.mu_factors = [0.75 1.00 1.25]; end
-if ~isfield(opts,'mu_weights'), opts.mu_weights = [0.2 0.6 0.2]; end
+if ~isfield(opts,'mu_factors'), opts.mu_factors = 1.00; end
+if ~isfield(opts,'mu_weights'), opts.mu_weights = 1; end
 
 if isfield(opts,'thermal_reset') && strcmpi(opts.thermal_reset,'cooldown')
     if ~isfield(opts,'cooldown_s') || isempty(opts.cooldown_s) || isnan(opts.cooldown_s)

@@ -20,7 +20,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     % Initial temperature and viscosity
     Tser = T0_C*ones(numel(t),1);
     mu_abs = mu_ref;
-    c_lam = c_lam0;
+    c_lam    = c_lam0;
 
     % Solve ODE
     odef = @(tt,z) [ z(n+1:end); M \ ( -C*z(n+1:end) - K*z(1:n) - dev_force(tt,z(1:n),z(n+1:end),c_lam,mu_abs) - M*r*agf(tt) ) ];
@@ -30,7 +30,8 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
 
     drift = x(:,Mvec) - x(:,Nvec);
     dvel  = v(:,Mvec) - v(:,Nvec);
-    F_lin = k_sd*drift + c_lam*dvel;
+    % Faz 3: Lineer parçada sadece yay (laminer PF tarafına taşınır)
+    F_lin = k_sd*drift;
 
     if use_orf
         qmag = Qcap * tanh( (Ap/Qcap) * sqrt(dvel.^2 + orf.veps^2) );
@@ -99,7 +100,9 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         multicol = multi.';
         drift_ = x_(Mvec) - x_(Nvec);
         dvel_  = v_(Mvec) - v_(Nvec);
-        F_lin_ = k_sd*drift_ + c_lam_loc*dvel_;
+        % Sütun yönelimli etkin parametreler
+        % Faz 3: Lineer parçada sadece yay
+        F_lin_ = k_sd*drift_;
         if ~use_orf
             F_orf_ = 0*dvel_;
         else
@@ -123,7 +126,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         % Apply R scaling only once; at assembly (R*multi)
         F_story_ = F_p_ .* (Rcol .* multicol);
         Fd = zeros(n,1);
-    Fd(Nvec) = Fd(Nvec) - F_story_;
-    Fd(Mvec) = Fd(Mvec) + F_story_;
+        Fd(Nvec) = Fd(Nvec) - F_story_;
+        Fd(Mvec) = Fd(Mvec) + F_story_;
     end
 end

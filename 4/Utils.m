@@ -1,6 +1,39 @@
 classdef Utils
 %UTILS Collect small helper functions as static methods.
     methods(Static)
+        %% Recompute derived damper parameters (Phase 1 helper)
+        function params = recompute_damper_params(params)
+            % Recompute Ap, k_p, k_sd, c_lam0 based on basic inputs.
+            % Accepts optional mm-suffixed fields and converts to meters.
+            if ~isstruct(params), return; end
+
+            % mm -> m conversions if present
+            if isfield(params,'Dp_mm'),    params.Dp    = params.Dp_mm/1000; end
+            if isfield(params,'d_w_mm'),   params.d_w   = params.d_w_mm/1000; end
+            if isfield(params,'D_m_mm'),   params.D_m   = params.D_m_mm/1000; end
+            if isfield(params,'Lori_mm'),  params.Lori  = params.Lori_mm/1000; end
+            if isfield(params,'orf') && isfield(params.orf,'d_o_mm')
+                params.orf.d_o = params.orf.d_o_mm/1000;
+            end
+
+            req = {'Dp','d_w','D_m','n_turn','mu_ref','Lori','Lgap','Kd','Ebody','Gsh'};
+            if ~all(isfield(params,req)) || ~isfield(params,'orf') || ~isfield(params.orf,'d_o')
+                return; % missing fields; skip
+            end
+
+            Ap = pi * params.Dp^2 / 4;
+            k_h = params.Kd * Ap^2 / params.Lgap;
+            k_s = params.Ebody * Ap / params.Lgap;
+            k_hyd = 1 / (1/max(k_h,eps) + 1/max(k_s,eps));
+            k_p = params.Gsh * params.d_w^4 / (8 * params.n_turn * params.D_m^3);
+            k_sd = k_hyd + k_p;
+            c_lam0 = 12 * params.mu_ref * params.Lori * Ap^2 / (max(params.orf.d_o,eps)^4);
+
+            params.Ap = Ap;
+            params.k_p = k_p;
+            params.k_sd = k_sd;
+            params.c_lam0 = c_lam0;
+        end
         function y = softmin(a,b,epsm)
             y = 0.5*(a + b - sqrt((a - b).^2 + epsm.^2));
         end
