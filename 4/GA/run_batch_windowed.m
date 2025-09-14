@@ -91,7 +91,7 @@ dP95_worst   = zeros(n,1);
 Qcap95_worst = zeros(n,1);
 Q_q95_worst  = zeros(n,1);
 Q_q50_worst  = zeros(n,1);
-dP_orf_q50_worst = zeros(n,1);
+dP_resist_q50_worst = zeros(n,1);
 PF_p95_worst = zeros(n,1);
 which_mu_PFA = zeros(n,1);
 which_mu_IDR = zeros(n,1);
@@ -148,7 +148,7 @@ for k = 1:n
     m_nom = out.metr;
     PFA_nom(k)    = m_nom.PFA_top;
     IDR_nom(k)    = m_nom.IDR_max;
-    dP95_nom(k)   = m_nom.dP_orf_q95;
+    dP95_nom(k)   = m_nom.dP_resist_q95;
     Qcap95_nom(k) = m_nom.Qcap_ratio_q95;
     cav_nom(k)    = m_nom.cav_pct;
     zeta1_hot(k)       = Utils.getfield_default(m_nom,'zeta1_hot',NaN);
@@ -159,9 +159,9 @@ for k = 1:n
     m_w = out.weighted;
     PFA_w(k)    = m_w.PFA_top;
     IDR_w(k)    = m_w.IDR_max;
-    dP95_w(k)   = m_w.dP_orf_q95;
+    dP95_w(k)   = m_w.dP_resist_q95;
     Qcap95_w(k) = m_w.Qcap_ratio_q95;
-    fields  = {'Q_q95','Q_q50','dP_orf_q50'};
+    fields  = {'Q_q95','Q_q50','dP_resist_q50'};
     targets = {Q_q95_w, Q_q50_w, dP50_w};
     for f = 1:numel(fields)
         targets{f} = Utils.assign_if_field(m_w, fields{f}, targets{f}, k);
@@ -171,14 +171,14 @@ for k = 1:n
     m_ws = out.worst;
     PFA_worst(k)    = m_ws.PFA_top;
     IDR_worst(k)    = m_ws.IDR_max;
-    dP95_worst(k)   = m_ws.dP_orf_q95;
+    dP95_worst(k)   = m_ws.dP_resist_q95;
     Qcap95_worst(k) = m_ws.Qcap_ratio_q95;
-    fields  = {'Q_q95','Q_q50','dP_orf_q50','PF_p95'};
-    targets = {Q_q95_worst, Q_q50_worst, dP_orf_q50_worst, PF_p95_worst};
+    fields  = {'Q_q95','Q_q50','dP_resist_q50','PF_p95'};
+    targets = {Q_q95_worst, Q_q50_worst, dP_resist_q50_worst, PF_p95_worst};
     for f = 1:numel(fields)
         targets{f} = Utils.assign_if_field(m_ws, fields{f}, targets{f}, k);
     end
-    [Q_q95_worst, Q_q50_worst, dP_orf_q50_worst, PF_p95_worst] = targets{:};
+    [Q_q95_worst, Q_q50_worst, dP_resist_q50_worst, PF_p95_worst] = targets{:};
     which_mu_PFA(k) = m_ws.which_mu.PFA_top;
     which_mu_IDR(k) = m_ws.which_mu.IDR_max;
     T_end_worst(k)  = m_ws.T_oil_end;
@@ -227,14 +227,14 @@ summary = struct();
 summary.table = table(names, scale, SaT1, t5, t95, coverage, rank_score, policy_col, order_col, cooldown_col, ...
     PFA_nom, IDR_nom, dP95_nom, Qcap95_nom, cav_nom, zeta1_hot, z2_over_z1_hot, P_mech, Re_max, ...
     PFA_w, IDR_w, dP95_w, Qcap95_w, Q_q95_w, Q_q50_w, dP50_w, ...
-    PFA_worst, IDR_worst, dP95_worst, dP_orf_q50_worst, Qcap95_worst, Q_q95_worst, Q_q50_worst, PF_p95_worst, ...
+    PFA_worst, IDR_worst, dP95_worst, dP_resist_q50_worst, Qcap95_worst, Q_q95_worst, Q_q50_worst, PF_p95_worst, ...
     cav_pct_worst, x10_max_D_worst, a10abs_max_D_worst, E_orifice_sum, E_struct_sum, E_ratio, ...
     which_mu_PFA, which_mu_IDR, T_end_worst, mu_end_worst, qc_all_mu, ...
     T_start, T_end, mu_end, clamp_hits, Dp_mm_col, mu_ref_col, ...
     'VariableNames', {'name','scale','SaT1','t5','t95','coverage','rank_score','policy','order','cooldown_s', ...
     'PFA_nom','IDR_nom','dP95_nom','Qcap95_nom','cav_nom','zeta1_hot','z2_over_z1_hot','P_mech','Re_max', ...
     'PFA_w','IDR_w','dP95_w','Qcap95_w','Q_q95_w','Q_q50_w','dP50_w', ...
-    'PFA_worst','IDR_worst','dP95_worst','dP_orf_q50_worst','Qcap95_worst','Q_q95_worst','Q_q50_worst','PF_p95_worst', ...
+    'PFA_worst','IDR_worst','dP95_worst','dP_resist_q50_worst','Qcap95_worst','Q_q95_worst','Q_q50_worst','PF_p95_worst', ...
     'cav_pct_worst','x10_max_D_worst','a10abs_max_D_worst','E_orifice_sum','E_struct_sum','E_ratio', ...
     'which_mu_PFA','which_mu_IDR','T_end_worst','mu_end_worst','qc_all_mu', ...
     'T_start','T_end','mu_end','clamp_hits','Dp_mm','mu_ref'});
@@ -242,6 +242,7 @@ summary.table = table(names, scale, SaT1, t5, t95, coverage, rank_score, policy_
 % Tüketicilerle uyumluluk için takma adlar
 summary.table.T_oil_end_worst = summary.table.T_end_worst;
 summary.table.dP_orf_q95_worst = summary.table.dP95_worst;
+summary.table.dP_orf_q50_worst = summary.table.dP_resist_q50_worst;
 try
     summary.table.energy_tot_sum = summary.table.E_orifice_sum + summary.table.E_struct_sum;
 catch

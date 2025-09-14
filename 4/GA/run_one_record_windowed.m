@@ -14,7 +14,7 @@ function out = run_one_record_windowed(rec, params, opts, prev_diag)
 %
 %   OUT yapısı; name, scale, SaT1, win, metr, diag, mu_results, weighted,
 %   worst, ts, qc_all_mu, T_start, T_end, mu_end, clamp_hits, PFA_top,
-%   IDR_max, dP_orf_q95, Qcap_ratio_q95, cav_pct, t5, t95 ve coverage
+%   IDR_max, dP_resist_q95, Qcap_ratio_q95, cav_pct, t5, t95 ve coverage
 %   alanlarını içerir.
 %
 %   Bu fonksiyon, dosya sonunda yer alan MCK_WITH_DAMPER_TS yardımcı
@@ -180,7 +180,7 @@ for i = 1:nMu
     metr_i = compute_metrics_windowed(rec.t, x, a_rel, rec.ag, ts, params.story_height, win, params_m);
 
     qc_pass = (metr_i.cav_pct <= thr.cav_pct_max) && ...
-              (metr_i.dP_orf_q95 <= thr.dP95_max) && ...
+              (metr_i.dP_resist_q95 <= thr.dP95_max) && ...
               (metr_i.Qcap_ratio_q95 <= thr.Qcap95_max) && ...
               (metr_i.T_oil_end <= thr.T_end_max) && ...
               (metr_i.mu_end >= thr.mu_end_min);
@@ -215,7 +215,7 @@ else
 end
 
 % Ağırlıklı ve en kötü durum özetleri (metrik bazında uygun min/maks)
-fields = {'PFA_top','IDR_max','dP_orf_q95','dP_orf_q50','Q_q95','Q_q50','Qcap_ratio_q95', ...
+fields = {'PFA_top','IDR_max','dP_resist_q95','dP_resist_q50','Q_q95','Q_q50','Qcap_ratio_q95', ...
           'cav_pct','T_oil_end','mu_end', 'x10_max_D','a10abs_max_D', ...
           'E_orifice_full','E_struct_full','E_ratio_full','PF_p95'};
 weighted = struct();
@@ -235,6 +235,12 @@ for kf = 1:numel(fields)
     end
     worst.which_mu.(fn) = mu_results(idx).mu_factor;
 end
+
+% backward compatibility aliases
+if isfield(weighted,'dP_resist_q95'), weighted.dP_orf_q95 = weighted.dP_resist_q95; end
+if isfield(weighted,'dP_resist_q50'), weighted.dP_orf_q50 = weighted.dP_resist_q50; end
+if isfield(worst,'dP_resist_q95'),   worst.dP_orf_q95   = worst.dP_resist_q95;   end
+if isfield(worst,'dP_resist_q50'),   worst.dP_orf_q50   = worst.dP_resist_q50;   end
 
 %% Çıktıların Derlenmesi
 out = struct();
@@ -256,7 +262,8 @@ out.clamp_hits = clamp_hits;
 % kolaylık amaçlı telemetri alanları
 out.PFA_top = metr.PFA_top;
 out.IDR_max = metr.IDR_max;
-out.dP_orf_q95 = metr.dP_orf_q95;
+out.dP_resist_q95 = metr.dP_resist_q95;
+out.dP_orf_q95 = out.dP_resist_q95; % backward compatibility
 out.Qcap_ratio_q95 = metr.Qcap_ratio_q95;
 out.cav_pct = metr.cav_pct;
 out.t5 = win.t5; out.t95 = win.t95; out.coverage = win.coverage;
@@ -321,9 +328,11 @@ ts.dvel = diag.dvel;
 ts.story_force = diag.story_force;
 ts.PF = diag.PF;
 ts.Q = diag.Q;
-ts.dP_orf = diag.dP_orf;
+ts.dP_resist = diag.dP_resist;
+ts.dP_kv = diag.dP_kv;
+ts.dP_orf = diag.dP_resist; % backward compatibility
 ts.Qcap_ratio = abs(diag.Q) ./ Qcap;
-ts.cav_mask = diag.dP_orf < 0;
+ts.cav_mask = abs(diag.dP_kv) > diag.dP_cav;
 
 %4) Güç bileşenlerinin hesabı
 P_visc_per = diag.c_lam .* (diag.dvel.^2);
@@ -332,7 +341,7 @@ ts.P_visc = sum(P_visc_per .* multi, 2);
 if isfield(diag,'P_orf_per') && ~isempty(diag.P_orf_per)
     P_orf_per = diag.P_orf_per;
 else
-    P_orf_per = abs(diag.dP_orf .* diag.Q);
+    P_orf_per = abs(diag.dP_kv .* diag.Q);
 end
 ts.P_orf = sum(P_orf_per .* multi, 2);
 
