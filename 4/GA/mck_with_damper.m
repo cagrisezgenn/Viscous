@@ -53,13 +53,9 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
             orf_loc = orf;
             params = struct('Ap_eff',Ap,'orf',orf_loc,'rho',rho,...
                             'Ao',Ao,'mu',mu_abs,'Lori',Lori);
-            [dP_lam, dP_kv, Q, ~] = calc_orifice_force(dvel, params);
-            % Ek diagnostikler: dP_kv ve dP_cav (kv ve kavitasyon limitleri)
-            Re_loc   = (rho .* abs(Q) .* max(orf.d_o,1e-9)) ./ max(Ao*mu_abs,1e-9);
-            Cd_loc0  = orf.Cd0; Cd_locInf = orf.CdInf; Rec_loc = orf.Rec; pexp_loc = orf.p_exp;
-            Cd_loc = Cd_locInf - (Cd_locInf - Cd_loc0) ./ (1 + (Re_loc./max(Rec_loc,1)).^pexp_loc);
-            Cd_loc = max(min(Cd_loc,1.2),0.2);
-            dP_kv_loc = rho ./ (2*(Cd_loc.*Ao).^2) .* Q .* abs(Q);
+            % Quadratic drop computed from orifice model
+            [dP_lam, dP_kv_loc, Q, ~] = calc_orifice_force(dvel, params);
+            % Cavitation-limited pressure drop
             p_up_loc  = orf.p_amb + abs(F_lin)./max(Ap,1e-12);
             dP_cav_loc= max( (p_up_loc - orf.p_cav_eff).*orf.cav_sf, 0 );
             dP_kv = Utils.softmin(dP_kv_loc, dP_cav_loc, eps);
