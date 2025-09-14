@@ -1,4 +1,4 @@
-function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
+function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
     use_thermal, thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, toggle_gain, story_mask, ...
     n_dampers_per_story, resFactor, cfg)
@@ -18,9 +18,13 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
     Nvec = 1:nStories; Mvec = 2:n;
 
     % Initial temperature and viscosity
+    if isstruct(T0_C)
+        T0_C = Utils.getfield_default(T0_C, 'T0_C', 25);
+    end
     Tser = T0_C*ones(numel(t),1);
     mu_abs = mu_ref;
     c_lam    = c_lam0;
+    epsm     = Utils.softmin_eps(cfg);
 
     % Solve ODE
     odef = @(tt,z) [ z(n+1:end); M \ ( -C*z(n+1:end) - K*z(1:n) - dev_force(tt,z(1:n),z(n+1:end),c_lam,mu_abs) - M*r*agf(tt) ) ];
@@ -40,7 +44,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
         dP_calc = 0.5*rho .* ( qmag ./ max(Cd.*Ao,1e-9) ).^2;
         p_up   = orf.p_amb + abs(F_lin)./max(Ap,1e-12);
         dP_cav = max( (p_up - orf.p_cav_eff).*orf.cav_sf, 0 );
-        dP_orf = Utils.softmin(dP_calc,dP_cav,1e5);
+        dP_orf = Utils.softmin(dP_calc,dP_cav,epsm);
         sgn = dvel ./ sqrt(dvel.^2 + orf.veps^2);
         F_orf = dP_orf .* Ap .* sgn;
         F_p = F_lin + F_orf;
@@ -112,7 +116,7 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0, use_orf,orf,rho,A
             dP_calc_ = 0.5*rho .* ( qmag_ ./ max(Cd_.*Ao,1e-9) ).^2;
             p_up_   = orf.p_amb + abs(F_lin_)./max(Ap,1e-12);
             dP_cav_ = max( (p_up_ - orf.p_cav_eff).*orf.cav_sf, 0 );
-            dP_orf_ = Utils.softmin(dP_calc_,dP_cav_,1e5);
+            dP_orf_ = Utils.softmin(dP_calc_,dP_cav_,epsm);
             sgn_ = dvel_ ./ sqrt(dvel_.^2 + orf.veps^2);
             F_orf_ = dP_orf_ .* Ap .* sgn_;
         end
