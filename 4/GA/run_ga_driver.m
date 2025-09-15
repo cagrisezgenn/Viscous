@@ -107,7 +107,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     dP95   = zeros(nF,1);  Qcap95 = zeros(nF,1); cav_pct = zeros(nF,1);
     T_end  = zeros(nF,1);  mu_end  = zeros(nF,1);
     PF_p95 = zeros(nF,1);  Q_q50 = zeros(nF,1);  Q_q95 = zeros(nF,1);
-    dP50   = zeros(nF,1);  Toil = nan(nF,1); Tsteel = nan(nF,1);
+    dP50   = zeros(nF,1);
     energy_tot_sum   = zeros(nF,1);  E_orifice_sum = zeros(nF,1);   E_struct_sum  = zeros(nF,1); E_ratio = zeros(nF,1); P_mech_sum = zeros(nF,1);
     PFA_mean   = zeros(nF,1);  IDR_mean  = zeros(nF,1);
 
@@ -145,9 +145,9 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
             v_Q_q95  = tg(Si.table,'Q_q95',0);
             v_dP50 = tg(Si.table,'dP50',0);
 
-        v_E_orifice_sum = tg(Si.table,'E_orifice_sum',0);
-        v_E_struct_sum = tg(Si.table,'E_struct_sum',0);
-        v_P_mech_sum  = tg(Si.table,'P_mech_sum',0);
+        v_E_orifice_sum = tg(Si.table,'E_orifice_sum', tg(Si.table,'E_orifice',0));
+        v_E_struct_sum = tg(Si.table,'E_struct_sum', tg(Si.table,'E_struct',0));
+        v_P_mech_sum  = tg(Si.table,'P_mech_sum', tg(Si.table,'P_mech',0));
 
         PFA_mean(i) = mean(v_PFA(:));
         IDR_mean(i) = mean(v_IDR(:));
@@ -163,15 +163,20 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
         if isempty(v_mu), v_mu = 1; end
         mu_end(i)  = min(v_mu(:));
 
+        v_PF_p95(~isfinite(v_PF_p95)) = 0;
+        v_Q_q50(~isfinite(v_Q_q50))   = 0;
+        v_Q_q95(~isfinite(v_Q_q95))   = 0;
+        v_dP50(~isfinite(v_dP50))     = 0;
         PF_p95(i)  = max(v_PF_p95(:));
         Q_q50(i)   = max(v_Q_q50(:));
         Q_q95(i)   = max(v_Q_q95(:));
-        dP50(i)  = max(v_dP50(:));
-        Toil(i)   = max(tg(Si.table,'T_oil_end',NaN));
-        Tsteel(i) = max(tg(Si.table,'T_steel_end',NaN));
+        dP50(i)    = max(v_dP50(:));
 
+        v_E_orifice_sum(~isfinite(v_E_orifice_sum)) = 0;
+        v_E_struct_sum(~isfinite(v_E_struct_sum))   = 0;
+        v_P_mech_sum(~isfinite(v_P_mech_sum))       = 0;
         E_orifice_sum(i)    = sum(v_E_orifice_sum(:));
-        E_struct_sum(i)   = sum(v_E_struct_sum(:));
+        E_struct_sum(i)     = sum(v_E_struct_sum(:));
         energy_tot_sum(i)   = E_orifice_sum(i) + E_struct_sum(i);
         E_ratio(i) = (E_struct_sum(i)>0) * (E_orifice_sum(i)/max(E_struct_sum(i),eps));
         P_mech_sum(i)  = sum(v_P_mech_sum(:));
@@ -198,12 +203,12 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     % Satır başına dizilerden T tablosunu oluştur
     data = [X F PFA_mean IDR_mean pen pen_dP pen_Qcap pen_cav pen_T pen_mu ...
             x10_max_damperli a10abs_max_damperli dP95 Qcap95 cav_pct T_end mu_end PF_p95 ...
-            Q_q50 Q_q95 dP50 Toil Tsteel energy_tot_sum E_orifice_sum E_struct_sum E_ratio P_mech_sum];
+            Q_q50 Q_q95 dP50 energy_tot_sum E_orifice_sum E_struct_sum E_ratio P_mech_sum];
     T = array2table(data, 'VariableNames', ...
        {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref','PF_t_on', ...
         'f1','f2','PFA_mean','IDR_mean','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu', ...
         'x10_max_damperli','a10abs_max_damperli','dP95','Qcap95','cav_pct','T_end','mu_end','PF_p95', ...
-        'Q_q50','Q_q95','dP50','T_oil_end','T_steel_end','energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum'});
+        'Q_q50','Q_q95','dP50','energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum'});
 
     % === BASELINE (pre-GA) ROW: params başlangıcıyla tek koşu, ilk satır ===
     T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W);
@@ -272,14 +277,8 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     cavv  = S.table.cav_pct;
     if any(dP95v > 1e9) || any(qcapv > 0.90) || any(cavv > 0.01)
         f = [1e6, 1e6];
-        meta = struct('x',x,'f',f,'hard_kill',true);
-        % --- penalties: ensure numeric zeros for hard-kill
-        meta.pen      = 0;
-        meta.pen_dP   = 0;
-        meta.pen_Qcap = 0;
-        meta.pen_cav  = 0;
-        meta.pen_T    = 0;
-        meta.pen_mu   = 0;
+        meta = struct('x',x,'f',f,'hard_kill',true, ...
+                      'pen',0,'pen_dP',0,'pen_Qcap',0,'pen_cav',0,'pen_T',0,'pen_mu',0);
         memo_store('set', jsonencode([x, dsig]), meta);
         return;
     end
@@ -310,44 +309,34 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     pen = W.dP*pen_dP + W.Qcap*pen_Qcap + W.cav*pen_cav + W.T*pen_T + W.mu*pen_mu;
     % multiplicative penalty keeps scale of objectives
     f = [f1, f2] .* (1 + lambda*pen);
-    % Build meta and enforce numeric penalties
-    meta = struct('x',x,'f',f,'PFA_mean',f1,'IDR_mean',f2);
     Penalty   = lambda*pen;
     pen_parts = struct('dP',pen_dP,'Qcap',pen_Qcap,'cav',pen_cav,'T',pen_T,'mu',pen_mu);
-    % --- penalties: force numeric (no NaNs)
-    if ~exist('Penalty','var') || ~isfinite(Penalty), Penalty = 0; end
-    if ~exist('pen_parts','var') || ~isstruct(pen_parts), pen_parts = struct(); end
+    if ~isfinite(Penalty), Penalty = 0; end
     pf = {'dP','Qcap','cav','T','mu'};
     for ii=1:numel(pf)
         fn = pf{ii};
         if ~isfield(pen_parts,fn) || ~isfinite(pen_parts.(fn)), pen_parts.(fn) = 0; end
     end
-    meta.pen      = Penalty;
-    meta.pen_dP   = pen_parts.dP;
-    meta.pen_Qcap = pen_parts.Qcap;
-    meta.pen_cav  = pen_parts.cav;
-    meta.pen_T    = pen_parts.T;
-    meta.pen_mu   = pen_parts.mu;
-    meta.pen_parts = pen_parts;
-    % --- append damperli peak metrics (zeros if unavailable)
     x10_max_damperli_local = 0; a10abs_max_damperli_local = 0;
-            if isfield(S,'table') && istable(S.table)
-                if ismember('x10_max_D', S.table.Properties.VariableNames)
-                        x10_max_damperli_local = max(S.table.x10_max_D);
-                end
-                if ismember('a10abs_max_D', S.table.Properties.VariableNames)
-                        a10abs_max_damperli_local = max(S.table.a10abs_max_D);
-                end
-            end
-    meta.x10_max_damperli    = x10_max_damperli_local;
-    meta.a10abs_max_damperli = a10abs_max_damperli_local;
+    if isfield(S,'table') && istable(S.table)
+        if ismember('x10_max_D', S.table.Properties.VariableNames)
+            x10_max_damperli_local = max(S.table.x10_max_D);
+        end
+        if ismember('a10abs_max_D', S.table.Properties.VariableNames)
+            a10abs_max_damperli_local = max(S.table.a10abs_max_D);
+        end
+    end
+    meta = struct('x',x,'f',f,'PFA_mean',f1,'IDR_mean',f2, ...
+                 'pen',Penalty,'pen_dP',pen_parts.dP,'pen_Qcap',pen_parts.Qcap, ...
+                 'pen_cav',pen_parts.cav,'pen_T',pen_parts.T,'pen_mu',pen_parts.mu, ...
+                 'pen_parts',pen_parts,'x10_max_damperli',x10_max_damperli_local, ...
+                 'a10abs_max_damperli',a10abs_max_damperli_local);
     % === Penaltı sürücüleri ve diagnostikleri ekle (varsa) ===
         if isfield(S,'table') && istable(S.table)
             candCols = { ...
               'dP95','Qcap95','cav_pct','T_end','mu_end', ...
               'PF_p95', ...
               'Q_q50','Q_q95','dP50', ...
-              'T_oil_end','T_steel_end', ...
               'energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum', ...
               'x10_max_D','a10abs_max_D','P_mech','E_orifice','E_struct','Re_max' ...
             };
@@ -508,34 +497,36 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             if ismember('dP50', vn) && ismember('dP50', T0bl.Properties.VariableNames)
                 assign('dP50', max(T0bl.dP50));
             end
-            if ismember('T_oil_end', vn) && ismember('T_oil_end', T0bl.Properties.VariableNames)
-                assign('T_oil_end', max(T0bl.T_oil_end));
-            end
-            if ismember('T_steel_end', vn) && ismember('T_steel_end', T0bl.Properties.VariableNames)
-                if iscell(T.T_steel_end)
-                    T0.T_steel_end = {max(T0bl.T_steel_end)};
-                else
-                    T0.T_steel_end = max(T0bl.T_steel_end);
+            if ismember('E_orifice_sum', vn)
+                if ismember('E_orifice_sum', T0bl.Properties.VariableNames)
+                    assign('E_orifice_sum', nansum(T0bl.E_orifice_sum));
+                elseif ismember('E_orifice', T0bl.Properties.VariableNames)
+                    assign('E_orifice_sum', nansum(T0bl.E_orifice));
                 end
             end
-            if ismember('E_orifice_sum', vn) && ismember('E_orifice_sum', T0bl.Properties.VariableNames)
-                assign('E_orifice_sum', sum(T0bl.E_orifice_sum));
-            end
-            if ismember('E_struct_sum', vn) && ismember('E_struct_sum', T0bl.Properties.VariableNames)
-                assign('E_struct_sum', sum(T0bl.E_struct_sum));
+            if ismember('E_struct_sum', vn)
+                if ismember('E_struct_sum', T0bl.Properties.VariableNames)
+                    assign('E_struct_sum', nansum(T0bl.E_struct_sum));
+                elseif ismember('E_struct', T0bl.Properties.VariableNames)
+                    assign('E_struct_sum', nansum(T0bl.E_struct));
+                end
             end
             if ismember('energy_tot_sum', vn)
                 if ismember('energy_tot_sum', T0bl.Properties.VariableNames)
-                    assign('energy_tot_sum', sum(T0bl.energy_tot_sum));
+                    assign('energy_tot_sum', nansum(T0bl.energy_tot_sum));
                 else
-                        assign('energy_tot_sum', T0.E_orifice_sum + T0.E_struct_sum);
+                    assign('energy_tot_sum', T0.E_orifice_sum + T0.E_struct_sum);
                 end
             end
             if ismember('E_ratio', vn)
-                    assign('E_ratio', (T0.E_struct_sum>0) * (T0.E_orifice_sum / max(T0.E_struct_sum, eps)));
+                assign('E_ratio', (T0.E_struct_sum>0) * (T0.E_orifice_sum / max(T0.E_struct_sum, eps)));
             end
-            if ismember('P_mech_sum', vn) && ismember('P_mech_sum', T0bl.Properties.VariableNames)
-                assign('P_mech_sum', sum(T0bl.P_mech_sum));
+            if ismember('P_mech_sum', vn)
+                if ismember('P_mech_sum', T0bl.Properties.VariableNames)
+                    assign('P_mech_sum', nansum(T0bl.P_mech_sum));
+                elseif ismember('P_mech', T0bl.Properties.VariableNames)
+                    assign('P_mech_sum', nansum(T0bl.P_mech));
+                end
             end
 
         % Bas satırı en üste ekle

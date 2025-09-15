@@ -153,9 +153,7 @@ if nargin >= 1 && ~isempty(T1)
     end
     fprintf('\n');
 
-    meta.IM_mode  = IM_mode;
-    meta.band_fac = band_fac;
-    meta.s_bounds = s_bounds;
+    meta = struct('IM_mode', IM_mode, 'band_fac', band_fac, 's_bounds', s_bounds);
     if exist('dropped','var'), meta.TRIM_names = dropped; else, meta.TRIM_names = {}; end
 end
 end
