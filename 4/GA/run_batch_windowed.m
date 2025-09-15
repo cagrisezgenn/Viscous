@@ -11,6 +11,11 @@ if nargin < 3, opts = struct(); end
 if ~isfield(opts,'thr'), opts.thr = struct(); end
 opts.thr = Utils.default_qc_thresholds(opts.thr);
 
+% İstenirse kayıtların yürütülme sırası yeniden düzenlenir
+if isfield(opts,'order_perm')
+    scaled = scaled(opts.order_perm);
+end
+
 % Türetilmiş damper sabitlerini güncelle
 params = Utils.recompute_damper_params(params);
 
