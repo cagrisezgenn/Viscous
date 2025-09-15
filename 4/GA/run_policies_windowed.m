@@ -24,9 +24,9 @@ if ~isfield(opts,'rank_metric'), opts.rank_metric = 'E_orifice_win'; end
 
 % Hidrolik ve termal temel parametreleri yazdır
 try
-    n_orf = NaN; if isfield(params,'A_o'), n_orf = numel(params.A_o); end
-    A_o = Utils.getfield_default(params,'A_o',NaN);
-    d_o = NaN; try, d_o = sqrt(4*mean(A_o)/pi); catch, end
+    n_orf = NaN; if isfield(params,'Ao'), n_orf = numel(params.Ao); end
+    Ao = Utils.getfield_default(params,'Ao',NaN);
+    d_o = NaN; try, d_o = sqrt(4*mean(Ao)/pi); catch, end
     Qcap_big = Utils.getfield_default(params,'Qcap_big',NaN);
     hA = NaN; if isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), hA = params.thermal.hA_W_perK; end
     resFactor = Utils.getfield_default(params,'resFactor',NaN);

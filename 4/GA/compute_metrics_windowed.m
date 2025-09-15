@@ -42,7 +42,7 @@ abs_story_force = abs(ts.story_force(idx,:));
 
 % Reynolds sayısının pencere içindeki maksimumu
 try
-    if all(isfield(params,{'Qcap_big','Ap','A_o','rho','orf'})) && ...
+    if all(isfield(params,{'Qcap_big','Ap','Ao','rho','orf'})) && ...
             isfield(ts,'mu') && isfield(ts,'dvel') && ...
             all(isfield(params.orf,{'veps','d_o'}))
         dvel_win = ts.dvel(idx,:);
@@ -50,7 +50,7 @@ try
             sqrt(dvel_win.^2 + params.orf.veps^2));
         mu_win = ts.mu(idx);
         mu_mat = repmat(mu_win,1,size(qmag,2));
-        Ao = params.A_o; if numel(Ao)==1, Ao = Ao*ones(1,size(qmag,2)); end
+        Ao = params.Ao; if numel(Ao)==1, Ao = Ao*ones(1,size(qmag,2)); end
         Ao_mat = repmat(Ao,size(qmag,1),1);
         Re = (params.rho .* qmag ./ max(Ao_mat .* mu_mat,1e-9)) .* ...
              max(params.orf.d_o,1e-9);

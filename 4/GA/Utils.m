@@ -116,8 +116,9 @@ classdef Utils
 
             % ÃÄ±kÄ±Ålar (geriye uyumlu alan adlarÄ±yla)
             params.Ap = Ap;
-            params.Ao = Ao; params.A_o = Ao;
-            params.Ap_eff = Ap_eff; params.Ao_eff = Ao_eff;
+            params.Ao = Ao;
+            params.Ap_eff = Ap_eff;
+            params.Ao_eff = Ao_eff;
             params.Lh = Lh;
             params.k_p = k_p;
             params.k_sd_simple = k_sd_simple;
