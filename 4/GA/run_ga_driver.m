@@ -107,7 +107,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     dP95   = zeros(nF,1);  Qcap95 = zeros(nF,1); cavW = zeros(nF,1);
     Tend   = zeros(nF,1);  muend  = zeros(nF,1);
     PFp95  = zeros(nF,1);  Qq50 = zeros(nF,1);  Qq95 = zeros(nF,1);
-    dPq50  = zeros(nF,1);  dPq95w = zeros(nF,1); Toil = zeros(nF,1); Tsteel = zeros(nF,1);
+    dPq50  = zeros(nF,1);  dPq95w = zeros(nF,1); Toil = nan(nF,1); Tsteel = nan(nF,1);
     Etot   = zeros(nF,1);  Eor = zeros(nF,1);   Estr  = zeros(nF,1); Eratio = zeros(nF,1); Pmech = zeros(nF,1);
     PFAw   = zeros(nF,1);  IDRw  = zeros(nF,1);
 
@@ -144,8 +144,6 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
             v_Qq50  = tg(Si.table,'Q_q50',0);
             v_Qq95  = tg(Si.table,'Q_q95',0);
             v_dPq50 = tg(Si.table,'dP50',0);
-            v_Toil   = tg(Si.table,'T_oil_end',[]);
-            v_Tsteel = tg(Si.table,'T_steel_end',[]);
 
         v_Eor = tg(Si.table,'E_orifice_sum',0);
         v_Est = tg(Si.table,'E_struct_sum',0);
@@ -170,10 +168,8 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
         Qq95(i)   = max(v_Qq95(:));
         dPq50(i)  = max(v_dPq50(:));
         dPq95w(i) = max(v_dP95(:));
-        if isempty(v_Toil), v_Toil = v_Tend; end
-        Toil(i)   = max(v_Toil(:));
-        if isempty(v_Tsteel), v_Tsteel = 0; end
-        Tsteel(i) = max(v_Tsteel(:));
+        Toil(i)   = max(tg(Si.table,'T_oil_end',NaN));
+        Tsteel(i) = max(tg(Si.table,'T_steel_end',NaN));
 
         Eor(i)    = sum(v_Eor(:));
         Estr(i)   = sum(v_Est(:));
@@ -200,6 +196,9 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
         pen(i)      = lambda*(W.dP*pen_dP(i)+W.Qcap*pen_Qcap(i)+W.cav*pen_cav(i)+W.T*pen_T(i)+W.mu*pen_mu(i));
     end
 
+    if all(isnan(Toil)),   Toil = [];   end
+    if all(isnan(Tsteel)), Tsteel = []; end
+
     % Satır başına dizilerden T tablosunu oluştur
     T = array2table([X F PFAw IDRw pen pen_dP pen_Qcap pen_cav pen_T pen_mu], 'VariableNames', ...
        {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref','PF_t_on', ...
@@ -211,7 +210,9 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     T.dP95          = dP95;     T.Qcap95      = Qcap95;   T.cav_pct = cavW;
     T.T_end         = Tend;     T.mu_end      = muend;    T.PF_p95  = PFp95;
     T.Q_q50         = Qq50;     T.Q_q95       = Qq95;     T.dP50 = dPq50;
-    T.dP_orf_q95    = dPq95w;   T.T_oil_end   = Toil;     T.T_steel_end = Tsteel;
+    T.dP_orf_q95    = dPq95w;
+    if ~isempty(Toil),   T.T_oil_end   = Toil;   end
+    if ~isempty(Tsteel), T.T_steel_end = Tsteel; end
     T.energy_tot_sum      = Etot;     T.E_orifice_sum     = Eor;      T.E_struct_sum  = Estr;
     T.E_ratio             = Eratio;   T.P_mech_sum        = Pmech;
 
