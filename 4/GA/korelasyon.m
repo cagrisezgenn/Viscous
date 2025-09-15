@@ -240,10 +240,9 @@ if opt.Verbose
 end
 
 % 9) Çıktı paketleme
-S = struct();
-S.T = T_use; S.R_pearson = R_pearson; S.P_pearson = P_pearson;
-S.R_spearman = R_spear; S.P_spearman = P_spear;
-S.partial = partial; S.lm = lm; S.ens = ens; S.figs = figs;
+S = struct('T', T_use, 'R_pearson', R_pearson, 'P_pearson', P_pearson, ...
+    'R_spearman', R_spear, 'P_spearman', P_spear, ...
+    'partial', partial, 'lm', lm, 'ens', ens, 'figs', figs);
 
 %% 10) CSV çıktılarını yaz
 try
