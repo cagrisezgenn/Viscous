@@ -37,8 +37,6 @@ assert(~isempty(scaled), 'run_ga_driver: scaled dataset is empty.');
 assert(~isempty(params), 'run_ga_driver: params is empty.');
 
 % ---------- Varsayılan değerlendirme ayarları (IO yok) ----------
-optsEval.do_export     = false;
-optsEval.quiet         = true;
 optsEval.thr = Utils.default_qc_thresholds(Utils.getfield_default(optsEval,'thr', meta.thr));
 %% GA Kurulumu
 % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
@@ -153,7 +151,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
     rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
 
-    Opost = struct('do_export',false,'quiet',true, 'thr', meta.thr);
+    Opost = struct('thr', meta.thr);
 
     parfor i = 1:nF
         Xi = quant_clamp_x(X(i,:));
@@ -354,8 +352,6 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
 
     O = struct();
     if nargin >= 4 && ~isempty(optsEval), O = optsEval; end
-    O.do_export = false;
-    O.quiet  = true;
     % policy/order vars referenced by run_batch_windowed default to each/natural
 
     % Güvenli değerlendirme (GA sırasında IO yok)

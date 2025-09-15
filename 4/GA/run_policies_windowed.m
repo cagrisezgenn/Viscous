@@ -21,11 +21,16 @@ if ~isfield(opts,'rng_seed'), opts.rng_seed = 42; end
 if ~isfield(opts,'rank_metric'), opts.rank_metric = 'E_orifice_win'; end
 
 % Sessizlik/çıktı bayrakları ve çıktı dizini
-quiet = isfield(opts,'quiet') && opts.quiet;
-% Politika koşuları için varsayılan olarak sonuçlar dışa aktarılır
-do_export = ~isfield(opts,'do_export') || opts.do_export;
-ts = datestr(now,'yyyymmdd_HHMMSS_FFF'); outdir = fullfile('out', ts);
-if ~exist(outdir,'dir'), mkdir(outdir); end
+quiet = ~isfield(opts,'quiet') || opts.quiet;
+% Politika koşuları için varsayılan olarak sonuçlar dışa aktarılmaz
+do_export = isfield(opts,'do_export') && opts.do_export;
+if do_export
+    ts = datestr(now,'yyyymmdd_HHMMSS_FFF');
+    outdir = fullfile('out', ts);
+    if ~exist(outdir,'dir'), mkdir(outdir); end
+else
+    outdir = '';
+end
 
 % Konsol başlığı
 
