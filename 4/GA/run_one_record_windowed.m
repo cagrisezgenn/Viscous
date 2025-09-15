@@ -12,10 +12,9 @@ function out = run_one_record_windowed(rec, params, opts, prev_diag)
 %   PREV_DIAG, kayıtlara arasında termal durumu taşımak için isteğe bağlı bir
 %   diagnostiğe sahiptir.
 %
-%   OUT yapısı; name, scale, SaT1, win, metr, diag, mu_results, weighted,
-%   worst, ts, qc_all_mu, T_start, T_end, mu_end, clamp_hits, PFA_top,
-%   IDR_max, dP_orf_q95, Qcap_ratio_q95, cav_pct, t5, t95 ve coverage
-%   alanlarını içerir.
+%   OUT yapısı; name, scale, SaT1, win, metr, diag, ts, qc_pass, T_start,
+%   T_end, mu_end, clamp_hits, PFA_top, IDR_max, dP_orf_q95,
+%   Qcap_ratio_q95, cav_pct, t5, t95 ve coverage alanlarını içerir.
 %
 %   Bu fonksiyon, dosya sonunda yer alan MCK_WITH_DAMPER_TS yardımcı
 %   rutini ve COMPUTE_METRICS_WINDOWED fonksiyonunu kullanır.
@@ -23,8 +22,6 @@ function out = run_one_record_windowed(rec, params, opts, prev_diag)
 % varsayılan argümanlar
 if nargin < 4, prev_diag = []; end
 if nargin < 3 || isempty(opts), opts = struct(); end
-if ~isfield(opts,'mu_factors'), opts.mu_factors = 1; end
-if ~isfield(opts,'mu_weights'), opts.mu_weights = 1; end
 
 % Türetilmiş damper sabitlerini güncelle
 params = Utils.recompute_damper_params(params);
@@ -43,14 +40,6 @@ opts.thr = thr;
 
 assert(isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), ...
     'run_one_record_windowed: params.thermal.hA_W_perK eksik');
-
-assert(numel(opts.mu_factors)==numel(opts.mu_weights), ...
-    'mu_factors and mu_weights must have same length.');
-mu_weights = opts.mu_weights(:);
-wsum = sum(mu_weights);
-assert(wsum>0,'mu_weights sum must be > 0.');
-mu_weights = mu_weights/wsum;
-mu_factors = opts.mu_factors(:)';
 
 %% Pencere Hazırlığı
 if isfield(opts,'window') && ~isempty(opts.window)
@@ -138,58 +127,38 @@ end
 %% Damperli Çözüm
 % Damperli çözüm doğrudan mck_with_damper_ts fonksiyonu üzerinden yürütülür.
 
-nMu = numel(mu_factors);
-mu_results = struct('mu_factor',cell(1,nMu));
-
-for i = 1:nMu
-    f = mu_factors(i);
-    mu_ref_eff   = params.mu_ref  * f;
-    c_lam0_eff   = params.c_lam0  * f;
-    % Adım 0: Yüksek sıcaklıkta μ düşüşüne karşı taban (opsiyonel)
-    try
-        if isfield(params,'cfg') && isfield(params.cfg,'on') && isfield(params.cfg.on,'mu_floor') && params.cfg.on.mu_floor
-            mu_min_phys = NaN;
-            if isfield(params.cfg,'num') && isfield(params.cfg.num,'mu_min_phys') && isfinite(params.cfg.num.mu_min_phys)
-                mu_min_phys = params.cfg.num.mu_min_phys;
-            end
-            if isfinite(mu_min_phys) && (mu_ref_eff < mu_min_phys)
-                mu_ref_eff = mu_min_phys;
-                % c_lam0 ~ μ ile orantılı olduğundan, tutarlılık için yeniden ölçekle
-                scale_mu = mu_ref_eff / max(params.mu_ref, eps);
-                c_lam0_eff = params.c_lam0 * scale_mu;
-            end
+mu_ref_eff   = params.mu_ref;
+c_lam0_eff   = params.c_lam0;
+try
+    if isfield(params,'cfg') && isfield(params.cfg,'on') && isfield(params.cfg.on,'mu_floor') && params.cfg.on.mu_floor
+        mu_min_phys = NaN;
+        if isfield(params.cfg,'num') && isfield(params.cfg.num,'mu_min_phys') && isfinite(params.cfg.num.mu_min_phys)
+            mu_min_phys = params.cfg.num.mu_min_phys;
         end
-    catch
-        % sessiz geç
+        if isfinite(mu_min_phys) && (mu_ref_eff < mu_min_phys)
+            mu_ref_eff = mu_min_phys;
+            scale_mu = mu_ref_eff / max(params.mu_ref, eps);
+            c_lam0_eff = params.c_lam0 * scale_mu;
+        end
     end
-    [x,a_rel,ts,diag] = mck_with_damper_ts(rec.t, rec.ag, params.M, params.C0, params.K, ...
-        params.k_sd, c_lam0_eff, params.Lori, true, params.orf, params.rho, params.Ap, ...
-        params.A_o, params.Qcap_big, mu_ref_eff, true, params.thermal, Tinit, ...
-        params.T_ref_C, params.b_mu, params.c_lam_min, params.c_lam_cap, params.Lgap, ...
-        params.cp_oil, params.cp_steel, params.steel_to_oil_mass_ratio, ...
-        params.story_mask, params.n_dampers_per_story, params.resFactor, params.cfg);
-
-    params_m = params; params_m.diag = diag;
-    metr_i = compute_metrics_windowed(rec.t, x, a_rel, rec.ag, ts, params.story_height, win, params_m);
-
-    qc_pass = (metr_i.cav_pct <= thr.cav_pct_max) && ...
-              (metr_i.dP_orf_q95 <= thr.dP95_max) && ...
-              (metr_i.Qcap_ratio_q95 <= thr.Qcap95_max) && ...
-              (metr_i.T_oil_end <= thr.T_end_max) && ...
-              (metr_i.mu_end >= thr.mu_end_min);
-
-    mu_results(i).mu_factor   = f;
-    mu_results(i).mu_ref_eff  = mu_ref_eff;
-    mu_results(i).c_lam0_eff  = c_lam0_eff;
-    mu_results(i).metr        = metr_i;
-    mu_results(i).diag        = diag;
-    mu_results(i).qc.pass     = qc_pass;
+catch
+    % sessiz geç
 end
+[x,a_rel,ts,diag] = mck_with_damper_ts(rec.t, rec.ag, params.M, params.C0, params.K, ...
+    params.k_sd, c_lam0_eff, params.Lori, true, params.orf, params.rho, params.Ap, ...
+    params.A_o, params.Qcap_big, mu_ref_eff, true, params.thermal, Tinit, ...
+    params.T_ref_C, params.b_mu, params.c_lam_min, params.c_lam_cap, params.Lgap, ...
+    params.cp_oil, params.cp_steel, params.steel_to_oil_mass_ratio, ...
+    params.story_mask, params.n_dampers_per_story, params.resFactor, params.cfg);
 
-% Nominal metrikler (f=1)
-[~,nom_idx] = min(abs(mu_factors-1));
-metr = mu_results(nom_idx).metr;
-diag = mu_results(nom_idx).diag;
+params_m = params; params_m.diag = diag;
+metr = compute_metrics_windowed(rec.t, x, a_rel, rec.ag, ts, params.story_height, win, params_m);
+
+qc_pass = (metr.cav_pct <= thr.cav_pct_max) && ...
+          (metr.dP_orf_q95 <= thr.dP95_max) && ...
+          (metr.Qcap_ratio_q95 <= thr.Qcap95_max) && ...
+          (metr.T_oil_end <= thr.T_end_max) && ...
+          (metr.mu_end >= thr.mu_end_min);
 
 % Nominal koşu için son termal ve viskozite durumları kaydedilir
 T_start = Tinit;
@@ -207,28 +176,6 @@ else
     mu_end = NaN;
 end
 
-% Ağırlıklı ve en kötü durum özetleri (metrik bazında uygun min/maks)
-fields = {'PFA_top','IDR_max','dP_orf_q95','dP_orf_q50','Q_q95','Q_q50','Qcap_ratio_q95', ...
-          'cav_pct','T_oil_end','mu_end', 'x10_max_D','a10abs_max_D', ...
-          'E_orifice_full','E_struct_full','E_ratio_full','PF_p95'};
-weighted = struct();
-worst = struct();
-worst.which_mu = struct();
-for kf = 1:numel(fields)
-    fn = fields{kf};
-    vals = arrayfun(@(s) s.metr.(fn), mu_results);
-    % tüm metrikler için ağırlıklı ortalama
-    weighted.(fn) = sum(mu_weights(:)'.*vals);
-    % en kötü durum seçim kuralı
-    switch fn
-        case 'mu_end'
-            [worst.(fn), idx] = min(vals); % daha küçük viskozite daha kötüdür
-        otherwise
-            [worst.(fn), idx] = max(vals);
-    end
-    worst.which_mu.(fn) = mu_results(idx).mu_factor;
-end
-
 %% Çıktıların Derlenmesi
 out = struct();
 out.name  = rec.name;
@@ -237,11 +184,8 @@ out.SaT1  = Utils.getfield_default(rec,'IM',NaN);
 out.win   = win;
 out.metr  = metr;
 out.diag  = diag;
-out.mu_results = mu_results;
-out.weighted = weighted;
-out.worst = worst;
 out.ts = ts;
-out.qc_all_mu = all(arrayfun(@(s) s.qc.pass, mu_results));
+out.qc_pass = qc_pass;
 out.T_start = T_start;
 out.T_end = T_end;
 out.mu_end = mu_end;

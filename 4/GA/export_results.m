@@ -25,10 +25,10 @@ try
 
     % qc özet bilgisi
     try
-        pass = sum(summary.table.qc_all_mu);
+        pass = sum(summary.table.qc_pass);
         fail = height(summary.table) - pass;
         kshow = min(3, height(summary.table));
-        [~,ix] = maxk(summary.table.PFA_worst, kshow);
+        [~,ix] = maxk(summary.table.PFA, kshow);
         worst3 = summary.table.name(ix);
         qc_meta = struct('pass',pass,'fail',fail,'worst3',{worst3});
     catch
@@ -68,9 +68,9 @@ full_summary = struct('summary',summary,'all_out',{all_out});
 safe_write(full_summary, fullfile(outdir,'summary_full.mat'), @(d,f) save(f,'-struct','d','-v7.3'));
 
 % Kalite kontrol sonuçlarını yaz
-pass = sum(summary.table.qc_all_mu);
+pass = sum(summary.table.qc_pass);
 fail = height(summary.table) - pass;
-[~,idx] = maxk(summary.table.PFA_worst, min(3,height(summary.table)));
+[~,idx] = maxk(summary.table.PFA, min(3,height(summary.table)));
 worst = summary.table.name(idx);
 qc_tbl = table(pass, fail, worst, 'VariableNames',{'pass','fail','worst'});
 safe_write(qc_tbl, fullfile(outdir,'qc_summary.csv'), @writetable);
@@ -86,13 +86,6 @@ for k = 1:numel(all_out)
         win_struct = struct('t5',w.t5,'t95',w.t95,'pad',Utils.getfield_default(w,'pad',0), ...
                             'coverage',w.coverage);
         safe_write(win_struct, fullfile(recdir,'window.json'), @Utils.writejson);
-        % mu sonuçları (mu_results.csv)
-        if isfield(out,'mu_results') && ~isempty(out.mu_results)
-            mu_tbl = struct2table(arrayfun(@(s) s.metr, out.mu_results));
-            mu_tbl.mu = [out.mu_results.mu_factor]';
-            mu_tbl = movevars(mu_tbl,'mu','before',1);
-            safe_write(mu_tbl, fullfile(recdir,'mu_results.csv'), @writetable);
-        end
         % pencereye ait metrikler (metrics_win.csv)
         m = out.metr;
         mu_mode = Utils.getfield_default(out,'mu_mode','nominal');   % sadece etiket için
@@ -161,12 +154,12 @@ if ~isempty(varargin)
     ord = {P.order}';
     cd  = [P.cooldown_s]';
     qc_rate = arrayfun(@(s) s.qc.pass_fraction, P)';
-    PFA_w_mean = arrayfun(@(s) mean(s.summary.PFA_w), P)';
-    IDR_w_mean = arrayfun(@(s) mean(s.summary.IDR_w), P)';
-    dP95_worst_max = arrayfun(@(s) max(s.summary.dP95_worst), P)';
-    T_end_worst_max = arrayfun(@(s) max(s.summary.T_end_worst), P)';
-    idx_tbl = table(pol, ord, cd, qc_rate, PFA_w_mean, IDR_w_mean, dP95_worst_max, T_end_worst_max, ...
-        'VariableNames',{'policy','order','cooldown_s','qc_rate','PFA_w_mean','IDR_w_mean','dP95_worst_max','T_end_worst_max'});
+    PFA_mean = arrayfun(@(s) mean(s.summary.PFA), P)';
+    IDR_mean = arrayfun(@(s) mean(s.summary.IDR), P)';
+    dP95_max = arrayfun(@(s) max(s.summary.dP95), P)';
+    T_end_max = arrayfun(@(s) max(s.summary.T_end), P)';
+    idx_tbl = table(pol, ord, cd, qc_rate, PFA_mean, IDR_mean, dP95_max, T_end_max, ...
+        'VariableNames',{'policy','order','cooldown_s','qc_rate','PFA_mean','IDR_mean','dP95_max','T_end_max'});
     safe_write(idx_tbl, fullfile(outdir,'policy_index.csv'), @writetable);
     for i = 1:numel(P)
         fname = sprintf('policy_%s_%s_cd%s.csv', ...
