@@ -272,14 +272,8 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     cavv  = S.table.cav_pct;
     if any(dP95v > 1e9) || any(qcapv > 0.90) || any(cavv > 0.01)
         f = [1e6, 1e6];
-        meta = struct('x',x,'f',f,'hard_kill',true);
-        % --- penalties: ensure numeric zeros for hard-kill
-        meta.pen      = 0;
-        meta.pen_dP   = 0;
-        meta.pen_Qcap = 0;
-        meta.pen_cav  = 0;
-        meta.pen_T    = 0;
-        meta.pen_mu   = 0;
+        meta = struct('x',x,'f',f,'hard_kill',true, ...
+                      'pen',0,'pen_dP',0,'pen_Qcap',0,'pen_cav',0,'pen_T',0,'pen_mu',0);
         memo_store('set', jsonencode([x, dsig]), meta);
         return;
     end
@@ -310,37 +304,28 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     pen = W.dP*pen_dP + W.Qcap*pen_Qcap + W.cav*pen_cav + W.T*pen_T + W.mu*pen_mu;
     % multiplicative penalty keeps scale of objectives
     f = [f1, f2] .* (1 + lambda*pen);
-    % Build meta and enforce numeric penalties
-    meta = struct('x',x,'f',f,'PFA_mean',f1,'IDR_mean',f2);
     Penalty   = lambda*pen;
     pen_parts = struct('dP',pen_dP,'Qcap',pen_Qcap,'cav',pen_cav,'T',pen_T,'mu',pen_mu);
-    % --- penalties: force numeric (no NaNs)
-    if ~exist('Penalty','var') || ~isfinite(Penalty), Penalty = 0; end
-    if ~exist('pen_parts','var') || ~isstruct(pen_parts), pen_parts = struct(); end
+    if ~isfinite(Penalty), Penalty = 0; end
     pf = {'dP','Qcap','cav','T','mu'};
     for ii=1:numel(pf)
         fn = pf{ii};
         if ~isfield(pen_parts,fn) || ~isfinite(pen_parts.(fn)), pen_parts.(fn) = 0; end
     end
-    meta.pen      = Penalty;
-    meta.pen_dP   = pen_parts.dP;
-    meta.pen_Qcap = pen_parts.Qcap;
-    meta.pen_cav  = pen_parts.cav;
-    meta.pen_T    = pen_parts.T;
-    meta.pen_mu   = pen_parts.mu;
-    meta.pen_parts = pen_parts;
-    % --- append damperli peak metrics (zeros if unavailable)
     x10_max_damperli_local = 0; a10abs_max_damperli_local = 0;
-            if isfield(S,'table') && istable(S.table)
-                if ismember('x10_max_D', S.table.Properties.VariableNames)
-                        x10_max_damperli_local = max(S.table.x10_max_D);
-                end
-                if ismember('a10abs_max_D', S.table.Properties.VariableNames)
-                        a10abs_max_damperli_local = max(S.table.a10abs_max_D);
-                end
-            end
-    meta.x10_max_damperli    = x10_max_damperli_local;
-    meta.a10abs_max_damperli = a10abs_max_damperli_local;
+    if isfield(S,'table') && istable(S.table)
+        if ismember('x10_max_D', S.table.Properties.VariableNames)
+            x10_max_damperli_local = max(S.table.x10_max_D);
+        end
+        if ismember('a10abs_max_D', S.table.Properties.VariableNames)
+            a10abs_max_damperli_local = max(S.table.a10abs_max_D);
+        end
+    end
+    meta = struct('x',x,'f',f,'PFA_mean',f1,'IDR_mean',f2, ...
+                 'pen',Penalty,'pen_dP',pen_parts.dP,'pen_Qcap',pen_parts.Qcap, ...
+                 'pen_cav',pen_parts.cav,'pen_T',pen_parts.T,'pen_mu',pen_parts.mu, ...
+                 'pen_parts',pen_parts,'x10_max_damperli',x10_max_damperli_local, ...
+                 'a10abs_max_damperli',a10abs_max_damperli_local);
     % === Penaltı sürücüleri ve diagnostikleri ekle (varsa) ===
         if isfield(S,'table') && istable(S.table)
             candCols = { ...
