@@ -94,10 +94,11 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
 
     %% Sonuçların Paketlenmesi
     % GA tamamlandıktan sonra sonuçları dosyalara kaydet.
-    outdir = fullfile('out', ['ga_' datestr(now,'yyyymmdd_HHMMSS_FFF')]);
+    tstamp = datestr(now,'yyyymmdd_HHMMSS_FFF');
+    outdir = fullfile('out', ['ga_' tstamp]);
     if ~exist(outdir,'dir'), mkdir(outdir); end
-    opts_ga = options; date_str = datestr(now);
-    front = struct('X',X,'F',F,'opts_ga',opts_ga,'meta',meta,'date_str',date_str);
+    date_str = tstamp;
+    front = struct('X',X,'F',F,'options',options,'meta',meta,'date_str',date_str);
     save(fullfile(outdir,'ga_front.mat'), '-struct', 'front', '-v7.3');
 
     % === Re-evaluate Pareto designs to collect metrics per-row ===
