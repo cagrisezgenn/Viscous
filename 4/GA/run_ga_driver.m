@@ -355,7 +355,7 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
             candCols = { ...
               'dP95','Qcap95','cav_pct','T_end','mu_end', ...
               'PF_p95', ...
-              'Q_q50','Q_q95','dP_orf_q50','dP_orf_q95','dP50', ...
+              'Q_q50','Q_q95','dP50', ...
               'T_oil_end','T_steel_end', ...
               'energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum', ...
               'x10_max_D','a10abs_max_D','P_mech','E_orifice','E_struct','Re_max' ...
@@ -514,19 +514,8 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             if ismember('Q_q95', vn) && ismember('Q_q95', T0bl.Properties.VariableNames)
                 assign('Q_q95', max(T0bl.Q_q95));
             end
-            if ismember('dP_orf_q50', vn)
-                if ismember('dP_orf_q50', T0bl.Properties.VariableNames)
-                    assign('dP_orf_q50', max(T0bl.dP_orf_q50));
-                elseif ismember('dP50', T0bl.Properties.VariableNames)
-                    assign('dP_orf_q50', max(T0bl.dP50));
-                end
-            end
-            if ismember('dP_orf_q95', vn)
-                if ismember('dP_orf_q95', T0bl.Properties.VariableNames)
-                    assign('dP_orf_q95', max(T0bl.dP_orf_q95));
-                elseif ismember('dP95', T0bl.Properties.VariableNames)
-                    assign('dP_orf_q95', max(T0bl.dP95));
-                end
+            if ismember('dP50', vn) && ismember('dP50', T0bl.Properties.VariableNames)
+                assign('dP50', max(T0bl.dP50));
             end
             if ismember('T_oil_end', vn) && ismember('T_oil_end', T0bl.Properties.VariableNames)
                 assign('T_oil_end', max(T0bl.T_oil_end));
