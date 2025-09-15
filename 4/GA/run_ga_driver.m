@@ -195,24 +195,15 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
         pen(i)      = lambda*(W.dP*pen_dP(i)+W.Qcap*pen_Qcap(i)+W.cav*pen_cav(i)+W.T*pen_T(i)+W.mu*pen_mu(i));
     end
 
-    if all(isnan(Toil)),   Toil = [];   end
-    if all(isnan(Tsteel)), Tsteel = []; end
-
     % Satır başına dizilerden T tablosunu oluştur
-    T = array2table([X F PFA_mean IDR_mean pen pen_dP pen_Qcap pen_cav pen_T pen_mu], 'VariableNames', ...
+    data = [X F PFA_mean IDR_mean pen pen_dP pen_Qcap pen_cav pen_T pen_mu ...
+            x10_max_damperli a10abs_max_damperli dP95 Qcap95 cav_pct T_end mu_end PF_p95 ...
+            Q_q50 Q_q95 dP50 Toil Tsteel energy_tot_sum E_orifice_sum E_struct_sum E_ratio P_mech_sum];
+    T = array2table(data, 'VariableNames', ...
        {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref','PF_t_on', ...
-        'f1','f2','PFA_mean','IDR_mean','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu'});
-
-    T.x10_max_damperli    = x10_max_damperli;
-    T.a10abs_max_damperli = a10abs_max_damperli;
-    % extra diagnostics wanted
-    T.dP95          = dP95;     T.Qcap95      = Qcap95;   T.cav_pct = cav_pct;
-    T.T_end         = T_end;    T.mu_end      = mu_end;    T.PF_p95  = PF_p95;
-    T.Q_q50         = Q_q50;    T.Q_q95       = Q_q95;    T.dP50 = dP50;
-    if ~isempty(Toil),   T.T_oil_end   = Toil;   end
-    if ~isempty(Tsteel), T.T_steel_end = Tsteel; end
-    T.energy_tot_sum      = energy_tot_sum;     T.E_orifice_sum     = E_orifice_sum;      T.E_struct_sum  = E_struct_sum;
-    T.E_ratio             = E_ratio;   T.P_mech_sum        = P_mech_sum;
+        'f1','f2','PFA_mean','IDR_mean','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu', ...
+        'x10_max_damperli','a10abs_max_damperli','dP95','Qcap95','cav_pct','T_end','mu_end','PF_p95', ...
+        'Q_q50','Q_q95','dP50','T_oil_end','T_steel_end','energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum'});
 
     % === BASELINE (pre-GA) ROW: params başlangıcıyla tek koşu, ilk satır ===
     T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W);
