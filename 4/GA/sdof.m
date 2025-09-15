@@ -38,8 +38,8 @@ try
     k_sd  = params_tmp.k_sd;
     c_lam0= params_tmp.c_lam0;
     orf.d_o = params_tmp.orf.d_o;
-    A_o   = n_orf * (pi*orf.d_o^2/4);
-    Qcap_big = max(orf.CdInf*A_o,1e-9) * sqrt(2*1.0e9/rho);
+      Ao   = n_orf * (pi*orf.d_o^2/4);
+      Qcap_big = max(orf.CdInf*Ao,1e-9) * sqrt(2*1.0e9/rho);
     c_lam_min = max(c_lam_min_abs, c_lam_min_frac*c_lam0);
 catch ME
     warning('Unable to apply GA parameters: %s', ME.message);
@@ -52,8 +52,8 @@ win = Utils.make_arias_window(t, ag); t5 = win.t5; t95 = win.t95;
 
 %% Damperless and damper responses
 [x0,a_rel0] = Utils.lin_MCK(t, ag, M, C0, K);
-[x_d,a_d,diag_d] = mck_with_damper(t, ag, M, C0, K, k_sd, c_lam0, Lori, ...
-    orf, rho, Ap, A_o, Qcap_big, mu_ref, thermal, T0_C, T_ref_C, b_mu, ...
+     [x_d,a_d,diag_d] = mck_with_damper(t, ag, M, C0, K, k_sd, c_lam0, Lori, ...
+     orf, rho, Ap, Ao, Qcap_big, mu_ref, thermal, T0_C, T_ref_C, b_mu, ...
     c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, ...
     story_mask, n_dampers_per_story, resFactor, cfg);
 
