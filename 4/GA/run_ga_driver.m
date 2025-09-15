@@ -1,8 +1,21 @@
 function [X,F,gaout] = run_ga_driver(scaled, params, optsEval, optsGA)
-if nargin < 2
-    error('run_ga_driver:input', 'scaled and params are required');
+%RUN_GA_DRIVER Hibrit GA sürücüsü
+%   [X,F,GAOUT] = RUN_GA_DRIVER(SCALED, PARAMS, OPTSEVAL, OPTSGA)
+% `scaled` ve `params` doğrudan argüman olarak verilebilir. Eğer boş
+% bırakılırsa, gerekli veri seti ve parametreler `prepare_inputs` yardımcı
+% fonksiyonu ile hazırlanır.
+
+narginchk(0,4);
+
+if nargin < 1 || isempty(scaled),  scaled  = []; end
+if nargin < 2 || isempty(params),  params  = []; end
+if nargin < 3 || isempty(optsEval), optsEval = struct; end
+if nargin < 4 || isempty(optsGA),   optsGA   = struct; end
+
+% Gerekli girdiler sağlanmadıysa otomatik hazırla
+if isempty(scaled) || isempty(params)
+    [scaled, params] = prepare_inputs(optsGA);
 end
-narginchk(2,4);
 % === Parpool Açılışı (temizlik + iş parçacığı sınırı) ===
 usePool = true;
 try
@@ -11,17 +24,12 @@ catch ME
     warning('run_ga_driver:parpool', 'Parallel pool unavailable: %s', ME.message);
     usePool = false;
 end
-%RUN_GA_DRIVER Hibrit GA sürücüsü: önceden hazırlanmış
-% `scaled` veri kümesi ve `params` yapısını kabul eder.
+%RUN_GA_DRIVER Hibrit GA sürücüsü: önceden hazırlanmış `scaled` veri kümesi
+% ve `params` yapısını kabul eder.
 %   [X,F,GAOUT] = RUN_GA_DRIVER(SCALED, PARAMS, OPTSEVAL, OPTSGA)
-% `scaled` ve `params` çalışma alanında hazır olmalı veya dışarıda bir
-% hazırlık fonksiyonu tarafından sağlanmalıdır. Uygunluk hesapları sırasında
-% IO yapılmaz; yeniden ölçekleme yoktur.
-
-%% Girdi Çözümleme
-% `scaled` ve `params` doğrudan argüman olarak alınır.
-if nargin < 3 || isempty(optsEval), optsEval = struct; end
-if nargin < 4 || isempty(optsGA),   optsGA   = struct; end
+% `scaled` veya `params` boş bırakılırsa `prepare_inputs` devreye girer ve
+% gerekli verileri oluşturur. Uygunluk hesapları sırasında IO yapılmaz;
+% yeniden ölçekleme yoktur.
 
 meta = struct('thr', Utils.default_qc_thresholds(struct()));
 
