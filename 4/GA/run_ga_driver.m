@@ -86,36 +86,6 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
             seed = max(min(seed, ub), lb);
             ns = min(size(seed,1), size(P0,1));
             P0(1:ns,:) = seed(1:ns,:);
-            % Önceki Pareto'yu kullanmak için en son ga_front.csv dosyasını okumayı dene
-                dd = dir(fullfile('out','ga_*'));
-                if ~isempty(dd)
-                    [~,ix] = max([dd.datenum]);
-                    latest = fullfile(dd(ix).folder, dd(ix).name, 'ga_front.csv');
-                    if exist(latest,'file')
-                        Tprev = readtable(latest);
-                        cols_pref = {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref','PF_t_on'};
-                        cols_av = cols_pref(ismember(cols_pref, Tprev.Properties.VariableNames));
-                        Xprev = Tprev{:, cols_av};
-                        if size(Xprev,2) < size(P0,2)
-                            Xpad = nan(size(Xprev,1), size(P0,2));
-                            Xpad(:,1:size(Xprev,2)) = Xprev;
-                            Xpad(:,end) = 0.75;
-                            Xprev = Xpad;
-                        end
-                            % mevcut ızgaraya sıkıştır ve nicemle
-                            for irow = 1:size(Xprev,1)
-                                Xprev(irow,:) = quant_clamp_x(Xprev(irow,:));
-                            end
-                            % karıştır: önceki + P0; eşsiz tut ve popülasyon boyutuna uydur
-                            Pmix = unique([Xprev; P0], 'rows', 'stable');
-                            if size(Pmix,1) >= options.PopulationSize
-                                P0 = Pmix(1:options.PopulationSize,:);
-                            else
-                                need = options.PopulationSize - size(Pmix,1);
-                                P0 = [Pmix; P0(1:need,:)];
-                            end
-                    end
-                end
             options = optimoptions(options,'InitialPopulationMatrix', P0);
         end
 
