@@ -20,18 +20,6 @@ if ~isfield(opts,'cooldown_s_list'), opts.cooldown_s_list = [60 180 300]; end
 if ~isfield(opts,'rng_seed'), opts.rng_seed = 42; end
 if ~isfield(opts,'rank_metric'), opts.rank_metric = 'E_orifice_win'; end
 
-% Sessizlik/çıktı bayrakları ve çıktı dizini
-quiet = ~isfield(opts,'quiet') || opts.quiet;
-% Politika koşuları için varsayılan olarak sonuçlar dışa aktarılmaz
-do_export = isfield(opts,'do_export') && opts.do_export;
-if do_export
-    ts = datestr(now,'yyyymmdd_HHMMSS_FFF');
-    outdir = fullfile('out', ts);
-    if ~exist(outdir,'dir'), mkdir(outdir); end
-else
-    outdir = '';
-end
-
 % Konsol başlığı
 
 % Hidrolik ve termal temel parametreleri yazdır
@@ -48,7 +36,6 @@ end
 %% Temel Koşu
 % Delta hesapları ve worst_first sıralaması için baz koşu
 base_opts = opts; base_opts.thermal_reset = 'each'; base_opts.order = 'natural';
-base_opts.do_export = false;
 [base_summary, base_all] = run_batch_windowed(scaled, params, base_opts);
 basePFA_mean = mean(base_summary.table.PFA);
 baseIDR_mean = mean(base_summary.table.IDR);
@@ -60,17 +47,12 @@ base_mu_end_min = min(base_summary.table.mu_end);
 base_qc_pass = sum(base_summary.table.qc_pass);
 base_qc_n = height(base_summary.table);
 
-orders_struct = compute_orders(opts, scaled, base_all, quiet);
+orders_struct = compute_orders(opts, scaled, base_all);
 base_metrics = struct('PFA_mean', basePFA_mean, 'IDR_mean', baseIDR_mean, 'T_end_max', baseTend_max);
-P = run_combinations(scaled, params, opts, orders_struct, base_metrics, quiet);
-
-%% Sonuçların Kaydedilmesi
-if do_export
-    export_results(outdir, scaled, params, opts, base_summary, base_all, P);
-end
+P = run_combinations(scaled, params, opts, orders_struct, base_metrics);
 end
 
-function orders_struct = compute_orders(opts, scaled, base_all, quiet)
+function orders_struct = compute_orders(opts, scaled, base_all)
 %COMPUTE_ORDERS Farklı sıralama stratejilerini hazırlar
 nRec = numel(scaled);
 orders_struct.natural = 1:nRec;
@@ -96,7 +78,7 @@ if any(strcmp(opts.orders,'worst_first'))
 end
 end
 
-function P = run_combinations(scaled, params, opts, orders_struct, base_metrics, quiet)
+function P = run_combinations(scaled, params, opts, orders_struct, base_metrics)
 %RUN_COMBINATIONS Politika-sıra kombinasyonlarını değerlendirir
 P = struct('policy',{},'order',{},'cooldown_s',{},'summary',{},'qc',{},'deltas',{});
 for ip = 1:numel(opts.policies)
@@ -115,7 +97,6 @@ for ip = 1:numel(opts.policies)
             run_opts.order = ord;
             run_opts.thermal_reset = pol;
             run_opts.order_perm = orders_struct.(ord);
-            run_opts.do_export = false;
             if strcmp(pol,'cooldown'), run_opts.cooldown_s = cdval; end
             [summary, ~] = run_batch_windowed(scaled, params, run_opts);
 
@@ -129,7 +110,7 @@ for ip = 1:numel(opts.policies)
                             'IDR', curIDR_mean - base_metrics.IDR_mean, ...
                             'T_end', curTend_max - base_metrics.T_end_max);
 
-            report_combination(pol, ord, cdval, summary, deltas, qc, base_metrics, quiet);
+            report_combination(pol, ord, cdval, summary, deltas, qc, base_metrics);
 
             P(end+1) = struct('policy',pol,'order',ord,'cooldown_s',cdval, ...
                 'summary',summary.table,'qc',qc,'deltas',deltas); %#ok<AGROW>
