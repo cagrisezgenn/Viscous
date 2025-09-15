@@ -24,8 +24,8 @@ a_top_abs = a_rel(:,end) + ag(:);
 metr.PFA = max(abs(a_top_abs(idx)));
 
 % Pencere içindeki tepe kat mutlak yerdeğiştirmesi ve ivmesi
-metr.x10_max_D    = max(abs(x(idx,end)));
-metr.a10abs_max_D = max(abs(a_top_abs(idx)));
+metr.x10_max_damperli    = max(abs(x(idx,end)));
+metr.a10abs_max_damperli = max(abs(a_top_abs(idx)));
 
 % Katlar arası göreli ötelenme oranının maksimumu
 drift = (x(:,2:end) - x(:,1:end-1)) / story_height;
@@ -92,19 +92,19 @@ w_last  = find(idx,1,'last');
 i0 = max(w_first-1,1);
 
 % Toplam süreç sonundaki orifis ve yapı enerjileri
-metr.E_orifice = ts.E_orf(end);
-metr.E_struct  = ts.E_struct(end);
-metr.E_ratio   = metr.E_orifice / max(metr.E_struct, eps);
+metr.E_orifice_sum = ts.E_orf(end);
+metr.E_struct_sum  = ts.E_struct(end);
+metr.E_ratio   = metr.E_orifice_sum / max(metr.E_struct_sum, eps);
 % Toplam enerji ve ortalama mekanik güç
-metr.energy_tot = metr.E_orifice + metr.E_struct;
+metr.energy_tot_sum = metr.E_orifice_sum + metr.E_struct_sum;
 try
     if isfield(ts,'P_sum') && ~isempty(ts.P_sum)
-        metr.P_mech = mean(ts.P_sum(idx));
+        metr.P_mech_sum = mean(ts.P_sum(idx));
     else
-        metr.P_mech = NaN;
+        metr.P_mech_sum = NaN;
     end
 catch
-    metr.P_mech = NaN;
+    metr.P_mech_sum = NaN;
 end
 
 % Seçilen pencere içindeki enerji birikimleri
