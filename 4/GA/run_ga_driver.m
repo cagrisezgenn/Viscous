@@ -1,4 +1,8 @@
 function [X,F,gaout] = run_ga_driver(scaled, params, optsEval, optsGA)
+if nargin < 2
+    error('run_ga_driver:input', 'scaled and params are required');
+end
+narginchk(2,4);
 % === Parpool Açılışı (temizlik + iş parçacığı sınırı) ===
 usePool = true;
 try
