@@ -55,8 +55,7 @@ parpool_hard_reset(16);
             params = params_local;
         end
         meta = struct();
-        if ~isfield(S,'thr'), S.thr = struct(); end
-        meta.thr       = Utils.default_qc_thresholds(S.thr);
+        meta.thr = Utils.default_qc_thresholds(Utils.getfield_default(S,'thr', struct()));
     else
         scaled = scaledOrSnap_local;
         params = params_local;
@@ -68,12 +67,11 @@ parpool_hard_reset(16);
                 % Temel parametreleri yükle ve T1 hesapla
                 parametreler;
                 % Veri kümesini ölçekle (band/trim) ve dondur
-                    % Auto‑prep: dışarıdan sağlanmışsa yükleme seçeneklerini kullan
-                    if exist('optsGA','var') && isstruct(optsGA) && isfield(optsGA,'load_opts')
-                        [~, scaled] = load_ground_motions(T1, optsGA.load_opts);
-                    else
-                        % IM ayarlarını tamamen varsayılanlara bırak
+                    load_opts = Utils.getfield_default(optsGA,'load_opts',[]);
+                    if isempty(load_opts)
                         [~, scaled] = load_ground_motions(T1);
+                    else
+                        [~, scaled] = load_ground_motions(T1, load_opts);
                     end
                 % Parametre yapısını oluştur (damperlinon yansısı)
                 params = struct('M',M,'C0',C0,'K',K,'k_sd',k_sd,'c_lam0',c_lam0,'Lori',Lori, ...
@@ -97,8 +95,7 @@ parpool_hard_reset(16);
     if nargin < 3 || isempty(optsEval), optsEval = struct; end
     optsEval.do_export     = false;
     optsEval.quiet         = true;
-    if ~isfield(optsEval,'thr'), optsEval.thr = meta.thr; end
-    optsEval.thr = Utils.default_qc_thresholds(optsEval.thr);
+    optsEval.thr = Utils.default_qc_thresholds(Utils.getfield_default(optsEval,'thr', meta.thr));
     %% GA Kurulumu
     % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
     if nargin < 4 || isempty(optsGA), optsGA = struct; end
@@ -128,7 +125,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
 
     %% Başlangıç Popülasyonu
     % Izgaraya hizalı ilk popülasyonu oluştur (tohumlarla birlikte).
-        if ~isfield(optsGA,'InitialPopulationMatrix') || isempty(optsGA.InitialPopulationMatrix)
+        if isempty(Utils.getfield_default(optsGA,'InitialPopulationMatrix',[]))
             step_vec = [0.1 NaN 0.01 0.02 0.01 0.01 0.05 1 25 1 0.5 5 NaN 0.05 0.1];
             P0 = Utils.initial_pop_grid(lb, ub, options.PopulationSize, step_vec);
             % Tohumlar (yeni sınırlar içinde uygulanabilir)

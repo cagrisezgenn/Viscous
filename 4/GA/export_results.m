@@ -17,7 +17,8 @@ params = Utils.recompute_damper_params(params);
 
     % Varsa türetilmiş parametreler
     params_derived = struct();
-        params_derived.C_th = compute_Cth_effective(params);
+        % Thermal mass derived parameter uses shared utility
+        params_derived.C_th = Utils.compute_Cth_effective(params);
 
     % qc özet bilgisi
         pass = sum(summary.table.qc_pass);
@@ -152,17 +153,4 @@ if ~isempty(varargin)
 end
 
 end % export_results fonksiyon sonu
-
-%%% --- Yardımcı Fonksiyonlar ---
-function Cth = compute_Cth_effective(params)
-    % Sıcaklık kapasitesinin etkin değerini hesaplar
-    nStories = size(params.M,1) - 1;
-        mask = params.story_mask(:);  if numel(mask)==1, mask = mask*ones(nStories,1); end
-    ndps = params.n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
-    multi = (mask .* ndps);
-    V_oil_per = params.resFactor * (params.Ap * (2*params.Lgap));
-    m_oil_tot = sum(multi) * (params.rho * V_oil_per);
-    m_steel_tot = params.steel_to_oil_mass_ratio * m_oil_tot;
-    Cth = max(m_oil_tot*params.cp_oil + m_steel_tot*params.cp_steel, eps);
-end
 
