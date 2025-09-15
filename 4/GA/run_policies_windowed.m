@@ -58,14 +58,15 @@ try
     Qcap_big = Utils.getfield_default(params,'Qcap_big',NaN);
     hA = NaN; if isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), hA = params.thermal.hA_W_perK; end
     resFactor = Utils.getfield_default(params,'resFactor',NaN);
-    if ~quiet\n        fprintf('Hydraulics: n_orf=%g, d_o~=%g m, A_o=%s, Qcap_big=%g, hA=%g, resFactor=%g\n', n_orf, d_o, mat2str(size(A_o)), Qcap_big, hA, resFactor);\n    end\ncatch ME
+    if ~quiet
+        fprintf('Hydraulics: n_orf=%g, d_o~=%g m, A_o=%s, Qcap_big=%g, hA=%g, resFactor=%g\n', n_orf, d_o, mat2str(size(A_o)), Qcap_big, hA, resFactor);
+    end
+catch ME
     warning('run_policies_windowed echo params: %s', ME.message);
 end
 
-nRec = numel(scaled);
-
 %% Temel Koşu
-% Delta hesapları ve worst\_first sıralaması için baz koşu
+% Delta hesapları ve worst_first sıralaması için baz koşu
 base_opts = opts; base_opts.thermal_reset = 'each'; base_opts.order = 'natural';
 base_opts.do_export = false;
 [base_summary, base_all] = run_batch_windowed(scaled, params, base_opts);
@@ -81,11 +82,25 @@ base_qc_n = height(base_summary.table);
 if ~quiet
     fprintf(['BASE (each/natural): PFA=%.3g, IDR=%.3g, dP95=%.3g MPa, Qcap95=%.2f, ' ...
             'cav%%=%.1f, T_end_max=%.1f C, mu_end_min=%.2f, qc_rate=%d/%d\n'], ...
-        basePFA_mean, baseIDR_mean, base_dP95_max/1e6, base_Qcap95_max, base_cav_max*100, baseTend_max,
+        basePFA_mean, baseIDR_mean, base_dP95_max/1e6, base_Qcap95_max, base_cav_max*100, baseTend_max, ...
         base_mu_end_min, base_qc_pass, base_qc_n);
 end
 
-%% Sıra Ön Hesapları
+orders_struct = compute_orders(opts, scaled, base_all, quiet);
+base_metrics = struct('PFA_mean', basePFA_mean, 'IDR_mean', baseIDR_mean, 'T_end_max', baseTend_max);
+P = run_combinations(scaled, params, opts, orders_struct, base_metrics, quiet);
+
+%% Sonuçların Kaydedilmesi
+if do_export
+    export_results(outdir, scaled, params, opts, base_summary, base_all, P);
+end
+if ~quiet, fprintf('Saved to %s\n', outdir); end
+if do_export && ~quiet, diary off; end
+end
+
+function orders_struct = compute_orders(opts, scaled, base_all, quiet)
+%COMPUTE_ORDERS Farklı sıralama stratejilerini hazırlar
+nRec = numel(scaled);
 orders_struct.natural = 1:nRec;
 if any(strcmp(opts.orders,'random'))
     rng(opts.rng_seed);
@@ -111,8 +126,10 @@ if any(strcmp(opts.orders,'worst_first'))
         warning('run_policies_windowed ranking: %s', ME.message);
     end
 end
+end
 
-%% Kombinasyon Döngüsü
+function P = run_combinations(scaled, params, opts, orders_struct, base_metrics, quiet)
+%RUN_COMBINATIONS Politika-sıra kombinasyonlarını değerlendirir
 P = struct('policy',{},'order',{},'cooldown_s',{},'summary',{},'qc',{},'deltas',{});
 for ip = 1:numel(opts.policies)
     pol = opts.policies{ip};
@@ -138,84 +155,70 @@ for ip = 1:numel(opts.policies)
             qc.pass_fraction = mean(summary.table.qc_pass);
             qc.n = height(summary.table);
 
-            % Kombinasyon için özetler
             curPFA_mean = mean(summary.table.PFA);
             curIDR_mean = mean(summary.table.IDR);
             curTend_max = max(summary.table.T_end);
-            deltas = struct('PFA', curPFA_mean - basePFA_mean, ...
-                            'IDR', curIDR_mean - baseIDR_mean, ...
-                            'T_end', curTend_max - baseTend_max);
+            deltas = struct('PFA', curPFA_mean - base_metrics.PFA_mean, ...
+                            'IDR', curIDR_mean - base_metrics.IDR_mean, ...
+                            'T_end', curTend_max - base_metrics.T_end_max);
 
-            % En kötü kayıtların kaydı
-            [worstPFA, idxP] = max(summary.table.PFA);
-            nP = summary.table.name{idxP};
-            if ~quiet, fprintf('Worst PFA (%s,%s): %s\n', pol, ord, nP); end
-            [worstIDR, idxI] = max(summary.table.IDR); %#ok<NASGU>
-            nI = summary.table.name{idxI};
-            if ~quiet, fprintf('Worst IDR (%s,%s): %s\n', pol, ord, nI); end
-
-            % Politika karşılaştırma logu
-            tolPFA = 0.15 * basePFA_mean;
-            tolIDR = 0.15 * baseIDR_mean;
-            passPFA = abs(deltas.PFA) <= tolPFA;
-            passIDR = abs(deltas.IDR) <= tolIDR;
-            if ~quiet
-                fprintf('Delta vs base: dPFA=%.4g (|d|<=%.4g? %d), dIDR=%.4g (|d|<=%.4g? %d), qc_rate=%.2f\n', ...
-                    deltas.PFA, tolPFA, passPFA, deltas.IDR, tolIDR, passIDR, qc.pass_fraction);
-            end
-
-            % Tek satırlık özet
-            n_pass = sum(summary.table.qc_pass);
-            n_tot  = height(summary.table);
-            PFAm   = curPFA_mean; IDRm = curIDR_mean; T_end_max = curTend_max;
-            pass_flag_15pct = 'OK'; if ~(passPFA && passIDR), pass_flag_15pct = 'FAIL'; end
-            if ~quiet
-                fprintf(['policy=%s | order=%s | cd=%ds | PFA=%.3g (d=%+.2f%%) | IDR=%.3g (d=%+.2f%%) | ' ...
-                        'T_end_max=%.1f C | qc_rate=%d/%d %s\n'], ...
-                    pol, ord, cdval, PFAm, 100*(PFAm-basePFA_mean)/max(basePFA_mean,eps), ...
-                    IDRm, 100*(IDRm-baseIDR_mean)/max(baseIDR_mean,eps), T_end_max, n_pass, n_tot, pass_flag_15pct);
-                % En kötü iki kaydı bildir
-                try
-                    kshow = min(2, height(summary.table));
-                    [~,ix] = maxk(summary.table.PFA, kshow);
-                    if kshow==2
-                        fprintf('  worst2(PFA): %s | %s\n', summary.table.name{ix(1)}, summary.table.name{ix(2)});
-                    elseif kshow==1
-                        fprintf('  worst2(PFA): %s | -\n', summary.table.name{ix(1)});
-                    end
-                catch ME
-                    warning('run_policies_windowed worst2: %s', ME.message);
-                end
-            end
-
-            % Opsiyonel clamp özeti
-            try
-                if ~quiet
-                    tot_clamps = sum(summary.table.clamp_hits);
-                    nz_idx = find(summary.table.clamp_hits>0);
-                    nz_names = summary.table.name(nz_idx);
-                    if ~isempty(nz_names)
-                        fprintf('clamp_hits total=%d | records: %s\n', tot_clamps, strjoin(nz_names.', ', '));
-                    else
-                        fprintf('clamp_hits total=%d\n', tot_clamps);
-                    end
-                end
-            catch ME
-                warning('run_policies_windowed clamp summary: %s', ME.message);
-            end
+            report_combination(pol, ord, cdval, summary, deltas, qc, base_metrics, quiet);
 
             P(end+1) = struct('policy',pol,'order',ord,'cooldown_s',cdval, ...
                 'summary',summary.table,'qc',qc,'deltas',deltas); %#ok<AGROW>
         end
     end
 end
-
-%% Sonuçların Kaydedilmesi
-if do_export
-    export_results(outdir, scaled, params, opts, base_summary, base_all, P);
-end
-if ~quiet, fprintf('Saved to %s\n', outdir); end
-if do_export && ~quiet, diary off; end
 end
 
+function report_combination(pol, ord, cdval, summary, deltas, qc, base_metrics, quiet)
+%REPORT_COMBINATION Kombinasyon sonuçlarını loglar
+if quiet, return; end
+[~, idxP] = max(summary.table.PFA);
+fprintf('Worst PFA (%s,%s): %s\n', pol, ord, summary.table.name{idxP});
+[~, idxI] = max(summary.table.IDR);
+fprintf('Worst IDR (%s,%s): %s\n', pol, ord, summary.table.name{idxI});
 
+% Politika karşılaştırma logu
+tolPFA = 0.15 * base_metrics.PFA_mean;
+tolIDR = 0.15 * base_metrics.IDR_mean;
+passPFA = abs(deltas.PFA) <= tolPFA;
+passIDR = abs(deltas.IDR) <= tolIDR;
+fprintf('Delta vs base: dPFA=%.4g (|d|<=%.4g? %d), dIDR=%.4g (|d|<=%.4g? %d), qc_rate=%.2f\n', ...
+    deltas.PFA, tolPFA, passPFA, deltas.IDR, tolIDR, passIDR, qc.pass_fraction);
+
+% Tek satırlık özet
+n_pass = sum(summary.table.qc_pass);
+n_tot  = height(summary.table);
+PFAm   = mean(summary.table.PFA);
+IDRm   = mean(summary.table.IDR);
+T_end_max = max(summary.table.T_end);
+pass_flag_15pct = 'OK'; if ~(passPFA && passIDR), pass_flag_15pct = 'FAIL'; end
+fprintf(['policy=%s | order=%s | cd=%ds | PFA=%.3g (d=%+.2f%%) | IDR=%.3g (d=%+.2f%%) | ' ...
+        'T_end_max=%.1f C | qc_rate=%d/%d %s\n'], ...
+    pol, ord, cdval, PFAm, 100*(PFAm-base_metrics.PFA_mean)/max(base_metrics.PFA_mean,eps), ...
+    IDRm, 100*(IDRm-base_metrics.IDR_mean)/max(base_metrics.IDR_mean,eps), T_end_max, n_pass, n_tot, pass_flag_15pct);
+try
+    kshow = min(2, height(summary.table));
+    [~,ix] = maxk(summary.table.PFA, kshow);
+    if kshow==2
+        fprintf('  worst2(PFA): %s | %s\n', summary.table.name{ix(1)}, summary.table.name{ix(2)});
+    elseif kshow==1
+        fprintf('  worst2(PFA): %s | -\n', summary.table.name{ix(1)});
+    end
+catch ME
+    warning('run_policies_windowed worst2: %s', ME.message);
+end
+try
+    tot_clamps = sum(summary.table.clamp_hits);
+    nz_idx = find(summary.table.clamp_hits>0);
+    nz_names = summary.table.name(nz_idx);
+    if ~isempty(nz_names)
+        fprintf('clamp_hits total=%d | records: %s\n', tot_clamps, strjoin(nz_names.', ', '));
+    else
+        fprintf('clamp_hits total=%d\n', tot_clamps);
+    end
+catch ME
+    warning('run_policies_windowed clamp summary: %s', ME.message);
+end
+end
