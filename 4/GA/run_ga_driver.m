@@ -687,24 +687,25 @@ end
 
 function xq = quant_clamp_x(x)
     % Apply the same quantization/clamps as in eval
-    x = x(:)';
-    x(1) = Utils.quantize_step(x(1),0.05);
-    x(3) = Utils.quantize_step(x(3),0.01);
-    x(4) = Utils.quantize_step(x(4),0.02);
-    x(5) = Utils.quantize_step(x(5),0.01);
-    x(6) = Utils.quantize_step(x(6),0.01);
-    x(7) = Utils.quantize_step(x(7),0.05);
-    if numel(x) >= 8,  x(8)  = Utils.quantize_step(x(8),1);   end
-    if numel(x) >= 9,  x(9)  = Utils.quantize_step(x(9),25);  end
-    if numel(x) >=10,  x(10) = Utils.quantize_step(x(10),1);  end
-    if numel(x) >=11,  x(11) = Utils.quantize_step(x(11),0.5);end
-    if numel(x) >=12,  x(12) = Utils.quantize_step(x(12),5);  end
-    if numel(x) >=13,  x(13) = round(x(13));                end
-    if numel(x) >=14,  x(14) = Utils.quantize_step(x(14),0.05); end
-    if numel(x) >=15,  x(15) = Utils.quantize_step(x(15),0.25); end
-    x(2) = round(max(x(2),1));
-    if numel(x) >=13, x(13) = round(max(x(13),1)); end
-        xq = x;
+    xq = x;
+    if isvector(x), xq = x(:)'; end
+    xq(:,1) = Utils.quantize_step(xq(:,1),0.05);
+    xq(:,3) = Utils.quantize_step(xq(:,3),0.01);
+    xq(:,4) = Utils.quantize_step(xq(:,4),0.02);
+    xq(:,5) = Utils.quantize_step(xq(:,5),0.01);
+    xq(:,6) = Utils.quantize_step(xq(:,6),0.01);
+    xq(:,7) = Utils.quantize_step(xq(:,7),0.05);
+    if size(xq,2) >= 8,  xq(:,8)  = Utils.quantize_step(xq(:,8),1);   end
+    if size(xq,2) >= 9,  xq(:,9)  = Utils.quantize_step(xq(:,9),25);  end
+    if size(xq,2) >=10,  xq(:,10) = Utils.quantize_step(xq(:,10),1);  end
+    if size(xq,2) >=11,  xq(:,11) = Utils.quantize_step(xq(:,11),0.5);end
+    if size(xq,2) >=12,  xq(:,12) = Utils.quantize_step(xq(:,12),5);  end
+    if size(xq,2) >=13,  xq(:,13) = round(xq(:,13));                end
+    if size(xq,2) >=14,  xq(:,14) = Utils.quantize_step(xq(:,14),0.05); end
+    if size(xq,2) >=15,  xq(:,15) = Utils.quantize_step(xq(:,15),0.25); end
+    xq(:,2) = round(max(xq(:,2),1));
+    if size(xq,2) >=13, xq(:,13) = round(max(xq(:,13),1)); end
+    if isvector(x), xq = xq(:)'; end
 end
 
 function out = memo_store(cmd, key, val)
