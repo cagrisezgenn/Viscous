@@ -39,7 +39,7 @@ base_opts = opts; base_opts.thermal_reset = 'each'; base_opts.order = 'natural';
 [base_summary, base_all] = run_batch_windowed(scaled, params, base_opts);
 basePFA_mean = mean(base_summary.table.PFA);
 baseIDR_mean = mean(base_summary.table.IDR);
-baseTend_max = max(base_summary.table.T_end);
+base_T_end_max = max(base_summary.table.T_end);
 base_dP95_max = max(base_summary.table.dP95);
 base_Qcap95_max = max(base_summary.table.Qcap95);
 base_cav_max = max(base_summary.table.cav_pct);
@@ -48,7 +48,7 @@ base_qc_pass = sum(base_summary.table.qc_pass);
 base_qc_n = height(base_summary.table);
 
 orders_struct = compute_orders(opts, scaled, base_all);
-base_metrics = struct('PFA_mean', basePFA_mean, 'IDR_mean', baseIDR_mean, 'T_end_max', baseTend_max);
+base_metrics = struct('PFA_mean', basePFA_mean, 'IDR_mean', baseIDR_mean, 'T_end_max', base_T_end_max);
 P = run_combinations(scaled, params, opts, orders_struct, base_metrics);
 end
 
@@ -105,10 +105,10 @@ for ip = 1:numel(opts.policies)
 
             curPFA_mean = mean(summary.table.PFA);
             curIDR_mean = mean(summary.table.IDR);
-            curTend_max = max(summary.table.T_end);
+            cur_T_end_max = max(summary.table.T_end);
             deltas = struct('PFA', curPFA_mean - base_metrics.PFA_mean, ...
                             'IDR', curIDR_mean - base_metrics.IDR_mean, ...
-                            'T_end', curTend_max - base_metrics.T_end_max);
+                            'T_end', cur_T_end_max - base_metrics.T_end_max);
 
             report_combination(pol, ord, cdval, summary, deltas, qc, base_metrics);
 

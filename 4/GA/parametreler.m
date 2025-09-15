@@ -58,16 +58,15 @@ rho   = 850;       % Yağ yoğunluğu [kg/m^3]
 n_orf = 6;         % Kat başına orifis sayısı
 
 % Orifis katsayıları
-orf = struct();
-orf.Cd0   = 0.61;                    % Re → 0 limitindeki boşalım katsayısı
-orf.CdInf = 0.80;                    % Yüksek Re için boşalım katsayısı
-orf.Rec   = 3000;                    % Kritik Reynolds sayısı
-orf.p_exp = 1.1;                     % Geçiş eğrisinin eğimi
-orf.p_amb = 1.0e5;                   % Ortam basıncı [Pa]
-orf.p_cav_eff = 2.0e3;               % Etkin kavitasyon eşiği [Pa]
-orf.cav_sf    = 0.90;                % Kavitasyon emniyet katsayısı
-orf.d_o   = d_o;                     % Re düzeltmesi için çap [m]
-orf.veps  = 0.10;                    % Düşük hız yumuşatma [m/s]
+orf = struct('Cd0', 0.61, ...        % Re → 0 limitindeki boşalım katsayısı
+             'CdInf', 0.80, ...      % Yüksek Re için boşalım katsayısı
+             'Rec', 3000, ...        % Kritik Reynolds sayısı
+             'p_exp', 1.1, ...       % Geçiş eğrisinin eğimi
+             'p_amb', 1.0e5, ...     % Ortam basıncı [Pa]
+             'p_cav_eff', 2.0e3, ... % Etkin kavitasyon eşiği [Pa]
+             'cav_sf', 0.90, ...     % Kavitasyon emniyet katsayısı
+             'd_o', d_o, ...         % Re düzeltmesi için çap [m]
+             'veps', 0.10);          % Düşük hız yumuşatma [m/s]
 
 
 % Termal model parametreleri

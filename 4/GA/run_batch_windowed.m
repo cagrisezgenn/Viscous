@@ -140,25 +140,14 @@ function summary = build_summary_table(vars, opts)
 %BUILD_SUMMARY_TABLE Hesaplanan metrikleri tabloya dönüştür ve QC uygula
 summary = struct();
 
-summary.table = table(vars.names, vars.scale, vars.SaT1, vars.t5, vars.t95, vars.coverage, vars.policy_col, vars.order_col, vars.cooldown_col, ...
-    vars.PFA, vars.IDR, vars.dP95, vars.Qcap95, vars.cav_pct, vars.zeta1_hot, vars.z2_over_z1_hot, vars.P_mech, vars.Re_max, ...
-    vars.Q_q95, vars.Q_q50, vars.dP50, vars.x10_max_D, vars.a10abs_max_D, vars.E_orifice, vars.E_struct, vars.E_ratio, vars.qc_pass, ...
-    vars.T_start, vars.T_end, vars.mu_end, vars.clamp_hits, vars.Dp_mm_col, vars.mu_ref_col, ...
-    'VariableNames', {'name','scale','SaT1','t5','t95','coverage','policy','order','cooldown_s', ...
-    'PFA','IDR','dP95','Qcap95','cav_pct','zeta1_hot','z2_over_z1_hot','P_mech','Re_max', ...
-    'Q_q95','Q_q50','dP50','x10_max_D','a10abs_max_D','E_orifice','E_struct','E_ratio','qc_pass', ...
-    'T_start','T_end','mu_end','clamp_hits','Dp_mm','mu_ref'});
-
-summary.all_out = vars.all_out;
-
 thr = opts.thr;
-ok_T    = summary.table.T_end   <= thr.T_end_max;
-ok_mu   = summary.table.mu_end  >= thr.mu_end_min;
-ok_dP   = summary.table.dP95    <= thr.dP95_max;
-ok_Qcap = summary.table.Qcap95  <  thr.Qcap95_max;
-ok_cav  = summary.table.cav_pct == 0;
-qc_reason = strings(height(summary.table),1);
-for r = 1:height(summary.table)
+ok_T    = vars.T_end   <= thr.T_end_max;
+ok_mu   = vars.mu_end  >= thr.mu_end_min;
+ok_dP   = vars.dP95    <= thr.dP95_max;
+ok_Qcap = vars.Qcap95  <  thr.Qcap95_max;
+ok_cav  = vars.cav_pct == 0;
+qc_reason = strings(numel(vars.names),1);
+for r = 1:numel(vars.names)
     bad = {};
     if ~ok_T(r),    bad{end+1}='T';  end %#ok<AGROW>
     if ~ok_mu(r),   bad{end+1}='mu'; end %#ok<AGROW>
@@ -167,11 +156,17 @@ for r = 1:height(summary.table)
     if ~ok_cav(r),  bad{end+1}='cav'; end %#ok<AGROW>
     qc_reason(r) = strjoin(bad,',');
 end
-summary.table.ok_T = ok_T;
-summary.table.ok_mu = ok_mu;
-summary.table.ok_dP = ok_dP;
-summary.table.ok_Qcap = ok_Qcap;
-summary.table.ok_cav = ok_cav;
-summary.table.qc_reason = qc_reason;
+
+summary.table = table(vars.names, vars.scale, vars.SaT1, vars.t5, vars.t95, vars.coverage, vars.policy_col, vars.order_col, vars.cooldown_col, ...
+    vars.PFA, vars.IDR, vars.dP95, vars.Qcap95, vars.cav_pct, vars.zeta1_hot, vars.z2_over_z1_hot, vars.P_mech, vars.Re_max, ...
+    vars.Q_q95, vars.Q_q50, vars.dP50, vars.x10_max_D, vars.a10abs_max_D, vars.E_orifice, vars.E_struct, vars.E_ratio, vars.qc_pass, ...
+    vars.T_start, vars.T_end, vars.mu_end, vars.clamp_hits, vars.Dp_mm_col, vars.mu_ref_col, ...
+    ok_T, ok_mu, ok_dP, ok_Qcap, ok_cav, qc_reason, ...
+    'VariableNames', {'name','scale','SaT1','t5','t95','coverage','policy','order','cooldown_s', ...
+    'PFA','IDR','dP95','Qcap95','cav_pct','zeta1_hot','z2_over_z1_hot','P_mech','Re_max', ...
+    'Q_q95','Q_q50','dP50','x10_max_D','a10abs_max_D','E_orifice','E_struct','E_ratio','qc_pass', ...
+    'T_start','T_end','mu_end','clamp_hits','Dp_mm','mu_ref','ok_T','ok_mu','ok_dP','ok_Qcap','ok_cav','qc_reason'});
+
+summary.all_out = vars.all_out;
 end
 
