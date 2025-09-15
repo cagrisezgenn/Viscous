@@ -232,12 +232,28 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
             v_Tend = Si.table.T_end;
             v_mu   = Si.table.mu_end;
 
-            v_PFp95 = Si.table.PF_p95;
-            v_Qq50  = Si.table.Q_q50;
-            v_Qq95  = Si.table.Q_q95;
-            v_dPq50 = Si.table.dP50;
-        v_Toil = [];
-        v_Tsteel = [];
+            if ismember('PF_p95', Si.table.Properties.VariableNames)
+                v_PFp95 = Si.table.PF_p95;
+            else
+                v_PFp95 = 0;
+            end
+            if ismember('Q_q50', Si.table.Properties.VariableNames)
+                v_Qq50 = Si.table.Q_q50;
+            else
+                v_Qq50 = 0;
+            end
+            if ismember('Q_q95', Si.table.Properties.VariableNames)
+                v_Qq95 = Si.table.Q_q95;
+            else
+                v_Qq95 = 0;
+            end
+            if ismember('dP50', Si.table.Properties.VariableNames)
+                v_dPq50 = Si.table.dP50;
+            else
+                v_dPq50 = 0;
+            end
+            v_Toil = [];
+            v_Tsteel = [];
 
         if ismember('E_orifice_sum', Si.table.Properties.VariableNames)
             v_Eor = Si.table.E_orifice_sum;
