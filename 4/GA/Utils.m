@@ -1,35 +1,31 @@
-% Bu dosya, farklı statik yardımcı fonksiyonları barındıran Utils sınıfını tanımlar.
+% Bu dosya, farklÄ± statik yardÄ±mcÄ± fonksiyonlarÄ± barÄ±ndÄ±ran Utils sÄ±nÄ±fÄ±nÄ± tanÄ±mlar.
 classdef Utils
-%UTILS Küçük yardımcı fonksiyonları statik yöntemler olarak toplayan sınıf.
+%UTILS KÃ¼Ã§Ã¼k yardÄ±mcÄ± fonksiyonlarÄ± statik yÃ¶ntemler olarak toplayan sÄ±nÄ±f.
     methods(Static)
-        %% Yumuşak Minimum
+        %% YumuÅak Minimum
         function y = softmin(a,b,epsm)
-            % İki değerin yumuşak minimumunu hesaplar.
-            % Örnek kullanım: y = Utils.softmin(3,5,0.2);
+            % Ä°ki deÄerin yumuÅak minimumunu hesaplar.
+            % Ãrnek kullanÄ±m: y = Utils.softmin(3,5,0.2);
             y = 0.5*(a + b - sqrt((a - b).^2 + epsm.^2));
         end
 
-        %% Softmin epsilon (�l�ekli)
+        %% Softmin epsilon (ölçekli)
         function epsm = softmin_eps(cfg)
-            % SOFTMIN_EPS  dP yumu�atma epsilonu (�l�ekli) d�nd�r�r.
-            %  epsm = c_eps * num.dP_cap; c_eps varsay�lan 0.03.
-            try
-                c_eps = Utils.getfield_default(cfg.num,'softmin_ceps',0.03);
-                dPcap = Utils.getfield_default(cfg.num,'dP_cap',NaN);
-                if isfinite(dPcap) && dPcap>0
-                    epsm = max(1e3, c_eps * dPcap);
-                else
-                    epsm = 1e5; % emniyetli varsay�lan
-                end
-            catch
-                epsm = 1e5;
+            % SOFTMIN_EPS  dP yumuşatma epsilonu (ölçekli) döndürür.
+            %  epsm = c_eps * num.dP_cap; c_eps varsayılan 0.03.
+            c_eps = Utils.getfield_default(cfg.num,'softmin_ceps',0.03);
+            dPcap = Utils.getfield_default(cfg.num,'dP_cap',NaN);
+            if isfinite(dPcap) && dPcap>0
+                epsm = max(1e3, c_eps * dPcap);
+            else
+                epsm = 1e5; % emniyetli varsayılan
             end
         end
 
-        %% Orantılı Pencere Ağırlığı
+        %% OrantÄ±lÄ± Pencere AÄÄ±rlÄ±ÄÄ±
         function w = pf_weight(t, cfg)
-            % Basınç kuvveti için orantılı pencere ağırlığı hesaplar.
-            % Örnek kullanım: w = Utils.pf_weight(t, cfg);
+            % BasÄ±nÃ§ kuvveti iÃ§in orantÄ±lÄ± pencere aÄÄ±rlÄ±ÄÄ± hesaplar.
+            % Ãrnek kullanÄ±m: w = Utils.pf_weight(t, cfg);
             % Tek-kaynak PF ramp: compat_simple (eski) vs softplus (ileri)
             if ~isstruct(cfg), cfg = struct(); end
             if ~isfield(cfg,'on') || ~isstruct(cfg.on), cfg.on = struct(); end
@@ -55,18 +51,18 @@ classdef Utils
             w = cfg.on.pressure_force .* w_local;
         end
 
-        %% Damper Sabitlerini Güncelle
+        %% Damper Sabitlerini GÃ¼ncelle
         function params = recompute_damper_params(params)
-            %RECOMPUTE_DAMPER_PARAMS Türetilmiş damper sabitlerini günceller.
-            %   PARAMS = RECOMPUTE_DAMPER_PARAMS(PARAMS) yapısı içindeki
+            %RECOMPUTE_DAMPER_PARAMS TÃ¼retilmiÅ damper sabitlerini gÃ¼nceller.
+            %   PARAMS = RECOMPUTE_DAMPER_PARAMS(PARAMS) yapÄ±sÄ± iÃ§indeki
             %   temel geometrik ve malzeme parametrelerine (Dp, d_w, D_m,
-            %   n_turn, mu_ref vb.) göre Ap, k_p, k_sd ve c_lam0 gibi
-            %   türetilmiş sabitleri yeniden hesaplar. Eksik alanlar
-            %   bulunduğunda mevcut değerler korunur.
+            %   n_turn, mu_ref vb.) gÃ¶re Ap, k_p, k_sd ve c_lam0 gibi
+            %   tÃ¼retilmiÅ sabitleri yeniden hesaplar. Eksik alanlar
+            %   bulunduÄunda mevcut deÄerler korunur.
 
             if ~isstruct(params), return; end
 
-            % mm cinsinden verilen değerleri metreye çevir
+            % mm cinsinden verilen deÄerleri metreye Ã§evir
             if isfield(params,'Dp_mm'),    params.Dp    = params.Dp_mm/1000; end
             if isfield(params,'d_w_mm'),   params.d_w   = params.d_w_mm/1000; end
             if isfield(params,'D_m_mm'),   params.D_m   = params.D_m_mm/1000; end
@@ -80,7 +76,7 @@ classdef Utils
                 return; % eksik alanlar varsa hesaplama yapma
             end
 
-            % n_orf ve nd (paralel) güvenli varsayılanlar
+            % n_orf ve nd (paralel) gÃ¼venli varsayÄ±lanlar
             if ~isfield(params,'n_orf') && isfield(params,'orf') && isfield(params.orf,'n_orf')
                 params.n_orf = params.orf.n_orf;
             end
@@ -115,10 +111,10 @@ classdef Utils
             k_sd_simple = k_hyd + k_p;      % tek damper
             k_sd_adv    = nd * (k_hyd + k_p);% paralel nd
 
-            % Laminer sabit (tek damper referansı)
+            % Laminer sabit (tek damper referansÄ±)
             c_lam0 = 12 * params.mu_ref * params.Lori * Ap^2 / (params.orf.d_o^4);
 
-            % Çıkışlar (geriye uyumlu alan adlarıyla)
+            % ÃÄ±kÄ±Ålar (geriye uyumlu alan adlarÄ±yla)
             params.Ap = Ap;
             params.Ao = Ao; params.A_o = Ao;
             params.Ap_eff = Ap_eff; params.Ao_eff = Ao_eff;
@@ -126,16 +122,16 @@ classdef Utils
             params.k_p = k_p;
             params.k_sd_simple = k_sd_simple;
             params.k_sd_adv = k_sd_adv;
-            % Adım 2 öncesi: k_sd paralel etkili (nd içselleştirilmiş) seçilir
+            % AdÄ±m 2 Ã¶ncesi: k_sd paralel etkili (nd iÃ§selleÅtirilmiÅ) seÃ§ilir
             params.k_sd = k_sd_adv;
 
             params.c_lam0 = c_lam0;
         end
 
-        %% Lineer MCK Çözümü
+        %% Lineer MCK ÃÃ¶zÃ¼mÃ¼
         function [x,a] = lin_MCK(t,ag,M,C,K)
-            % Lineer MCK sistemi için yer hareketi altındaki tepkiyi çözer.
-            % Örnek kullanım: [x,a] = Utils.lin_MCK(t, ag, M, C, K);
+            % Lineer MCK sistemi iÃ§in yer hareketi altÄ±ndaki tepkiyi Ã§Ã¶zer.
+            % Ãrnek kullanÄ±m: [x,a] = Utils.lin_MCK(t, ag, M, C, K);
             n = size(M,1); r = ones(n,1);
             agf = griddedInterpolant(t,ag,'linear','nearest');
             odef = @(tt,z)[ z(n+1:end); M \ ( -C*z(n+1:end) - K*z(1:n) - M*r*agf(tt) ) ];
@@ -147,10 +143,10 @@ classdef Utils
             a = ( -(M\(C*z(:,n+1:end).' + K*z(:,1:n).')).' - ag.*r.' );
         end
 
-        %% Arias Penceresi Oluşturma
+        %% Arias Penceresi OluÅturma
         function win = make_arias_window(t, ag, varargin)
-            % Arias yoğunluğu tabanlı pencere oluşturur.
-            % Örnek kullanım: win = Utils.make_arias_window(t, ag);
+            % Arias yoÄunluÄu tabanlÄ± pencere oluÅturur.
+            % Ãrnek kullanÄ±m: win = Utils.make_arias_window(t, ag);
             p = inputParser;
             p.addParameter('p1',0.05,@(x)isscalar(x) && x>=0 && x<=1);
             p.addParameter('p2',0.95,@(x)isscalar(x) && x>=0 && x<=1);
@@ -159,7 +155,7 @@ classdef Utils
             p1 = p.Results.p1; p2 = p.Results.p2; pad = p.Results.pad;
             IA = cumtrapz(t, ag.^2);
             IA_tot = IA(end);
-            % Bozulmuş veya çok düşük enerjili kayıtlara karşı koruma
+            % BozulmuÅ veya Ã§ok dÃ¼ÅÃ¼k enerjili kayÄ±tlara karÅÄ± koruma
             if ~(isfinite(IA_tot)) || IA_tot <= eps
                 t_start = t(1); t_end = t(end);
                 idx = true(size(t));
@@ -185,20 +181,20 @@ classdef Utils
                          'coverage',coverage,'flag_low_arias',flag_low_arias);
         end
 
-        %% Adımsal Nicemleme
+        %% AdÄ±msal Nicemleme
         function y = quantize_step(x, step)
-            % Verilen adım büyüklüğüne göre x değerini nicemler.
-            % Örnek kullanım: y = Utils.quantize_step(3.7, 0.5);
+            % Verilen adÄ±m bÃ¼yÃ¼klÃ¼ÄÃ¼ne gÃ¶re x deÄerini nicemler.
+            % Ãrnek kullanÄ±m: y = Utils.quantize_step(3.7, 0.5);
             if nargin < 2 || isempty(step)
                 y = x; return;
             end
             y = step * round(x ./ step);
         end
 
-        %% Varsayılan Alan Değeri
+        %% VarsayÄ±lan Alan DeÄeri
         function v = getfield_default(S, fname, defaultVal)
-            % Yapı alanı mevcut değilse varsayılan değeri döndürür.
-            % Örnek kullanım: v = Utils.getfield_default(S,'a',0);
+            % YapÄ± alanÄ± mevcut deÄilse varsayÄ±lan deÄeri dÃ¶ndÃ¼rÃ¼r.
+            % Ãrnek kullanÄ±m: v = Utils.getfield_default(S,'a',0);
             if ~isstruct(S) || ~isfield(S, fname) || isempty(S.(fname))
                 v = defaultVal; return;
             end
@@ -216,8 +212,8 @@ classdef Utils
 
         %% Alan Mevcutsa Atama
         function arr = assign_if_field(S, fname, arr, idx)
-            % Belirtilen alan mevcutsa değeri hedef dizinin idx konumuna atar.
-            % Örnek kullanım: Q = Utils.assign_if_field(m,'Q_q95',Q,k);
+            % Belirtilen alan mevcutsa deÄeri hedef dizinin idx konumuna atar.
+            % Ãrnek kullanÄ±m: Q = Utils.assign_if_field(m,'Q_q95',Q,k);
             if isfield(S, fname)
                 arr(idx) = S.(fname);
             end
@@ -227,31 +223,27 @@ classdef Utils
         function writejson(data, filename)
             % Verilen veriyi JSON dosyasına yazar.
             % Örnek kullanım: Utils.writejson(data,'cikti.json');
-            try
-                txt = jsonencode(data);
-                fid = fopen(filename,'w');
-                if fid~=-1
-                    fwrite(fid, txt);
-                    fclose(fid);
-                end
-            catch
-            end
+            txt = jsonencode(data);
+            fid = fopen(filename,'w');
+            assert(fid~=-1, 'Utils:writejson:CannotOpen', 'Dosya açılamadı: %s', filename);
+            fwrite(fid, txt);
+            fclose(fid);
         end
 
-        %% İsim Temizleme
+        %% Ä°sim Temizleme
         function s2 = sanitize_name(s)
-            % Dosya veya alan isimlerindeki geçersiz karakterleri temizler.
-            % Örnek kullanım: s2 = Utils.sanitize_name('örnek?*ad');
+            % Dosya veya alan isimlerindeki geÃ§ersiz karakterleri temizler.
+            % Ãrnek kullanÄ±m: s2 = Utils.sanitize_name('Ã¶rnek?*ad');
             if ~ischar(s) && ~isstring(s)
                 s = char(s);
             end
             s2 = regexprep(char(s),'[^a-zA-Z0-9_\- ]','_');
         end
 
-        %% Zaman Serisi Aşağı Örnekleme
+        %% Zaman Serisi AÅaÄÄ± Ãrnekleme
         function ts_ds = downsample_ts(ts, ds)
-            % Zaman serisi alanlarını verilen faktörle seyrekleştirir.
-            % Örnek kullanım: ts_ds = Utils.downsample_ts(ts, 5);
+            % Zaman serisi alanlarÄ±nÄ± verilen faktÃ¶rle seyrekleÅtirir.
+            % Ãrnek kullanÄ±m: ts_ds = Utils.downsample_ts(ts, 5);
             if nargin < 2 || isempty(ds), ds = 5; end
             fns = fieldnames(ts);
             ts_ds = struct();
@@ -266,34 +258,21 @@ classdef Utils
             end
         end
 
-        %% Üçlü Operatör
+        %% ÃÃ§lÃ¼ OperatÃ¶r
         function s = tern(c,a,b)
-            % Mantıksal koşula göre iki değerden birini seçer.
-            % Örnek kullanım: s = Utils.tern(x>0, 1, -1);
+            % MantÄ±ksal koÅula gÃ¶re iki deÄerden birini seÃ§er.
+            % Ãrnek kullanÄ±m: s = Utils.tern(x>0, 1, -1);
             if c, s=a; else, s=b; end
         end
 
-        %% Güvenli Çalıştırma ve Uyarı
-        function varargout = try_warn(funcHandle, msgPrefix)
-            %TRY_WARN Hata durumunda uyarı vererek fonksiyonu çalıştırır.
-            %   varargout = Utils.try_warn(@() func(), 'prefix')
-            try
-                [varargout{1:nargout}] = funcHandle();
-            catch ME
-                warning('%s: %s', msgPrefix, ME.message);
-                for k = 1:nargout
-                    varargout{k} = [];
-                end
-            end
-        end
 
-        %% Başlangıç Popülasyon Izgarası
+        %% BaÅlangÄ±Ã§ PopÃ¼lasyon IzgarasÄ±
         function P = initial_pop_grid(lb, ub, N, steps)
-            %INITIAL_POP_GRID Değişken ızgaralarına hizalanmış bir başlangıç popülasyonu oluşturur.
+            %INITIAL_POP_GRID DeÄiÅken Ä±zgaralarÄ±na hizalanmÄ±Å bir baÅlangÄ±Ã§ popÃ¼lasyonu oluÅturur.
             %   P = Utils.initial_pop_grid(lb, ub, N, steps) fonksiyonu NxD boyutlu bir matris
-            %   döndürür. Her i sütunu adım aralığı steps(i) olan bir ızgaradan örneklenir
-            %   (steps(i) NaN ise, [lb(i), ub(i)] aralığında uniform örnekleme yapılır).
-            % Örnek kullanım: P = Utils.initial_pop_grid([0 0],[1 1],5,[0.1 NaN]);
+            %   dÃ¶ndÃ¼rÃ¼r. Her i sÃ¼tunu adÄ±m aralÄ±ÄÄ± steps(i) olan bir Ä±zgaradan Ã¶rneklenir
+            %   (steps(i) NaN ise, [lb(i), ub(i)] aralÄ±ÄÄ±nda uniform Ã¶rnekleme yapÄ±lÄ±r).
+            % Ãrnek kullanÄ±m: P = Utils.initial_pop_grid([0 0],[1 1],5,[0.1 NaN]);
             d = numel(lb);
             P = zeros(N, d);
             for i = 1:d
@@ -317,11 +296,11 @@ classdef Utils
             end
         end
 
-        %% Varsayılan QC Eşikleri
+        %% VarsayÄ±lan QC EÅikleri
         function thr = default_qc_thresholds(optsThr)
-            % Kalite kontrolü için varsayılan eşik değerlerini döndürür ve
-            % eksik veya boş alanları varsayılanlarla doldurur.
-            % Örnek kullanım: thr = Utils.default_qc_thresholds(struct('dP95_max',40e6));
+            % Kalite kontrolÃ¼ iÃ§in varsayÄ±lan eÅik deÄerlerini dÃ¶ndÃ¼rÃ¼r ve
+            % eksik veya boÅ alanlarÄ± varsayÄ±lanlarla doldurur.
+            % Ãrnek kullanÄ±m: thr = Utils.default_qc_thresholds(struct('dP95_max',40e6));
 
             if nargin < 1 || isempty(optsThr)
                 optsThr = struct();
@@ -334,7 +313,7 @@ classdef Utils
             thr.T_end_max  = Utils.getfield_default(optsThr,'T_end_max',75);
             thr.mu_end_min = Utils.getfield_default(optsThr,'mu_end_min',0.5);
 
-            % Ek alanları koru
+            % Ek alanlarÄ± koru
             extra = setdiff(fieldnames(optsThr), fieldnames(thr));
             for ii = 1:numel(extra)
                 thr.(extra{ii}) = optsThr.(extra{ii});

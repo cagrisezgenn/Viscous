@@ -348,7 +348,7 @@ function [updates, T] = sizing_param_diff(P_old, P_sized, gainsPF, sizing)
 
     % --- CSV yazımı -----------------------------------------------------
     outdir = fullfile('out'); if ~exist(outdir,'dir'), mkdir(outdir); end
-    safe_write(T, fullfile(outdir,'sizing_updates.csv'), @writetable);
+    writetable(T, fullfile(outdir,'sizing_updates.csv'));
 
     % --- parametre.m'e yapıştırmalık satırlar --------------------------
     updates = struct(); updates.lines = {};
@@ -363,13 +363,6 @@ function [updates, T] = sizing_param_diff(P_old, P_sized, gainsPF, sizing)
     end
     end
 
-function safe_write(obj, filepath, writeFcn)
-    try
-        writeFcn(obj, filepath);
-    catch ME
-        warning('Yazma hatası (%s): %s', filepath, ME.message);
-    end
-end
 
 
 
