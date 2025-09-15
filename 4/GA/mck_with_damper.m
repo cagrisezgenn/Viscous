@@ -1,5 +1,5 @@
-function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
-    use_thermal, thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
+function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap,Ao,Qcap, mu_ref, ...
+    thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, story_mask, ...
     n_dampers_per_story, resFactor, cfg)
 %% Girdi Parametreleri
@@ -31,37 +31,28 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,or
     % Faz 3: Lineer parçada sadece yay (laminer PF tarafında)
     F_lin = k_sd*drift;
 
-    if use_orf
-        % Faz 6: Qcap ölçeği ve softmin eps opsiyonu
-        Qcap_eff = Qcap;
-        if isfield(cfg,'num') && isfield(cfg.num,'Qcap_scale') && isfinite(cfg.num.Qcap_scale)
-            Qcap_eff = max(1e-9, Qcap * cfg.num.Qcap_scale);
-        end
-        orf_loc = orf;
-        if isfield(cfg,'num') && isfield(cfg.num,'softmin_eps') && isfinite(cfg.num.softmin_eps)
-            orf_loc.softmin_eps = cfg.num.softmin_eps;
-        end
-        params = struct('Ap',Ap,'Qcap',Qcap_eff,'orf',orf_loc,'rho',rho,...
-                        'Ao',Ao,'mu',mu_abs,'F_lin',F_lin,'Lori',Lori);
-        [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params);
-        % Ek diagnostikler: dP_kv ve dP_cav (kv ve kavitasyon limitleri)
-        qmag_loc = Qcap_eff * tanh( (Ap/Qcap_eff) * sqrt(dvel.^2 + orf.veps^2) );
-        Re_loc   = (rho .* qmag_loc .* max(orf.d_o,1e-9)) ./ max(Ao*mu_abs,1e-9);
-        Cd_loc0  = orf.Cd0; Cd_locInf = orf.CdInf; Rec_loc = orf.Rec; pexp_loc = orf.p_exp;
-        Cd_loc = Cd_locInf - (Cd_locInf - Cd_loc0) ./ (1 + (Re_loc./max(Rec_loc,1)).^pexp_loc);
-        Cd_loc = max(min(Cd_loc,1.2),0.2);
-        dP_kv_loc = 0.5*rho .* ( qmag_loc ./ max(Cd_loc.*Ao,1e-12) ).^2;
-        p_up_loc  = orf.p_amb + abs(F_lin)./max(Ap,1e-12);
-        dP_cav_loc= max( (p_up_loc - orf.p_cav_eff).*orf.cav_sf, 0 );
-        F_p = F_lin + F_orf;
-    else
-        F_p = F_lin;
-        Q = 0*dvel;
-        dP_orf = 0*dvel;
-        P_orf_per = 0*dvel;
-        dP_kv_loc = 0*dvel;
-        dP_cav_loc = 0*dvel;
+    % Faz 6: Qcap ölçeği ve softmin eps opsiyonu
+    Qcap_eff = Qcap;
+    if isfield(cfg,'num') && isfield(cfg.num,'Qcap_scale') && isfinite(cfg.num.Qcap_scale)
+        Qcap_eff = max(1e-9, Qcap * cfg.num.Qcap_scale);
     end
+    orf_loc = orf;
+    if isfield(cfg,'num') && isfield(cfg.num,'softmin_eps') && isfinite(cfg.num.softmin_eps)
+        orf_loc.softmin_eps = cfg.num.softmin_eps;
+    end
+    params = struct('Ap',Ap,'Qcap',Qcap_eff,'orf',orf_loc,'rho',rho,...
+                    'Ao',Ao,'mu',mu_abs,'F_lin',F_lin,'Lori',Lori);
+    [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params);
+    % Ek diagnostikler: dP_kv ve dP_cav (kv ve kavitasyon limitleri)
+    qmag_loc = Qcap_eff * tanh( (Ap/Qcap_eff) * sqrt(dvel.^2 + orf.veps^2) );
+    Re_loc   = (rho .* qmag_loc .* max(orf.d_o,1e-9)) ./ max(Ao*mu_abs,1e-9);
+    Cd_loc0  = orf.Cd0; Cd_locInf = orf.CdInf; Rec_loc = orf.Rec; pexp_loc = orf.p_exp;
+    Cd_loc = Cd_locInf - (Cd_locInf - Cd_loc0) ./ (1 + (Re_loc./max(Rec_loc,1)).^pexp_loc);
+    Cd_loc = max(min(Cd_loc,1.2),0.2);
+    dP_kv_loc = 0.5*rho .* ( qmag_loc ./ max(Cd_loc.*Ao,1e-12) ).^2;
+    p_up_loc  = orf.p_amb + abs(F_lin)./max(Ap,1e-12);
+    dP_cav_loc= max( (p_up_loc - orf.p_cav_eff).*orf.cav_sf, 0 );
+    F_p = F_lin + F_orf;
 
     dp_pf = (c_lam*dvel + (F_p - k_sd*drift)) ./ Ap;
     if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
@@ -132,13 +123,9 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,or
         % Sütun yönelimli etkin parametreler
         % Faz 3: Lineer parçada sadece yay
         F_lin_ = k_sd*drift_;
-        if ~use_orf
-            F_orf_ = 0*dvel_;
-        else
-            params = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
-                            'Ao',Ao,'mu',mu_abs_loc,'F_lin',F_lin_,'Lori',Lori);
-            [F_orf_, ~, ~, ~] = calc_orifice_force(dvel_, params);
-        end
+        params = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
+                        'Ao',Ao,'mu',mu_abs_loc,'F_lin',F_lin_,'Lori',Lori);
+        [F_orf_, ~, ~, ~] = calc_orifice_force(dvel_, params);
         dp_pf_ = (c_lam_loc*dvel_ + F_orf_) ./ Ap;
         if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
             s = tanh(20*dvel_);
