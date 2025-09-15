@@ -6,12 +6,6 @@ function [summary, all_out] = run_batch_windowed(scaled, params, opts)
 %   döndürür. ALL_OUT hücre dizisi her kayıt için tam çıktıları içerir.
 %   PARAMS, yapısal ve damper özelliklerini; OPTS ise
 %   RUN_ONE_RECORD_WINDOWED'e iletilen ayarları barındırır.
-%
-%   IM tutarlılığı, düşük Arias kapsamı, tepki metriklerinin fiziksel
-%   geçerliliği ve satürasyon/kavitasyon kontrolleri için QC logları
-%   yazdırılır. Tüm kayıtlar işlendiğinde, en kötü tepe kat ivmesi ve
-%   katlar arası ötelenme oranı ile bunlara karşılık gelen \mu faktörü
-%   raporlanır.
 
 if nargin < 3, opts = struct(); end
 if ~isfield(opts,'thr'), opts.thr = struct(); end
@@ -32,9 +26,6 @@ if do_export
         outdir = fullfile('out', ts);
     end
     if ~exist(outdir,'dir'), mkdir(outdir); end
-    if ~Utils.getfield_default(opts,'quiet',false)
-        diary(fullfile(outdir,'console.log'));
-    end
 else
     outdir = '';
 end
@@ -50,16 +41,8 @@ vars = record_loop(scaled, params, opts, vars);
 summary = build_summary_table(vars, opts);
 all_out = vars.all_out;
 
-if ~isfield(opts,'quiet') || ~opts.quiet
-    fprintf('Worst PFA: %s\n', vars.worstPFA_name);
-    fprintf('Worst IDR: %s\n', vars.worstIDR_name);
-end
-
 if do_export
     export_results(outdir, scaled, params, opts, summary, all_out);
-    if ~Utils.getfield_default(opts,'quiet',false)
-        diary off;
-    end
 end
 
 end
@@ -118,11 +101,11 @@ end
 
 function vars = record_loop(scaled, params, opts, vars)
 %RECORD_LOOP Her kaydı pencere analizine tabi tutar
-prev_diag = [];
+prev_ts = [];
 for k = 1:numel(scaled)
     rec = scaled(k);
-    out = run_one_record_windowed(rec, params, opts, prev_diag);
-    prev_diag = out.diag;
+    out = run_one_record_windowed(rec, params, opts, prev_ts);
+    prev_ts = out.ts;
     vars.all_out{k} = out; %#ok<AGROW>
 
     vars.names{k}    = out.name;

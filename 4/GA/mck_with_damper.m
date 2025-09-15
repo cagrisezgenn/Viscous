@@ -1,4 +1,4 @@
-function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
+function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,rho,Ap,Ao,Qcap, mu_ref, ...
     use_thermal, thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, story_mask, ...
     n_dampers_per_story, resFactor, cfg)
@@ -75,13 +75,11 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
     F_story = F_p;
     P_visc_per = c_lam * (dvel.^2);
     P_sum = sum( (P_visc_per + P_orf_per) .* multi, 2 );
-    energy = cumtrapz(t,P_sum);
     P_orf_tot = sum(P_orf_per .* multi, 2);
     % Yapısal güç kat toplam kuvvetini kullanır; ekstra çarpan kullanılmaz
     P_struct_tot = sum(F_story .* dvel, 2);
-    E_orifice = trapz(t, P_orf_tot);
-    E_struct = trapz(t, P_struct_tot);
-    P_mech = mean(P_struct_tot);
+    E_orf = cumtrapz(t, P_orf_tot);
+    E_struct = cumtrapz(t, P_struct_tot);
 
 %% Termal Hesap (Phase 7: iki-düğüm diagnostik; dinamiğe geri besleme yok)
     nDtot = sum(multi);
@@ -111,13 +109,21 @@ function [x,a,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,orf,
     F = zeros(numel(t),n);
     F(:,Nvec) = F(:,Nvec) - F_story;
     F(:,Mvec) = F(:,Mvec) + F_story;
-    a = ( -(M\(C*v.' + K*x.' + F.')).' - ag.*r.' );
+    a_rel = ( -(M\(C*v.' + K*x.' + F.')).' - ag.*r.' );
 
-    diag = struct('drift',drift,'dvel',dvel,'story_force',F_story,'Q',Q, ...
-        'dP_orf',dP_orf,'PF',F_p,'T_oil',T_o,'T_steel',T_s,'mu',mu, ...
-        'energy',energy,'P_sum',P_sum,'c_lam',c_lam,'Lori',Lori, ...
-        'P_orf_per',P_orf_per,'dP_kv',dP_kv_loc,'dP_cav',dP_cav_loc, ...
-        'E_orifice',E_orifice,'E_struct',E_struct);
+    ts = struct();
+    ts.dvel = dvel;
+    ts.story_force = F_story;
+    ts.Q = Q;
+    ts.dP_orf = dP_orf;
+    ts.PF = F_p;
+    ts.cav_mask = dP_orf < 0;
+    ts.P_sum = P_sum;
+    ts.E_orf = E_orf;
+    ts.E_struct = E_struct;
+    ts.T_oil = T_o;
+    ts.mu = mu;
+    ts.c_lam = c_lam;
 
 %% İç Fonksiyonlar
     function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)

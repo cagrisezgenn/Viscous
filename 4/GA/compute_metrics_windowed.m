@@ -9,10 +9,10 @@ function metr = compute_metrics_windowed(t, x, a_rel, ag, ts, story_height, win,
 %
 %   Girdi değişkenleri T, X, A_REL ve AG sırasıyla zaman vektörü, kat yer
 %   değiştirmeleri, göreli kat ivmeleri ve yer ivmesini temsil eder. TS
-%   yapısal analizin ürettiği ek zaman serilerini içerir. STORY_HEIGHT her
+%   yapısal analizin ürettiği ek zaman serilerini içerir; bu yapı sadece
+%   metrik hesapları için gerekli dizi alanlarını barındırır. STORY_HEIGHT her
 %   katın yüksekliğidir. WIN.IDX ilgilenilen pencereyi seçen mantıksal
-%   vektördür. PARAMS yapısal ve damper parametrelerini, ayrıca termal
-%   nicelikleri barındıran DIAG alanını içerir.
+%   vektördür. PARAMS yapısal ve damper parametrelerini içerir.
 
 % Türetilmiş damper sabitlerini güncelle
 params = Utils.recompute_damper_params(params);
@@ -58,13 +58,13 @@ abs_story_force = abs(ts.story_force(idx,:));
 
 % Reynolds sayısının pencere içindeki maksimumu
 try
-    if all(isfield(params,{'Qcap_big','Ap','A_o','rho','orf','diag'})) && ...
-            isfield(params.diag,'mu') && isfield(ts,'dvel') && ...
+    if all(isfield(params,{'Qcap_big','Ap','A_o','rho','orf'})) && ...
+            isfield(ts,'mu') && isfield(ts,'dvel') && ...
             all(isfield(params.orf,{'veps','d_o'}))
         dvel_win = ts.dvel(idx,:);
         qmag = params.Qcap_big * tanh((params.Ap/params.Qcap_big) * ...
             sqrt(dvel_win.^2 + params.orf.veps^2));
-        mu_win = params.diag.mu(idx);
+        mu_win = ts.mu(idx);
         mu_mat = repmat(mu_win,1,size(qmag,2));
         Ao = params.A_o; if numel(Ao)==1, Ao = Ao*ones(1,size(qmag,2)); end
         Ao_mat = repmat(Ao,size(qmag,1),1);
@@ -130,24 +130,24 @@ metr.E_ratio_win   = metr.E_orifice_win / max(metr.E_struct_win, eps);
 
 %% Termal Metrikler
 % Yağ sıcaklığı ve viskozite gibi termal büyüklükler değerlendirilir.
-if isfield(params,'diag') && isfield(params.diag,'T_oil')
-    metr.T_oil_end = params.diag.T_oil(w_last);
+if isfield(ts,'T_oil')
+    metr.T_oil_end = ts.T_oil(w_last);
 else
     metr.T_oil_end = NaN;
 end
-if isfield(params,'diag') && isfield(params.diag,'mu')
-    metr.mu_end = params.diag.mu(w_last);
+if isfield(ts,'mu')
+    metr.mu_end = ts.mu(w_last);
 else
     metr.mu_end = NaN;
 end
 
 % ---------------- Sıcak viskozite ile modal sönüm -------------------
 req_fields = {'M','K','C0','k_sd'};
-if all(isfield(params,req_fields)) && isfield(params,'diag') && isfield(params.diag,'c_lam')
+if all(isfield(params,req_fields)) && isfield(ts,'c_lam')
     M  = params.M;  K = params.K;  C0 = params.C0;
     k_sd = params.k_sd;
     nStories = size(M,1) - 1;
-    c_lam = params.diag.c_lam;
+    c_lam = ts.c_lam;
 
     Kadd = zeros(size(M));
     Cadd = zeros(size(M));
