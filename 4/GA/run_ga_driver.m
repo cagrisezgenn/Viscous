@@ -1,6 +1,12 @@
 function [X,F,gaout] = run_ga_driver(scaled, params, optsEval, optsGA)
 % === Parpool Açılışı (temizlik + iş parçacığı sınırı) ===
-parpool_hard_reset(16);
+usePool = true;
+try
+    usePool = parpool_hard_reset(16);
+catch ME
+    warning('run_ga_driver:parpool', 'Parallel pool unavailable: %s', ME.message);
+    usePool = false;
+end
 %RUN_GA_DRIVER Hibrit GA sürücüsü: önceden hazırlanmış
 % `scaled` veri kümesi ve `params` yapısını kabul eder.
 %   [X,F,GAOUT] = RUN_GA_DRIVER(SCALED, PARAMS, OPTSEVAL, OPTSGA)
@@ -45,7 +51,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
        'StallGenLimit',     Utils.getfield_default(optsGA,'StallGenLimit',150), ...
        'DistanceMeasureFcn','distancecrowding', ...
        'OutputFcn',         @(options,state,flag) ga_out_best_pen(options,state,flag, scaled, params, optsEval), ...
-       'UseParallel',       Utils.getfield_default(optsGA,'UseParallel',true), ...
+       'UseParallel',       usePool && Utils.getfield_default(optsGA,'UseParallel',true), ...
        'Display','iter','PlotFcn',[], 'FunctionTolerance',1e-5);
 
     %% Başlangıç Popülasyonu
