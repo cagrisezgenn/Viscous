@@ -24,9 +24,6 @@ function out = run_one_record_windowed(rec, params, opts, prev_ts)
 if nargin < 4, prev_ts = []; end
 if nargin < 3 || isempty(opts), opts = struct(); end
 
-% Türetilmiş damper sabitlerini güncelle
-params = Utils.recompute_damper_params(params);
-
 if isfield(opts,'thermal_reset') && strcmpi(opts.thermal_reset,'cooldown')
     if ~isfield(opts,'cooldown_s') || isempty(opts.cooldown_s) || isnan(opts.cooldown_s)
         opts.cooldown_s = 60;

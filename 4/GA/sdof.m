@@ -37,7 +37,7 @@ try
     params_tmp = struct('Dp',Dp,'d_w',d_w,'D_m',D_m,'n_turn',n_turn, ...
         'mu_ref',mu_ref,'Lori',Lori,'Lgap',Lgap,'Kd',Kd,'Ebody',Ebody, ...
         'Gsh',Gsh,'orf',struct('d_o',d_o));
-    params_tmp = Utils.recompute_damper_params(params_tmp);
+    params_tmp = build_params(params_tmp);
     Ap    = params_tmp.Ap;
     k_sd  = params_tmp.k_sd;
     c_lam0= params_tmp.c_lam0;

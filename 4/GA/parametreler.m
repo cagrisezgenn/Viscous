@@ -53,19 +53,9 @@ d_w    = 12e-3;     % Yay teli çapı [m]
 D_m    = 80e-3;     % Yay orta çapı [m]
 n_turn = 8;         % Yay tur sayısı [-]
 
-% Türetilen sabitler (lineer eşdeğer)
-Ap    = pi*Dp^2/4;                    % Piston alanı [m^2]
-k_h   = Kd*Ap^2/Lgap;                 % Hidrolik sertlik [N/m]
-k_s   = Ebody*Ap/Lgap;                % Gövde sertliği [N/m]
-k_hyd = 1/(1/k_h + 1/k_s);            % Seri bağlanmış eşdeğer
-k_p   = Gsh*d_w^4/(8*n_turn*D_m^3);   % Yay (körük) sertliği [N/m]
-k_sd  = k_hyd + k_p;                  % Toplam seri damper sertliği [N/m]
-c_lam0 = 12*mu_ref*Lori*Ap^2/d_o^4;   % Laminer eşdeğer sönüm (T0)
-
 %% --- 3) Orifis ve termal parametreleri ---
 rho   = 850;       % Yağ yoğunluğu [kg/m^3]
 n_orf = 6;         % Kat başına orifis sayısı
-A_o   = n_orf * (pi*d_o^2/4);     % Toplam orifis alanı [m^2]
 
 % Orifis katsayıları
 orf = struct();
@@ -79,9 +69,6 @@ orf.cav_sf    = 0.90;                % Kavitasyon emniyet katsayısı
 orf.d_o   = d_o;                     % Re düzeltmesi için çap [m]
 orf.veps  = 0.10;                    % Düşük hız yumuşatma [m/s]
 
-
-% Akış satürasyonu (sayısal kararlılık için)
-Qcap_big = max(orf.CdInf*A_o, 1e-9) * sqrt(2*1.0e9/rho);
 
 % Termal model parametreleri
 T0_C      = 25;                      % Başlangıç sıcaklığı [°C]
@@ -107,7 +94,6 @@ resFactor = 12;                       % Hacim/kapasite ölçeği
 c_lam_cap      = 2e7;                % Üst sınır (cap)
 c_lam_min_frac = 0.05;               % Tabandaki oran
 c_lam_min_abs  = 1e5;                % Mutlak taban
-c_lam_min      = max(c_lam_min_abs, c_lam_min_frac*c_lam0);
 
 % Basınç-kuvvet filtresi (PF) ayarları
 cfg = struct();
@@ -131,20 +117,14 @@ cfg.num.mu_min_phys    = 0.6;      % μ(T) tabanı [Pa·s]
 cfg.num.dP_cap         = NaN;       % dP doygunluk kapasitesi (ileri adımlar için)
 cfg.on.pf_resistive_only = true;  % sadece rezistif (viskoz+orifis) bileşeni filtrele
 
-%% Faz 1: Parametreleri yapılandırılmış paketlere topla (geri uyumlu)
-% Not: Bu blok yalnızca referans amaçlıdır; mevcut akışı değiştirmez.
-geom = struct('Dp',Dp,'Lgap',Lgap,'Lori',Lori,'Kd',Kd,'Ebody',Ebody);
-sh   = struct('G',Gsh,'d_w',d_w,'D_m',D_m,'n_turn',n_turn);
-hyd  = struct();
-therm = struct('mu_ref',mu_ref,'T0_C',T0_C,'T_ref_C',T_ref_C, ...
-               'cp_oil',cp_oil,'cp_steel',cp_steel);
-
-% Türetilmiş sabitleri örnek amacıyla tek paket içinde yeniden hesapla
-try
-    params_pack = struct('Dp',Dp,'d_w',d_w,'D_m',D_m,'n_turn',n_turn, ...
-                         'mu_ref',mu_ref,'Lori',Lori,'Lgap',Lgap, ...
-                         'Kd',Kd,'Ebody',Ebody,'Gsh',Gsh,'orf',struct('d_o',d_o));
-    params_pack = Utils.recompute_damper_params(params_pack);
-catch
-end
-
+%% Parametre yapısını oluştur ve türetilmiş alanları hesapla
+params = struct('M',M,'C0',C0,'K',K,'Dp',Dp,'Lgap',Lgap,'d_w',d_w, ...
+    'D_m',D_m,'n_turn',n_turn,'mu_ref',mu_ref,'Lori',Lori,'Kd',Kd, ...
+    'Ebody',Ebody,'Gsh',Gsh,'rho',rho,'n_orf',n_orf,'orf',orf, ...
+    'thermal',thermal,'T0_C',T0_C,'T_ref_C',T_ref_C,'b_mu',b_mu, ...
+    'c_lam_cap',c_lam_cap,'c_lam_min_frac',c_lam_min_frac, ...
+    'c_lam_min_abs',c_lam_min_abs,'cp_oil',cp_oil,'cp_steel',cp_steel, ...
+    'steel_to_oil_mass_ratio',steel_to_oil_mass_ratio, ...
+    'n_dampers_per_story',n_dampers_per_story,'story_mask',story_mask, ...
+    'resFactor',resFactor,'cfg',cfg,'story_height',story_height);
+params = build_params(params);

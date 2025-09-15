@@ -12,6 +12,8 @@ function P = run_policies_windowed(scaled, params, opts)
 
 %% Girdi ve Varsayılan Ayarlar
 if nargin < 3, opts = struct(); end
+% Derived fields are prepared once
+params = build_params(params);
 if ~isfield(opts,'policies'), opts.policies = {'each','carry','cooldown'}; end
 if ~isfield(opts,'orders'), opts.orders = {'natural','random','worst_first'}; end
 if ~isfield(opts,'cooldown_s_list'), opts.cooldown_s_list = [60 180 300]; end
