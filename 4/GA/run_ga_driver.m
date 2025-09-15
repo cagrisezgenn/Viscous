@@ -123,6 +123,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     Opost = struct('thr', meta.thr);
 
     parfor i = 1:nF
+        tg = @(tbl,var,def) Utils.table_get(tbl,var,def);
         Xi = quant_clamp_x(X(i,:));
         Pi = decode_params_from_x(params, Xi);
         Si = run_batch_windowed(scaled, Pi, Opost);
@@ -139,44 +140,16 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
             v_Tend = Si.table.T_end;
             v_mu   = Si.table.mu_end;
 
-            if ismember('PF_p95', Si.table.Properties.VariableNames)
-                v_PFp95 = Si.table.PF_p95;
-            else
-                v_PFp95 = 0;
-            end
-            if ismember('Q_q50', Si.table.Properties.VariableNames)
-                v_Qq50 = Si.table.Q_q50;
-            else
-                v_Qq50 = 0;
-            end
-            if ismember('Q_q95', Si.table.Properties.VariableNames)
-                v_Qq95 = Si.table.Q_q95;
-            else
-                v_Qq95 = 0;
-            end
-            if ismember('dP50', Si.table.Properties.VariableNames)
-                v_dPq50 = Si.table.dP50;
-            else
-                v_dPq50 = 0;
-            end
-            v_Toil = [];
-            v_Tsteel = [];
+            v_PFp95 = tg(Si.table,'PF_p95',0);
+            v_Qq50  = tg(Si.table,'Q_q50',0);
+            v_Qq95  = tg(Si.table,'Q_q95',0);
+            v_dPq50 = tg(Si.table,'dP50',0);
+            v_Toil   = tg(Si.table,'T_oil_end',[]);
+            v_Tsteel = tg(Si.table,'T_steel_end',[]);
 
-        if ismember('E_orifice_sum', Si.table.Properties.VariableNames)
-            v_Eor = Si.table.E_orifice_sum;
-        else
-            v_Eor = 0;
-        end
-        if ismember('E_struct_sum', Si.table.Properties.VariableNames)
-            v_Est = Si.table.E_struct_sum;
-        else
-            v_Est = 0;
-        end
-        if ismember('P_mech_sum', Si.table.Properties.VariableNames)
-            v_Pm = Si.table.P_mech_sum;
-        else
-            v_Pm = 0;
-        end
+        v_Eor = tg(Si.table,'E_orifice_sum',0);
+        v_Est = tg(Si.table,'E_struct_sum',0);
+        v_Pm  = tg(Si.table,'P_mech_sum',0);
 
         PFAw(i) = mean(v_PFA(:));
         IDRw(i) = mean(v_IDR(:));
