@@ -11,29 +11,21 @@ if ~exist(outdir,'dir'), mkdir(outdir); end
 params = Utils.recompute_damper_params(params);
 
 %% Meta (IM alanlarını varsayılanlarla doldurma kaldırıldı)
-try
     % TRIM bilgisi opsiyonel
     TRIM_names = Utils.getfield_default(opts,'TRIM_names',{});
     if isempty(TRIM_names), TRIM_names = {}; end
 
     % Varsa türetilmiş parametreler
     params_derived = struct();
-    try
         params_derived.C_th = compute_Cth_effective(params);
-    catch
-    end
 
     % qc özet bilgisi
-    try
         pass = sum(summary.table.qc_pass);
         fail = height(summary.table) - pass;
         kshow = min(3, height(summary.table));
         [~,ix] = maxk(summary.table.PFA, kshow);
         worst3 = summary.table.name(ix);
         qc_meta = struct('pass',pass,'fail',fail,'worst3',{worst3});
-    catch
-        qc_meta = struct();
-    end
 
     % snapshot.mat kaydı (P varsa dahil et) — IM_mode/band_fac/s_bounds yazılmaz
     snap = struct('params',params,'opts',opts,'scaled',scaled, ...
@@ -41,9 +33,7 @@ try
     if ~isempty(varargin)
         snap.P = varargin{1};
     end
-    safe_write(snap, fullfile(outdir,'snapshot.mat'), @(d,f) save(f,'-struct','d','-v7.3'));
-catch
-end
+    save(fullfile(outdir,'snapshot.mat'), '-struct', 'snap', '-v7.3');
 
 names = {scaled.name}';
 dt = arrayfun(@(s) Utils.getfield_default(s,'dt',NaN), scaled)';
@@ -57,15 +47,15 @@ trimmed = arrayfun(@(s) Utils.getfield_default(s,'trimmed',0), scaled)';
 tbl = table(names, dt, dur, PGA, PGV, IM, sc, s_cl, trimmed, ...
     'VariableNames',{'name','dt','dur','PGA','PGV','IM','scale','s_clipped','trimmed'});
 % ölçeklenmiş kayıt özetini CSV olarak yaz
-safe_write(tbl, fullfile(outdir,'scaled_index.csv'), @writetable);
+writetable(tbl, fullfile(outdir,'scaled_index.csv'));
 
 %% Özetler
 % Genel özet tablosunu kaydet (zeta1_hot ve z2_over_z1_hot dahil)
-safe_write(summary.table, fullfile(outdir,'summary.csv'), @writetable);
+writetable(summary.table, fullfile(outdir,'summary.csv'));
 
 % Detaylı özet verisini .mat olarak sakla
 full_summary = struct('summary',summary,'all_out',{all_out});
-safe_write(full_summary, fullfile(outdir,'summary_full.mat'), @(d,f) save(f,'-struct','d','-v7.3'));
+save(fullfile(outdir,'summary_full.mat'), '-struct', 'full_summary', '-v7.3');
 
 % Kalite kontrol sonuçlarını yaz
 pass = sum(summary.table.qc_pass);
@@ -73,19 +63,18 @@ fail = height(summary.table) - pass;
 [~,idx] = maxk(summary.table.PFA, min(3,height(summary.table)));
 worst = summary.table.name(idx);
 qc_tbl = table(pass, fail, worst, 'VariableNames',{'pass','fail','worst'});
-safe_write(qc_tbl, fullfile(outdir,'qc_summary.csv'), @writetable);
+writetable(qc_tbl, fullfile(outdir,'qc_summary.csv'));
 %% Kayıt Bazlı
 % Her kayıt için ayrı klasör ve detay dosyaları oluştur
 for k = 1:numel(all_out)
     out = all_out{k};
-    try
         recdir = fullfile(outdir, ['rec-' Utils.sanitize_name(out.name)]);
         if ~exist(recdir,'dir'), mkdir(recdir); end
         % pencere bilgisi (window.json)
         w = out.win;
         win_struct = struct('t5',w.t5,'t95',w.t95,'pad',Utils.getfield_default(w,'pad',0), ...
                             'coverage',w.coverage);
-        safe_write(win_struct, fullfile(recdir,'window.json'), @Utils.writejson);
+        Utils.writejson(win_struct, fullfile(recdir,'window.json'));
         % pencereye ait metrikler (metrics_win.csv)
         m = out.metr;
         mu_mode = Utils.getfield_default(out,'mu_mode','nominal');   % sadece etiket için
@@ -115,22 +104,19 @@ for k = 1:numel(all_out)
         if isfield(m,'E_orifice_win'), mstruct.E_orf_win = m.E_orifice_win; end
         if isfield(m,'E_struct_win'), mstruct.E_struct_win = m.E_struct_win; end
         metr_tbl = struct2table(mstruct);
-        safe_write(metr_tbl, fullfile(recdir,'metrics_win.csv'), @writetable);
+        writetable(metr_tbl, fullfile(recdir,'metrics_win.csv'));
         % seyreltilmiş zaman serileri (ts_ds.mat)
         if isfield(out,'ts') && ~isempty(out.ts)
-            try
                 ds = 5;
                 if isfield(opts,'export') && isfield(opts.export,'ds')
                     ds = opts.export.ds;
                 end
                 ts_ds = Utils.downsample_ts(out.ts, ds);
-                safe_write(struct('ts_ds',ts_ds), fullfile(recdir,'ts_ds.mat'), @(d,f) save(f,'-struct','d','-v7.3'));
-            catch
-            end
+                tmp_struct = struct('ts_ds',ts_ds);
+                save(fullfile(recdir,'ts_ds.mat'), '-struct', 'tmp_struct', '-v7.3');
         end
         % isteğe bağlı grafikler
         if isfield(opts,'export') && isfield(opts.export,'plots') && opts.export.plots
-            try
                 figdir = fullfile(recdir,'figures');
                 if ~exist(figdir,'dir'), mkdir(figdir); end
                 f = figure('Visible','off');
@@ -139,11 +125,7 @@ for k = 1:numel(all_out)
                 f = figure('Visible','off');
                 bar(out.metr.PFA_top); title('PFA_{top}');
                 saveas(f, fullfile(figdir,'PFA_top.png')); close(f);
-            catch
-            end
         end
-    catch
-    end
 end
 
 %%% Politika Sonuçları
@@ -160,12 +142,12 @@ if ~isempty(varargin)
     T_end_max = arrayfun(@(s) max(s.summary.T_end), P)';
     idx_tbl = table(pol, ord, cd, qc_rate, PFA_mean, IDR_mean, dP95_max, T_end_max, ...
         'VariableNames',{'policy','order','cooldown_s','qc_rate','PFA_mean','IDR_mean','dP95_max','T_end_max'});
-    safe_write(idx_tbl, fullfile(outdir,'policy_index.csv'), @writetable);
+    writetable(idx_tbl, fullfile(outdir,'policy_index.csv'));
     for i = 1:numel(P)
         fname = sprintf('policy_%s_%s_cd%s.csv', ...
             Utils.sanitize_name(P(i).policy), Utils.sanitize_name(P(i).order), ...
             Utils.sanitize_name(num2str(P(i).cooldown_s)));
-        safe_write(P(i).summary, fullfile(outdir,fname), @writetable);
+        writetable(P(i).summary, fullfile(outdir,fname));
     end
 end
 
@@ -182,13 +164,5 @@ function Cth = compute_Cth_effective(params)
     m_oil_tot = sum(multi) * (params.rho * V_oil_per);
     m_steel_tot = params.steel_to_oil_mass_ratio * m_oil_tot;
     Cth = max(m_oil_tot*params.cp_oil + m_steel_tot*params.cp_steel, eps);
-end
-
-function safe_write(obj, filepath, writeFcn)
-% Verilen yazma fonksiyonunu güvenle çağırır
-    try
-        writeFcn(obj, filepath);
-    catch
-    end
 end
 

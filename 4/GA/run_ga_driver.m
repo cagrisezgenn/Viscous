@@ -1,6 +1,6 @@
     function [X,F,gaout] = run_ga_driver(scaledOrSnap, params, optsEval, optsGA)
 % === Parpool Açılışı (temizlik + iş parçacığı sınırı) ===
-Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılamadı');
+parpool_hard_reset(16);
 %RUN_GA_DRIVER Hibrit GA sürücüsü: anlık görüntü yolu veya bellek içi
 % yapıları kabul eder.
 %   [X,F,GAOUT] = RUN_GA_DRIVER(SCALED_OR_PATH, PARAMS, OPTSEVAL, OPTSGA)
@@ -28,12 +28,10 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
     % Girdi verilmemişse (ör. editörde Run'a basıldığında) GA'nın başlayabilmesi
     % için temel çalışma alanından 'scaled' ve 'params' değişkenlerini almaya çalış.
     if isempty(scaledOrSnap_local)
-        scaledOrSnap_local = Utils.try_warn(@() evalin('base','scaled'), ...
-            'Temel çalışma alanında ''scaled'' bulunamadı');
+        scaledOrSnap_local = evalin('base','scaled');
     end
     if isempty(params_local)
-        params_local = Utils.try_warn(@() evalin('base','params'), ...
-            'Temel çalışma alanında ''params'' bulunamadı');
+        params_local = evalin('base','params');
     end
     if nargin < 3 || isempty(optsEval), optsEval = struct; end
     if nargin < 4 || isempty(optsGA),   optsGA   = struct; end
@@ -60,13 +58,11 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
         meta = struct('thr', Utils.default_qc_thresholds(struct()));
         % Gerekirse çalışma alanını otomatik hazırla (giriş sağlanmadığında)
         if (isempty(scaled) || isempty(params))
-            try
                 % Gerekli yolları ekle
-                Utils.try_warn(@() setup, 'Otomatik hazırlık: setup çağrısı başarısız');
+                setup;
                 % Temel parametreleri yükle ve T1 hesapla
                 parametreler;
                 % Veri kümesini ölçekle (band/trim) ve dondur
-                try
                     % Auto‑prep: dışarıdan sağlanmışsa yükleme seçeneklerini kullan
                     if exist('optsGA','var') && isstruct(optsGA) && isfield(optsGA,'load_opts')
                         [~, scaled] = load_ground_motions(T1, optsGA.load_opts);
@@ -74,12 +70,6 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
                         % IM ayarlarını tamamen varsayılanlara bırak
                         [~, scaled] = load_ground_motions(T1);
                     end
-                catch ME
-                    warning('Otomatik hazırlık: load_ground_motions başarısız: %s', ME.message);
-                    % gerekirse ham veriye düş
-                    [scaled_raw, ~] = load_ground_motions(); %#ok<ASGLU>
-                    error('run_ga_driver:auto_prep','Failed to produce scaled set.');
-                end
                 % Parametre yapısını oluştur (damperlinon yansısı)
                 params = struct('M',M,'C0',C0,'K',K,'k_sd',k_sd,'c_lam0',c_lam0,'Lori',Lori, ...
                     'orf',orf,'rho',rho,'Ap',Ap,'A_o',A_o,'Qcap_big',Qcap_big,'mu_ref',mu_ref, ...
@@ -90,17 +80,9 @@ Utils.try_warn(@() parpool_hard_reset(16), '[run_ga_driver] parpool başlatılam
                     'resFactor',resFactor,'cfg',cfg,'story_height',story_height, ...
                     'Dp',Dp,'d_w',d_w,'D_m',D_m,'n_turn',n_turn,'Kd',Kd,'Ebody',Ebody,'Gsh',Gsh);
                 % Kullanıcı kolaylığı için temel çalışma alanına aktar
-                try
                     assignin('base','scaled',scaled);
                     assignin('base','params',params);
                     assignin('base','T1',T1);
-                catch ME
-                    warning('Otomatik hazırlık: assignin başarısız: %s', ME.message);
-                end
-            catch ME
-                warning('Otomatik hazırlık başarısız: %s', ME.message);
-                % hatalar aşağıdaki assertlar tarafından yakalanacak
-            end
         end
     end
     assert(~isempty(scaled),'run_ga_driver: scaled set is empty. Define ''scaled'' in workspace or pass a snapshot path.');
@@ -123,12 +105,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     IntCon = [2 13];  % n_orf ve n_turn tam sayı
 
     % Veri seti imzası üret (önbellek anahtarı)
-    try
         dsig = sum([scaled.IM]) + sum([scaled.PGA]);
-    catch ME
-        warning('Veri seti imzası hesaplanamadı: %s', ME.message);
-        dsig = 0;
-    end
     optsEval.dsig = dsig;
     obj = @(x) eval_design_fast(x, scaled, params, optsEval); % içerde kuantize/clamplar
 
@@ -146,7 +123,6 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
 
     %% Başlangıç Popülasyonu
     % Izgaraya hizalı ilk popülasyonu oluştur (tohumlarla birlikte).
-    try
         if ~isfield(optsGA,'InitialPopulationMatrix') || isempty(optsGA.InitialPopulationMatrix)
             step_vec = [0.1 NaN 0.01 0.02 0.01 0.01 0.05 1 25 1 0.5 5 NaN 0.05 0.1];
             P0 = Utils.initial_pop_grid(lb, ub, options.PopulationSize, step_vec);
@@ -170,7 +146,6 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
             ns = min(size(seed,1), size(P0,1));
             P0(1:ns,:) = seed(1:ns,:);
             % Önceki Pareto'yu kullanmak için en son ga_front.csv dosyasını okumayı dene
-            try
                 dd = dir(fullfile('out','ga_*'));
                 if ~isempty(dd)
                     [~,ix] = max([dd.datenum]);
@@ -200,14 +175,8 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
                             end
                     end
                 end
-            catch ME
-                warning('Önceki Pareto tohumları okunamadı: %s', ME.message);
-            end
             options = optimoptions(options,'InitialPopulationMatrix', P0);
         end
-    catch ME
-        warning('Başlangıç popülasyonu kurulurken hata: %s', ME.message);
-    end
 
     [X,F,exitflag,output,population,scores] = gamultiobj(obj, numel(lb), [],[],[],[], lb, ub, [], IntCon, options);
     gaout = struct('exitflag',exitflag,'output',output);
@@ -218,7 +187,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     if ~exist(outdir,'dir'), mkdir(outdir); end
     opts_ga = options; date_str = datestr(now);
     front = struct('X',X,'F',F,'opts_ga',opts_ga,'meta',meta,'date_str',date_str);
-    safe_write(front, fullfile(outdir,'ga_front.mat'), @(d,f) save(f,'-struct','d','-v7.3'));
+    save(fullfile(outdir,'ga_front.mat'), '-struct', 'front', '-v7.3');
 
     % === Re-evaluate Pareto designs to collect metrics per-row ===
     nF = size(X,1);
@@ -247,86 +216,21 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
         Si = run_batch_windowed(scaled, Pi, Opost);
 
         % Tablo sütunlarını güvenle al
-        try
             v_PFA = Si.table.PFA;
-        catch ME
-            warning('PFA okunamadı: %s', ME.message);
-            v_PFA = NaN;
-        end
-        try
             v_IDR = Si.table.IDR;
-        catch ME
-            warning('IDR okunamadı: %s', ME.message);
-            v_IDR = NaN;
-        end
-        try
             v_x10 = Si.table.x10_max_D;
-        catch ME
-            warning('x10_max_D okunamadı: %s', ME.message);
-            v_x10 = 0;
-        end
-        try
             v_a10 = Si.table.a10abs_max_D;
-        catch ME
-            warning('a10abs_max_D okunamadı: %s', ME.message);
-            v_a10 = 0;
-        end
 
-        try
             v_dP95 = Si.table.dP95;
-        catch ME
-            warning('dP95 okunamadı: %s', ME.message);
-            v_dP95 = 0;
-        end
-        try
             v_Qcap = Si.table.Qcap95;
-        catch ME
-            warning('Qcap95 okunamadı: %s', ME.message);
-            v_Qcap = 0;
-        end
-        try
             v_cav  = Si.table.cav_pct;
-        catch ME
-            warning('cav_pct okunamadı: %s', ME.message);
-            v_cav = 0;
-        end
-        try
             v_Tend = Si.table.T_end;
-        catch ME
-            warning('T_end okunamadı: %s', ME.message);
-            v_Tend = 0;
-        end
-        try
             v_mu   = Si.table.mu_end;
-        catch ME
-            warning('mu_end okunamadı: %s', ME.message);
-            v_mu = 1;
-        end
 
-        try
             v_PFp95 = Si.table.PF_p95;
-        catch ME
-            warning('PF_p95 okunamadı: %s', ME.message);
-            v_PFp95 = 0;
-        end
-        try
             v_Qq50  = Si.table.Q_q50;
-        catch ME
-            warning('Q_q50 okunamadı: %s', ME.message);
-            v_Qq50 = 0;
-        end
-        try
             v_Qq95  = Si.table.Q_q95;
-        catch ME
-            warning('Q_q95 okunamadı: %s', ME.message);
-            v_Qq95 = 0;
-        end
-        try
             v_dPq50 = Si.table.dP50;
-        catch ME
-            warning('dP50 okunamadı: %s', ME.message);
-            v_dPq50 = 0;
-        end
         v_Toil = [];
         v_Tsteel = [];
 
@@ -411,8 +315,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     T.E_ratio             = Eratio;   T.P_mech_sum        = Pmech;
 
     % === BASELINE (pre-GA) ROW: params başlangıcıyla tek koşu, ilk satır ===
-    T = Utils.try_warn(@() prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W), ...
-        'Başlangıç satırı oluşturulamadı');
+    T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W);
 
     write_pareto_results(T, outdir);
 
@@ -424,7 +327,8 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
         for i = 1:numel(idx)
             params_list{i} = decode_params_from_x(params, X(idx(i),:)); %#ok<AGROW>
         end
-        safe_write(struct('params_list',{params_list}), fullfile(outdir,'ga_front.mat'), @(d,f) save(f,'-struct','d','-append'));
+        tmp_struct = struct('params_list',{params_list});
+        save(fullfile(outdir,'ga_front.mat'), '-struct', 'tmp_struct', '-append');
 
         % Önemli çözülmüş alanlarla ga_topK.csv
         top = table();
@@ -437,7 +341,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
                 {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref','A_o','Qcap_big'});
             top = [top; row]; %#ok<AGROW>
         end
-        safe_write(top, fullfile(outdir,'ga_topK.csv'), @writetable);
+        writetable(top, fullfile(outdir,'ga_topK.csv'));
     end
 
     % Minimal README dosyası
@@ -445,8 +349,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     if fid~=-1
         fprintf(fid, 'Hybrid GA run: %s\n', date_str);
         % IM meta istefe bagl1 olarak yaz1lm1yor (bypass kald1r1ld1)
-        Utils.try_warn(@() fprintf(fid, 'thr=%s\n', jsonencode(meta.thr)), ...
-            'README yazımı sırasında thr bilgisi eklenemedi');
+        fprintf(fid, 'thr=%s\n', jsonencode(meta.thr));
         fprintf(fid, 'Note: No simulations during packaging. Fitness evals had no IO.\n');
         fclose(fid);
     end
@@ -480,12 +383,7 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     if isempty(memo), memo = containers.Map(); end
     % Bellek anahtarlarının farklı veri setleri arasında çakışmaması için tuz ekle
     dsig = 0;
-    try
         dsig = sum([scaled.IM]) + sum([scaled.PGA]);
-    catch ME
-        warning('Veri seti imzası hesaplanamadı: %s', ME.message);
-        dsig = 0;
-    end
     key = jsonencode([x, dsig]);
     if isKey(memo, key)
         meta = memo(key); f = meta.f; return;
@@ -500,23 +398,7 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     % policy/order vars referenced by run_batch_windowed default to each/natural
 
     % Güvenli değerlendirme (GA sırasında IO yok)
-    try
         S = run_batch_windowed(scaled, P, O);
-    catch ME
-        f = [1e6, 1e6];
-        meta = struct('x',x,'f',f,'error','eval_failed', ...
-                      'message',ME.message,'identifier',ME.identifier);
-        % --- cezalar: hata durumunda sayısal değerleri zorla (NaN olmasın)
-        meta.pen      = 0;
-        meta.pen_dP   = 0;
-        meta.pen_Qcap = 0;
-        meta.pen_cav  = 0;
-        meta.pen_T    = 0;
-        meta.pen_mu   = 0;
-        Utils.try_warn(@() memo_store('set', jsonencode([x, dsig]), meta), ...
-            'memo_store yazımı başarısız');
-        return;
-    end
 
     % --- HARD FILTER (erken eleme) ---
     dP95v = S.table.dP95;
@@ -532,8 +414,7 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
         meta.pen_cav  = 0;
         meta.pen_T    = 0;
         meta.pen_mu   = 0;
-        Utils.try_warn(@() memo_store('set', jsonencode([x, dsig]), meta), ...
-            'memo_store yazımı başarısız');
+        memo_store('set', jsonencode([x, dsig]), meta);
         return;
     end
 
@@ -584,34 +465,17 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     meta.pen_parts = pen_parts;
     % --- append damperli peak metrics (zeros if unavailable)
     x10pk = 0; a10pk = 0;
-        try
             if isfield(S,'table') && istable(S.table)
                 if ismember('x10_max_D', S.table.Properties.VariableNames)
-                    try
                         x10pk = max(S.table.x10_max_D);
-                    catch ME
-                        x10pk = S.table.x10_max_D;
-                        if numel(x10pk)>1, x10pk = max(x10pk(:)); end
-                        warning('x10 pik değer okuması başarısız: %s', ME.message);
-                    end
                 end
                 if ismember('a10abs_max_D', S.table.Properties.VariableNames)
-                    try
                         a10pk = max(S.table.a10abs_max_D);
-                    catch ME
-                        a10pk = S.table.a10abs_max_D;
-                        if numel(a10pk)>1, a10pk = max(a10pk(:)); end
-                        warning('a10 pik değer okuması başarısız: %s', ME.message);
-                    end
                 end
             end
-        catch ME
-            warning('Damperli pik metrikleri alınamadı: %s', ME.message);
-        end
     meta.x10_max_damperli    = x10pk;
     meta.a10abs_max_damperli = a10pk;
     % === Penaltı sürücüleri ve diagnostikleri ekle (varsa) ===
-    try
         if isfield(S,'table') && istable(S.table)
             candCols = { ...
               'dP95','Qcap95','cav_pct','T_end','mu_end', ...
@@ -622,132 +486,65 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
               'x10_max_D','a10abs_max_D','P_mech','E_orifice','E_struct','Re_max' ...
             };
             % Gerekirse alan adları için takma adlar sağla
-            try
                 if ismember('E_orifice_sum', S.table.Properties.VariableNames) && ...
                    ismember('E_struct_sum', S.table.Properties.VariableNames) && ...
                    ~ismember('energy_tot_sum', S.table.Properties.VariableNames)
                     S.table.energy_tot_sum = S.table.E_orifice_sum + S.table.E_struct_sum; %#ok<AGROW>
                 end
-            catch ME
-                warning('Diagnostik alias tanımlamada hata: %s', ME.message);
-            end
             for jj = 1:numel(candCols)
                 nm = candCols{jj};
                 if ismember(nm, S.table.Properties.VariableNames)
                     val = S.table.(nm);
-                    try
                         if ~all(isfinite(val(:)))
                             val(~isfinite(val)) = 0;
                         end
-                    catch ME
-                        warning('Diagnostik sütun işlenemedi (%s): %s', nm, ME.message);
-                    end
                     meta.(nm) = val;
                 end
             end
         end
-    catch ME
-        warning('Diagnostik alanlar eklenemedi: %s', ME.message);
-    end
 
 memo(key) = meta;
-Utils.try_warn(@() memo_store('set', key, meta), 'memo_store yazımı başarısız');
+memo_store('set', key, meta);
 
     end
 
 function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
     rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
     rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
-    try
         % Build X0 from params (with sensible fallbacks)
         X0 = nan(1,13);
         % d_o_mm and n_orf
-        try
             if isfield(params,'orf') && isfield(params.orf,'d_o') && ~isempty(params.orf.d_o)
                 X0(1) = 1e3 * params.orf.d_o;
             else
                 X0(1) = 3.00;
             end
-        catch ME
-            warning('d_o_mm çıkarılamadı: %s', ME.message);
-            X0(1) = 3.00;
-        end
-        try
             if isfield(params,'n_orf') && ~isempty(params.n_orf)
                 X0(2) = params.n_orf;
             else
                 X0(2) = 5;
             end
-        catch ME
-            warning('n_orf çıkarılamadı: %s', ME.message);
-            X0(2) = 5;
-        end
         % PF parameters
-        try
             if isfield(params,'cfg') && isfield(params.cfg,'PF')
                 X0(3) = Utils.getfield_default(params.cfg.PF,'tau',1.0);
                 X0(4) = Utils.getfield_default(params.cfg.PF,'gain',0.85);
             else
                 X0(3:4) = [1.0 0.85];
             end
-        catch ME
-            warning('PF parametreleri okunamadı: %s', ME.message);
-            X0(3:4) = [1.0 0.85];
-        end
 
         % Orifis katsayıları
-        try
             X0(5) = Utils.getfield_default(params.orf,'Cd0',0.61);
             X0(6) = Utils.getfield_default(params.orf,'CdInf',0.80);
             X0(7) = Utils.getfield_default(params.orf,'p_exp',1.10);
-        catch ME
-            warning('Orifis katsayıları okunamadı: %s', ME.message);
-            X0(5:7) = [0.61 0.80 1.10];
-        end
 
         % Lori, hA ve geometri
-        try
             X0(8) = Utils.getfield_default(params,'Lori',0.10)*1e3;
-        catch ME
-            warning('Lori okunamadı: %s', ME.message);
-            X0(8) = 100;
-        end
-        try
             X0(9) = Utils.getfield_default(params.thermal,'hA_W_perK',450);
-        catch ME
-            warning('hA_W_perK okunamadı: %s', ME.message);
-            X0(9) = 450;
-        end
-        try
             X0(10) = Utils.getfield_default(params,'Dp',0.125)*1e3;
-        catch ME
-            warning('Dp okunamadı: %s', ME.message);
-            X0(10) = 125;
-        end
-        try
             X0(11) = Utils.getfield_default(params,'d_w',0.012)*1e3;
-        catch ME
-            warning('d_w okunamadı: %s', ME.message);
-            X0(11) = 12;
-        end
-        try
             X0(12) = Utils.getfield_default(params,'D_m',0.080)*1e3;
-        catch ME
-            warning('D_m okunamadı: %s', ME.message);
-            X0(12) = 80;
-        end
-        try
             X0(13) = Utils.getfield_default(params,'n_turn',8);
-        catch ME
-            warning('n_turn okunamadı: %s', ME.message);
-            X0(13) = 8;
-        end
-        try
             X0(14) = Utils.getfield_default(params,'mu_ref',0.9);
-        catch ME
-            warning('mu_ref okunamadı: %s', ME.message);
-            X0(14) = 0.9;
-        end
 
         % Simulate baseline with same post-eval options
         X0 = quant_clamp_x(X0);
@@ -756,18 +553,9 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         T0bl  = S0.table;
         % Objectives
         f0 = [NaN NaN];
-        [f0, ~] = Utils.try_warn(@() eval_design_fast(X0, scaled, params, Opost), ...
-            'eval_design_fast temel çalıştırma hatası');
-        try
+        [f0, ~] = eval_design_fast(X0, scaled, params, Opost);
             PFA0 = mean(T0bl.PFA);
-        catch
-            PFA0 = NaN;
-        end
-        try
             IDR0 = mean(T0bl.IDR);
-        catch
-            IDR0 = NaN;
-        end
         % Penalty parts (same formula)
         dP95_0   = max(T0bl.dP95);
         Qcap95_0 = max(T0bl.Qcap95);
@@ -819,19 +607,14 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         assign('pen_mu',  pen_mu_0);
 
         % damper tepe değerleri
-        try
             if ismember('x10_max_damperli', vn) && ismember('x10_max_D', T0bl.Properties.VariableNames)
                 assign('x10_max_damperli', max(T0bl.x10_max_D));
             end
             if ismember('a10abs_max_damperli', vn) && ismember('a10abs_max_D', T0bl.Properties.VariableNames)
                 assign('a10abs_max_damperli', max(T0bl.a10abs_max_D));
             end
-        catch ME
-            warning('Başlangıç damper tepe hesaplanamadı: %s', ME.message);
-        end
 
         % diğer diagnostikler
-        try
             if ismember('dP95', vn) && ismember('dP95', T0bl.Properties.VariableNames)
                 assign('dP95', max(T0bl.dP95));
             end
@@ -890,34 +673,18 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
                 if ismember('energy_tot_sum', T0bl.Properties.VariableNames)
                     assign('energy_tot_sum', sum(T0bl.energy_tot_sum));
                 else
-                    try
                         assign('energy_tot_sum', T0.E_orifice_sum + T0.E_struct_sum);
-                    catch ME
-                        warning('energy_tot_sum hesaplanamadı: %s', ME.message);
-                        assign('energy_tot_sum', 0);
-                    end
                 end
             end
             if ismember('E_ratio', vn)
-                try
                     assign('E_ratio', (T0.E_struct_sum>0) * (T0.E_orifice_sum / max(T0.E_struct_sum, eps)));
-                catch ME
-                    warning('E_ratio hesaplanamadı: %s', ME.message);
-                    assign('E_ratio', 0);
-                end
             end
             if ismember('P_mech_sum', vn) && ismember('P_mech_sum', T0bl.Properties.VariableNames)
                 assign('P_mech_sum', sum(T0bl.P_mech_sum));
             end
-        catch ME
-            warning('Başlangıç diagnostikleri alınamadı: %s', ME.message);
-        end
 
         % Bas satırı en üste ekle
         T = [T0; T];
-    catch ME
-        warning('Başlangıç satırı öne eklenemedi: %s', ME.message);
-    end
     function assign(name, val)
         if ismember(name, vn)
             % Coerce val to numeric when appropriate
@@ -951,24 +718,15 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
 end
 
 function write_pareto_results(T, outdir)
-    safe_write(T, fullfile(outdir,'ga_front.csv'), @writetable);
-    try
+    writetable(T, fullfile(outdir,'ga_front.csv'));
         f1v = T.f1; f2v = T.f2;
         f1n = (f1v - min(f1v)) / max(eps, (max(f1v)-min(f1v)));
         f2n = (f2v - min(f2v)) / max(eps, (max(f2v)-min(f2v)));
         d   = hypot(f1n, f2n);
         [~,kidx] = min(d);
         Tknee = T(kidx,:);
-        try
             Tknee_full = [T(1,:); Tknee]; % assume T(1,:) is baseline just prepended
-            safe_write(Tknee_full, fullfile(outdir,'ga_knee.csv'), @writetable);
-        catch ME
-            warning('write_pareto_results (knee dışa aktarım) hatası: %s', ME.message);
-            safe_write(Tknee, fullfile(outdir,'ga_knee.csv'), @writetable);
-        end
-    catch ME
-        warning('write_pareto_results (knee hesaplama) hatası: %s', ME.message);
-    end
+            writetable(Tknee_full, fullfile(outdir,'ga_knee.csv'));
 end
 
 
@@ -1065,9 +823,4 @@ function [state, options, optchanged] = ga_out_best_pen(options, state, flag, sc
         [f_curr, meta_curr] = eval_design_fast(bestx, scaled, params, optsEval);
         fprintf('Gen %d: f1=%g f2=%g pen=%g\n', state.Generation, f_curr(1), f_curr(2), meta_curr.pen);
     end
-end
-function safe_write(obj, filepath, writeFcn)
-% Verilen yazma fonksiyonunu hataya karşı korumalı olarak çağırır
-    Utils.try_warn(@() writeFcn(obj, filepath), ...
-        sprintf('Yazma hatası (%s)', filepath));
 end
