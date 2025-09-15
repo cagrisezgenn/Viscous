@@ -102,19 +102,9 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     F(:,Mvec) = F(:,Mvec) + F_story;
     a_rel = ( -(M\(C*v.' + K*x.' + F.')).' - ag.*r.' );
 
-    ts = struct();
-    ts.dvel = dvel;
-    ts.story_force = F_story;
-    ts.Q = Q;
-    ts.dP_orf = dP_orf;
-    ts.PF = F_p;
-    ts.cav_mask = dP_orf < 0;
-    ts.P_sum = P_sum;
-    ts.E_orf = E_orf;
-    ts.E_struct = E_struct;
-    ts.T_oil = T_o;
-    ts.mu = mu;
-    ts.c_lam = c_lam;
+    ts = struct('dvel', dvel, 'story_force', F_story, 'Q', Q, ...
+        'dP_orf', dP_orf, 'PF', F_p, 'cav_mask', dP_orf < 0, 'P_sum', P_sum, ...
+        'E_orf', E_orf, 'E_struct', E_struct, 'T_oil', T_o, 'mu', mu, 'c_lam', c_lam);
 
 %% İç Fonksiyonlar
     function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)
