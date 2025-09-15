@@ -19,19 +19,6 @@ end
 assert(isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), ...
     'run_batch_windowed: params.thermal.hA_W_perK eksik');
 
-do_export = isfield(opts,'do_export') && opts.do_export;
-if do_export
-    if isfield(opts,'outdir')
-        outdir = opts.outdir;
-    else
-        ts = datestr(now,'yyyymmdd_HHMMSS_FFF');
-        outdir = fullfile('out', ts);
-    end
-    if ~exist(outdir,'dir'), mkdir(outdir); end
-else
-    outdir = '';
-end
-
 %% Girdi Hazırlığı
 n = numel(scaled);
 vars = prepare_inputs(n, params, opts);
@@ -42,10 +29,6 @@ vars = record_loop(scaled, params, opts, vars);
 %% Özet Tablo
 summary = build_summary_table(vars, opts);
 all_out = vars.all_out;
-
-if do_export
-    export_results(outdir, scaled, params, opts, summary, all_out);
-end
 
 end
 

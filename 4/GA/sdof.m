@@ -10,11 +10,7 @@ parametreler;  % loads structural and damper parameters and computes T1
 
 %% Override with GA best parameters from GA output
 try
-    if exist('ga_knee.csv','file')
-        tbl = readtable('ga_knee.csv');
-    else
-        tbl = readtable('ga_front.csv');
-    end
+    tbl = readtable('ga_front.csv');
     xb = tbl(1,:);
 
     d_o   = xb.d_o_mm/1000;      % [m]

@@ -219,7 +219,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
 
     write_pareto_results(T, outdir);
 
-    % Simülasyon çalıştırmadan en iyi K tasarımı çözümlendir
+    % En iyi K tasarımın parametre listesi
     K = min(10, size(X,1));
     if K > 0
         idx = unique(round(linspace(1,size(X,1),K)));
@@ -229,29 +229,6 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
         end
         tmp_struct = struct('params_list',{params_list});
         save(fullfile(outdir,'ga_front.mat'), '-struct', 'tmp_struct', '-append');
-
-        % Önemli çözülmüş alanlarla ga_topK.csv
-        top = table();
-        for i = 1:numel(idx)
-            P = params_list{i};
-            row = table(P.orf.d_o*1e3, P.n_orf, ...
-                X(idx(i),3), X(idx(i),4), X(idx(i),5), X(idx(i),6), X(idx(i),7), X(idx(i),8), ...
-                X(idx(i),9), X(idx(i),10), X(idx(i),11), X(idx(i),12), X(idx(i),13), X(idx(i),14), ...
-                P.A_o, P.Qcap_big, 'VariableNames', ...
-                {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref','A_o','Qcap_big'});
-            top = [top; row]; %#ok<AGROW>
-        end
-        writetable(top, fullfile(outdir,'ga_topK.csv'));
-    end
-
-    % Minimal README dosyası
-    fid=fopen(fullfile(outdir,'README.txt'),'w');
-    if fid~=-1
-        fprintf(fid, 'Hybrid GA run: %s\n', date_str);
-        % IM meta istefe bagl1 olarak yaz1lm1yor (bypass kald1r1ld1)
-        fprintf(fid, 'thr=%s\n', jsonencode(meta.thr));
-        fprintf(fid, 'Note: No simulations during packaging. Fitness evals had no IO.\n');
-        fclose(fid);
     end
 
 end
@@ -617,14 +594,6 @@ end
 
 function write_pareto_results(T, outdir)
     writetable(T, fullfile(outdir,'ga_front.csv'));
-        f1v = T.f1; f2v = T.f2;
-        f1n = (f1v - min(f1v)) / max(eps, (max(f1v)-min(f1v)));
-        f2n = (f2v - min(f2v)) / max(eps, (max(f2v)-min(f2v)));
-        d   = hypot(f1n, f2n);
-        [~,kidx] = min(d);
-        Tknee = T(kidx,:);
-            Tknee_full = [T(1,:); Tknee]; % assume T(1,:) is baseline just prepended
-            writetable(Tknee_full, fullfile(outdir,'ga_knee.csv'));
 end
 
 
