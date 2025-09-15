@@ -1,95 +1,29 @@
-    function [X,F,gaout] = run_ga_driver(scaledOrSnap, params, optsEval, optsGA)
+function [X,F,gaout] = run_ga_driver(scaled, params, optsEval, optsGA)
 % === Parpool Açılışı (temizlik + iş parçacığı sınırı) ===
 parpool_hard_reset(16);
-%RUN_GA_DRIVER Hibrit GA sürücüsü: anlık görüntü yolu veya bellek içi
-% yapıları kabul eder.
-%   [X,F,GAOUT] = RUN_GA_DRIVER(SCALED_OR_PATH, PARAMS, OPTSEVAL, OPTSGA)
-%   İki çalışma modu:
-%     A) Anlık görüntü: run_ga_driver('out/<ts>/snapshot.mat', params?, ...)
-%        'scaled' (ve gerekirse params) yüklenir.
-%     B) Bellek içi: run_ga_driver(scaled, params, ...)
-%   Uygunluk hesapları sırasında IO yapılmaz; yeniden ölçekleme yoktur.
+%RUN_GA_DRIVER Hibrit GA sürücüsü: önceden hazırlanmış
+% `scaled` veri kümesi ve `params` yapısını kabul eder.
+%   [X,F,GAOUT] = RUN_GA_DRIVER(SCALED, PARAMS, OPTSEVAL, OPTSGA)
+% `scaled` ve `params` çalışma alanında hazır olmalı veya dışarıda bir
+% hazırlık fonksiyonu tarafından sağlanmalıdır. Uygunluk hesapları sırasında
+% IO yapılmaz; yeniden ölçekleme yoktur.
 
 %% Girdi Çözümleme
-% Gelen girdileri ayrıştır, eksikse temel çalışma alanından tamamla.
+% `scaled` ve `params` doğrudan argüman olarak alınır.
+if nargin < 3 || isempty(optsEval), optsEval = struct; end
+if nargin < 4 || isempty(optsGA),   optsGA   = struct; end
 
-    % ---------- Sıfır argüman kolaylığı: temel çalışma alanından çek ----------
-    % nargin==0/1 olduğunda eksik girişlere referans vermemek için yerel kopyalar.
-    if nargin >= 1
-        scaledOrSnap_local = scaledOrSnap;
-    else
-        scaledOrSnap_local = [];
-    end
-    if nargin >= 2
-        params_local = params;
-    else
-        params_local = [];
-    end
-    % Girdi verilmemişse (ör. editörde Run'a basıldığında) GA'nın başlayabilmesi
-    % için temel çalışma alanında değişkenlerin varlığını kontrol et.
-    % Yoksa boş bırak; aşağıdaki "auto-prep" bloğu eksikleri doldurur.
-    if isempty(scaledOrSnap_local)
-        if evalin('base','exist(''scaled'',''var'')')
-            scaledOrSnap_local = evalin('base','scaled');
-        end
-    end
-    if isempty(params_local)
-        if evalin('base','exist(''params'',''var'')')
-            params_local = evalin('base','params');
-        end
-    end
-    if nargin < 3 || isempty(optsEval), optsEval = struct; end
-    if nargin < 4 || isempty(optsGA),   optsGA   = struct; end
+meta = struct('thr', Utils.default_qc_thresholds(struct()));
 
-    % ---------- scaled/params/meta çözümü ----------
-    if ischar(scaledOrSnap_local) || isstring(scaledOrSnap_local)
-        S = load(char(scaledOrSnap_local), 'scaled','params','opts','thr');
-        assert(isfield(S,'scaled') && ~isempty(S.scaled), ...
-            'run_ga_driver: snapshot missing ''scaled''.');
-        scaled = S.scaled;
-        if isempty(params_local)
-            assert(isfield(S,'params') && ~isempty(S.params), ...
-                'run_ga_driver: params not supplied and snapshot missing params.');
-            params = S.params;
-        else
-            params = params_local;
-        end
-        meta = struct();
-        meta.thr = Utils.default_qc_thresholds(Utils.getfield_default(S,'thr', struct()));
-    else
-        scaled = scaledOrSnap_local;
-        params = params_local;
-        meta = struct('thr', Utils.default_qc_thresholds(struct()));
-        % Gerekirse çalışma alanını otomatik hazırla (giriş sağlanmadığında)
-        if (isempty(scaled) || isempty(params))
-                % Gerekli yolları ekle
-                setup;
-                % Temel parametreleri yükle ve T1 hesapla
-                parametreler;
-                % Veri kümesini ölçekle (band/trim) ve dondur
-                    load_opts = Utils.getfield_default(optsGA,'load_opts',[]);
-                    if isempty(load_opts)
-                        [~, scaled] = load_ground_motions(T1);
-                    else
-                        [~, scaled] = load_ground_motions(T1, load_opts);
-                    end
-                % Parametreler betiği params yapısını hazırlamıştır
-                assignin('base','scaled',scaled);
-                assignin('base','params',params);
-                assignin('base','T1',T1);
-        end
-    end
-    assert(~isempty(scaled),'run_ga_driver: scaled set is empty. Define ''scaled'' in workspace or pass a snapshot path.');
-    assert(~isempty(params),'run_ga_driver: params is empty. Define ''params'' in workspace or include it in snapshot.');
+assert(~isempty(scaled), 'run_ga_driver: scaled dataset is empty.');
+assert(~isempty(params), 'run_ga_driver: params is empty.');
 
-    % ---------- Varsayılan değerlendirme ayarları (IO yok) ----------
-    if nargin < 3 || isempty(optsEval), optsEval = struct; end
-    optsEval.do_export     = false;
-    optsEval.quiet         = true;
-    optsEval.thr = Utils.default_qc_thresholds(Utils.getfield_default(optsEval,'thr', meta.thr));
-    %% GA Kurulumu
-    % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
-    if nargin < 4 || isempty(optsGA), optsGA = struct; end
+% ---------- Varsayılan değerlendirme ayarları (IO yok) ----------
+optsEval.do_export     = false;
+optsEval.quiet         = true;
+optsEval.thr = Utils.default_qc_thresholds(Utils.getfield_default(optsEval,'thr', meta.thr));
+%% GA Kurulumu
+% GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
     rng(42);
 
     % Karar vektörü: [d_o_mm, n_orf, PF_tau, PF_gain, Cd0, CdInf, p_exp, Lori_mm, hA_W_perK, Dp_mm, d_w_mm, D_m_mm, n_turn, mu_ref]
