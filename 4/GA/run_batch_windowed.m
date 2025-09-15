@@ -16,9 +16,6 @@ if isfield(opts,'order_perm')
     scaled = scaled(opts.order_perm);
 end
 
-% Türetilmiş damper sabitlerini güncelle
-params = Utils.recompute_damper_params(params);
-
 assert(isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), ...
     'run_batch_windowed: params.thermal.hA_W_perK eksik');
 

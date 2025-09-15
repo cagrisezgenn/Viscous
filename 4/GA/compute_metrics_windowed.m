@@ -14,9 +14,6 @@ function metr = compute_metrics_windowed(t, x, a_rel, ag, ts, story_height, win,
 %   katın yüksekliğidir. WIN.IDX ilgilenilen pencereyi seçen mantıksal
 %   vektördür. PARAMS yapısal ve damper parametrelerini içerir.
 
-% Türetilmiş damper sabitlerini güncelle
-params = Utils.recompute_damper_params(params);
-
 idx = win.idx;
 
 %% Temel Tepki

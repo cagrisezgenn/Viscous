@@ -7,9 +7,6 @@ function export_results(outdir, scaled, params, opts, summary, all_out, varargin
 if nargin < 1 || isempty(outdir), return; end
 if ~exist(outdir,'dir'), mkdir(outdir); end
 
-% Türetilmiş damper sabitlerini güncelle
-params = Utils.recompute_damper_params(params);
-
 %% Meta (IM alanlarını varsayılanlarla doldurma kaldırıldı)
     % TRIM bilgisi opsiyonel
     TRIM_names = Utils.getfield_default(opts,'TRIM_names',{});

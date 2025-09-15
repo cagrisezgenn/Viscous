@@ -73,19 +73,10 @@ parpool_hard_reset(16);
                     else
                         [~, scaled] = load_ground_motions(T1, load_opts);
                     end
-                % Parametre yapısını oluştur (damperlinon yansısı)
-                params = struct('M',M,'C0',C0,'K',K,'k_sd',k_sd,'c_lam0',c_lam0,'Lori',Lori, ...
-                    'orf',orf,'rho',rho,'Ap',Ap,'A_o',A_o,'Qcap_big',Qcap_big,'mu_ref',mu_ref, ...
-                    'thermal',thermal,'T0_C',T0_C,'T_ref_C',T_ref_C,'b_mu',b_mu, ...
-                    'c_lam_min',c_lam_min,'c_lam_cap',c_lam_cap,'Lgap',Lgap, ...
-                    'cp_oil',cp_oil,'cp_steel',cp_steel,'steel_to_oil_mass_ratio',steel_to_oil_mass_ratio, ...
-                    'story_mask',story_mask,'n_dampers_per_story',n_dampers_per_story, ...
-                    'resFactor',resFactor,'cfg',cfg,'story_height',story_height, ...
-                    'Dp',Dp,'d_w',d_w,'D_m',D_m,'n_turn',n_turn,'Kd',Kd,'Ebody',Ebody,'Gsh',Gsh);
-                % Kullanıcı kolaylığı için temel çalışma alanına aktar
-                    assignin('base','scaled',scaled);
-                    assignin('base','params',params);
-                    assignin('base','T1',T1);
+                % Parametreler betiği params yapısını hazırlamıştır
+                assignin('base','scaled',scaled);
+                assignin('base','params',params);
+                assignin('base','T1',T1);
         end
     end
     assert(~isempty(scaled),'run_ga_driver: scaled set is empty. Define ''scaled'' in workspace or pass a snapshot path.');
@@ -796,7 +787,6 @@ function P = decode_params_from_x(params_base_, x_)
     P = params_base_;
     P.orf.d_o = d_o_mm * 1e-3;         % mm'den m'ye
     P.n_orf   = n_orf;
-    P.A_o     = P.n_orf * (pi * P.orf.d_o^2 / 4);
     P.orf.Cd0   = Cd0;
     P.orf.CdInf = CdInf;
     P.orf.p_exp = p_exp;
@@ -809,18 +799,7 @@ function P = decode_params_from_x(params_base_, x_)
     if isfield(P,'thermal')
         P.thermal.hA_W_perK = hA_W_perK;
     end
-    P.Ap    = pi * P.Dp^2 / 4;
-    P.k_h   = P.Kd * P.Ap^2 / P.Lgap;
-    P.k_s   = P.Ebody * P.Ap / P.Lgap;
-    P.k_hyd = 1 / (1/P.k_h + 1/P.k_s);
-    P.k_p   = P.Gsh * P.d_w^4 / (8 * P.n_turn * P.D_m^3);
-    P.k_sd  = P.k_hyd + P.k_p;
-    P.c_lam0 = 12 * P.mu_ref * P.Lori * P.Ap^2 / P.orf.d_o^4;
-    P.A_o   = P.n_orf * (pi * P.orf.d_o^2 / 4);
-    P.Qcap_big= max(P.orf.CdInf * P.A_o, 1e-9) * sqrt(2 * 1.0e9 / P.rho);
-    if isfield(P,'c_lam_min_frac') && isfield(P,'c_lam_min_abs')
-        P.c_lam_min = max(P.c_lam_min_abs, P.c_lam_min_frac * P.c_lam0);
-    end
+    P = build_params(P);
     if isfield(P,'cfg') && isfield(P.cfg,'PF')
         P.cfg.PF.tau  = PF_tau;
         P.cfg.PF.gain = PF_gain;
