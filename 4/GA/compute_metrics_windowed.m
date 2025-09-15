@@ -113,12 +113,7 @@ metr.E_struct_win  = ts.E_struct(w_last) - ts.E_struct(i0);
 metr.E_ratio_win   = metr.E_orifice_win / max(metr.E_struct_win, eps);
 
 %% Termal Metrikler
-% Yağ sıcaklığı ve viskozite gibi termal büyüklükler değerlendirilir.
-if isfield(ts,'T_oil')
-    metr.T_oil_end = ts.T_oil(w_last);
-else
-    metr.T_oil_end = NaN;
-end
+% Yağ viskozitesi gibi termal büyüklükler değerlendirilir.
 if isfield(ts,'mu')
     metr.mu_end = ts.mu(w_last);
 else
