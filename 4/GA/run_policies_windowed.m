@@ -18,10 +18,6 @@ if ~isfield(opts,'cooldown_s_list'), opts.cooldown_s_list = [60 180 300]; end
 if ~isfield(opts,'rng_seed'), opts.rng_seed = 42; end
 if ~isfield(opts,'rank_metric'), opts.rank_metric = 'E_orifice_win'; end
 
-% QC eşikleri (Utils ile varsayılanlara tamamlanır)
-if ~isfield(opts,'thr'), opts.thr = struct(); end
-opts.thr = Utils.default_qc_thresholds(opts.thr);
-
 % Sessizlik/çıktı bayrakları ve çıktı dizini
 quiet = isfield(opts,'quiet') && opts.quiet;
 % Politika koşuları için varsayılan olarak sonuçlar dışa aktarılır
@@ -107,15 +103,14 @@ for ip = 1:numel(opts.policies)
         end
         for ic = 1:numel(cds)
             cdval = cds(ic);
-            perm = orders_struct.(ord);
-            scaled_run = scaled(perm);
             run_opts = opts;
             if isfield(run_opts,'cooldown_s'), run_opts = rmfield(run_opts,'cooldown_s'); end
             run_opts.order = ord;
             run_opts.thermal_reset = pol;
+            run_opts.order_perm = orders_struct.(ord);
             run_opts.do_export = false;
             if strcmp(pol,'cooldown'), run_opts.cooldown_s = cdval; end
-            [summary, ~] = run_batch_windowed(scaled_run, params, run_opts);
+            [summary, ~] = run_batch_windowed(scaled, params, run_opts);
 
             qc.pass_fraction = mean(summary.table.qc_pass);
             qc.n = height(summary.table);
