@@ -16,12 +16,11 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,or
     Nvec = 1:nStories; Mvec = 2:n;
 
     % Başlangıç sıcaklığı ve viskozitesi
-    Tser = T0_C*ones(numel(t),1);
-    mu_abs = mu_ref;
-    c_lam = c_lam0;
+    T_o = T0_C*ones(numel(t),1);
+    T_s = T0_C*ones(numel(t),1);
 
 %% ODE Çözümü
-    odef = @(tt,z) [ z(n+1:end); M \ ( -C*z(n+1:end) - K*z(1:n) - dev_force(tt,z(1:n),z(n+1:end),c_lam,mu_abs) - M*r*agf(tt) ) ];
+    odef = @(tt,z) [ z(n+1:end); M \ ( -C*z(n+1:end) - K*z(1:n) - dev_force(tt,z(1:n),z(n+1:end)) - M*r*agf(tt) ) ];
     sol  = ode15s(odef,[t(1) t(end)],z0,opts);
     z    = deval(sol,t).';
     x    = z(:,1:n); v = z(:,n+1:end);
@@ -33,20 +32,18 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,or
 
     if use_orf
         % Faz 6: Qcap ölçeği ve softmin eps opsiyonu
-        Qcap_eff = Qcap;
         if isfield(cfg,'num') && isfield(cfg.num,'Qcap_scale') && isfinite(cfg.num.Qcap_scale)
-            Qcap_eff = max(1e-9, Qcap * cfg.num.Qcap_scale);
+            Qcap = max(1e-9, Qcap * cfg.num.Qcap_scale);
         end
-        orf_loc = orf;
         if isfield(cfg,'num') && isfield(cfg.num,'softmin_eps') && isfinite(cfg.num.softmin_eps)
-            orf_loc.softmin_eps = cfg.num.softmin_eps;
+            orf.softmin_eps = cfg.num.softmin_eps;
         end
-        params = struct('Ap',Ap,'Qcap',Qcap_eff,'orf',orf_loc,'rho',rho,...
-                        'Ao',Ao,'mu',mu_abs,'F_lin',F_lin,'Lori',Lori);
+        params = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
+                        'Ao',Ao,'mu',mu_ref,'F_lin',F_lin,'Lori',Lori);
         [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params);
         % Ek diagnostikler: dP_kv ve dP_cav (kv ve kavitasyon limitleri)
-        qmag_loc = Qcap_eff * tanh( (Ap/Qcap_eff) * sqrt(dvel.^2 + orf.veps^2) );
-        Re_loc   = (rho .* qmag_loc .* max(orf.d_o,1e-9)) ./ max(Ao*mu_abs,1e-9);
+        qmag_loc = Qcap * tanh( (Ap/Qcap) * sqrt(dvel.^2 + orf.veps^2) );
+        Re_loc   = (rho .* qmag_loc .* max(orf.d_o,1e-9)) ./ max(Ao*mu_ref,1e-9);
         Cd_loc0  = orf.Cd0; Cd_locInf = orf.CdInf; Rec_loc = orf.Rec; pexp_loc = orf.p_exp;
         Cd_loc = Cd_locInf - (Cd_locInf - Cd_loc0) ./ (1 + (Re_loc./max(Rec_loc,1)).^pexp_loc);
         Cd_loc = max(min(Cd_loc,1.2),0.2);
@@ -63,7 +60,7 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,or
         dP_cav_loc = 0*dvel;
     end
 
-    dp_pf = (c_lam*dvel + (F_p - k_sd*drift)) ./ Ap;
+    dp_pf = (c_lam0*dvel + (F_p - k_sd*drift)) ./ Ap;
     if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
         s = tanh(20*dvel);
         dp_pf = s .* max(0, s .* dp_pf);
@@ -72,12 +69,11 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,or
     F_p = k_sd*drift + (w_pf_vec .* dp_pf) * Ap;
 
     % Geometri ölçeklendirmesi R sadece montajda uygulanır
-    F_story = F_p;
-    P_visc_per = c_lam * (dvel.^2);
+    P_visc_per = c_lam0 * (dvel.^2);
     P_sum = sum( (P_visc_per + P_orf_per) .* multi, 2 );
     P_orf_tot = sum(P_orf_per .* multi, 2);
     % Yapısal güç kat toplam kuvvetini kullanır; ekstra çarpan kullanılmaz
-    P_struct_tot = sum(F_story .* dvel, 2);
+    P_struct_tot = sum(F_p .* dvel, 2);
     E_orf = cumtrapz(t, P_orf_tot);
     E_struct = cumtrapz(t, P_struct_tot);
 
@@ -88,7 +84,6 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,or
     m_steel_tot = steel_to_oil_mass_ratio*m_oil_tot;
     C_oil   = max(m_oil_tot*cp_oil,   eps);
     C_steel = max(m_steel_tot*cp_steel, eps);
-    T_o = Tser; T_s = T0_C*ones(numel(t),1);
     hA_os   = Utils.getfield_default(thermal, 'hA_os',    thermal.hA_W_perK);
     hA_o_env= Utils.getfield_default(thermal, 'hA_o_env', thermal.hA_W_perK);
     hA_s_env= Utils.getfield_default(thermal, 'hA_s_env', thermal.hA_W_perK);
@@ -107,13 +102,13 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,or
 %% Çıktı Hesabı
     % İvme için düğüm kuvvetleri
     F = zeros(numel(t),n);
-    F(:,Nvec) = F(:,Nvec) - F_story;
-    F(:,Mvec) = F(:,Mvec) + F_story;
+    F(:,Nvec) = F(:,Nvec) - F_p;
+    F(:,Mvec) = F(:,Mvec) + F_p;
     a_rel = ( -(M\(C*v.' + K*x.' + F.')).' - ag.*r.' );
 
     ts = struct();
     ts.dvel = dvel;
-    ts.story_force = F_story;
+    ts.story_force = F_p;
     ts.Q = Q;
     ts.dP_orf = dP_orf;
     ts.PF = F_p;
@@ -123,10 +118,10 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,or
     ts.E_struct = E_struct;
     ts.T_oil = T_o;
     ts.mu = mu;
-    ts.c_lam = c_lam;
+    ts.c_lam = c_lam0;
 
 %% İç Fonksiyonlar
-    function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)
+    function Fd = dev_force(tt,x_,v_)
         drift_ = x_(Mvec) - x_(Nvec);
         dvel_  = v_(Mvec) - v_(Nvec);
         % Sütun yönelimli etkin parametreler
@@ -136,10 +131,10 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,or
             F_orf_ = 0*dvel_;
         else
             params = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
-                            'Ao',Ao,'mu',mu_abs_loc,'F_lin',F_lin_,'Lori',Lori);
+                            'Ao',Ao,'mu',mu_ref,'F_lin',F_lin_,'Lori',Lori);
             [F_orf_, ~, ~, ~] = calc_orifice_force(dvel_, params);
         end
-        dp_pf_ = (c_lam_loc*dvel_ + F_orf_) ./ Ap;
+        dp_pf_ = (c_lam0*dvel_ + F_orf_) ./ Ap;
         if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
             s = tanh(20*dvel_);
             dp_pf_ = s .* max(0, s .* dp_pf_);
@@ -147,14 +142,13 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orf,or
         w_pf = Utils.pf_weight(tt,cfg) * cfg.PF.gain;
         F_p_ = k_sd*drift_ + (w_pf .* dp_pf_) * Ap;
         % R ölçeklendirmesi yalnızca montajda uygulanır (R*multi)
-        F_story_ = F_p_;
         Fd = zeros(n,1);
-        Fd(Nvec) = Fd(Nvec) - F_story_;
-        Fd(Mvec) = Fd(Mvec) + F_story_;
+        Fd(Nvec) = Fd(Nvec) - F_p_;
+        Fd(Mvec) = Fd(Mvec) + F_p_;
     end
     function [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params)
         % Phase 6 (no p-states): smoother Cd(Re) and kv-only orifice drop.
-        % Laminar viscous loss is accounted in PF via c_lam*dvel; avoid double counting here.
+        % Laminar viscous loss is accounted in PF via c_lam0*dvel; avoid double counting here.
 
         % Saturated volumetric flow magnitude (stability)
         qmag = params.Qcap * tanh( (params.Ap/params.Qcap) * sqrt(dvel.^2 + params.orf.veps^2) );

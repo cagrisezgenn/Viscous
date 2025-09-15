@@ -14,50 +14,38 @@ parpool_hard_reset(16);
 % Gelen girdileri ayrıştır, eksikse temel çalışma alanından tamamla.
 
     % ---------- Sıfır argüman kolaylığı: temel çalışma alanından çek ----------
-    % nargin==0/1 olduğunda eksik girişlere referans vermemek için yerel kopyalar.
-    if nargin >= 1
-        scaledOrSnap_local = scaledOrSnap;
-    else
-        scaledOrSnap_local = [];
-    end
-    if nargin >= 2
-        params_local = params;
-    else
-        params_local = [];
-    end
-    % Girdi verilmemişse (ör. editörde Run'a basıldığında) GA'nın başlayabilmesi
-    % için temel çalışma alanından 'scaled' ve 'params' değişkenlerini almaya çalış.
-    if isempty(scaledOrSnap_local)
-        scaledOrSnap_local = evalin('base','scaled');
-    end
-    if isempty(params_local)
-        params_local = evalin('base','params');
-    end
+    % Çalıştırma kolaylığı için eksik girişleri temel alandan doldur.
+    if nargin < 1, scaledOrSnap = []; end
+    if nargin < 2, params      = []; end
     if nargin < 3 || isempty(optsEval), optsEval = struct; end
     if nargin < 4 || isempty(optsGA),   optsGA   = struct; end
 
+    if isempty(scaledOrSnap) && evalin('base','exist(''scaled'',''var'')')
+        scaledOrSnap = evalin('base','scaled');
+    end
+    if isempty(params) && evalin('base','exist(''params'',''var'')')
+        params = evalin('base','params');
+    end
+
     % ---------- scaled/params/meta çözümü ----------
-    if ischar(scaledOrSnap_local) || isstring(scaledOrSnap_local)
-        S = load(char(scaledOrSnap_local), 'scaled','params','opts','thr');
+    if ischar(scaledOrSnap) || isstring(scaledOrSnap)
+        S = load(char(scaledOrSnap), 'scaled','params','opts','thr');
         assert(isfield(S,'scaled') && ~isempty(S.scaled), ...
             'run_ga_driver: snapshot missing ''scaled''.');
         scaled = S.scaled;
-        if isempty(params_local)
+        if isempty(params)
             assert(isfield(S,'params') && ~isempty(S.params), ...
                 'run_ga_driver: params not supplied and snapshot missing params.');
             params = S.params;
-        else
-            params = params_local;
         end
         meta = struct();
         if ~isfield(S,'thr'), S.thr = struct(); end
         meta.thr       = Utils.default_qc_thresholds(S.thr);
     else
-        scaled = scaledOrSnap_local;
-        params = params_local;
+        scaled = scaledOrSnap;
         meta = struct('thr', Utils.default_qc_thresholds(struct()));
         % Gerekirse çalışma alanını otomatik hazırla (giriş sağlanmadığında)
-        if (isempty(scaled) || isempty(params))
+        if isempty(scaled) || isempty(params)
                 % Gerekli yolları ekle
                 setup;
                 % Temel parametreleri yükle ve T1 hesapla
@@ -80,23 +68,21 @@ parpool_hard_reset(16);
                     'resFactor',resFactor,'cfg',cfg,'story_height',story_height, ...
                     'Dp',Dp,'d_w',d_w,'D_m',D_m,'n_turn',n_turn,'Kd',Kd,'Ebody',Ebody,'Gsh',Gsh);
                 % Kullanıcı kolaylığı için temel çalışma alanına aktar
-                    assignin('base','scaled',scaled);
-                    assignin('base','params',params);
-                    assignin('base','T1',T1);
+                assignin('base','scaled',scaled);
+                assignin('base','params',params);
+                assignin('base','T1',T1);
         end
     end
     assert(~isempty(scaled),'run_ga_driver: scaled set is empty. Define ''scaled'' in workspace or pass a snapshot path.');
     assert(~isempty(params),'run_ga_driver: params is empty. Define ''params'' in workspace or include it in snapshot.');
 
     % ---------- Varsayılan değerlendirme ayarları (IO yok) ----------
-    if nargin < 3 || isempty(optsEval), optsEval = struct; end
     optsEval.do_export     = false;
     optsEval.quiet         = true;
     if ~isfield(optsEval,'thr'), optsEval.thr = meta.thr; end
     optsEval.thr = Utils.default_qc_thresholds(optsEval.thr);
     %% GA Kurulumu
     % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
-    if nargin < 4 || isempty(optsGA), optsGA = struct; end
     rng(42);
 
     % Karar vektörü: [d_o_mm, n_orf, PF_tau, PF_gain, Cd0, CdInf, p_exp, Lori_mm, hA_W_perK, Dp_mm, d_w_mm, D_m_mm, n_turn, mu_ref]
@@ -227,12 +213,28 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
             v_Tend = Si.table.T_end;
             v_mu   = Si.table.mu_end;
 
-            v_PFp95 = Si.table.PF_p95;
-            v_Qq50  = Si.table.Q_q50;
-            v_Qq95  = Si.table.Q_q95;
-            v_dPq50 = Si.table.dP50;
-        v_Toil = [];
-        v_Tsteel = [];
+            if ismember('PF_p95', Si.table.Properties.VariableNames)
+                v_PFp95 = Si.table.PF_p95;
+            else
+                v_PFp95 = 0;
+            end
+            if ismember('Q_q50', Si.table.Properties.VariableNames)
+                v_Qq50 = Si.table.Q_q50;
+            else
+                v_Qq50 = 0;
+            end
+            if ismember('Q_q95', Si.table.Properties.VariableNames)
+                v_Qq95 = Si.table.Q_q95;
+            else
+                v_Qq95 = 0;
+            end
+            if ismember('dP50', Si.table.Properties.VariableNames)
+                v_dPq50 = Si.table.dP50;
+            else
+                v_dPq50 = 0;
+            end
+            v_Toil = [];
+            v_Tsteel = [];
 
         if ismember('E_orifice_sum', Si.table.Properties.VariableNames)
             v_Eor = Si.table.E_orifice_sum;
@@ -572,7 +574,7 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         % Baz satırı için tablonun ilk satırını kopyala
         vn = T.Properties.VariableNames;
         T0 = T(1,:);
-        T0{1,:} = repmat({nan},1,width(T0));
+        T0{1,:} = nan(1,width(T0));
 
         % T0'ya değer yazarken sütun tiplerini koru
 
