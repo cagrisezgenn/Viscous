@@ -40,134 +40,147 @@ else
 end
 
 %% Girdi Hazırlığı
-% Çalışma için gerekli dizilerin hazırlanması
 n = numel(scaled);
+vars = prepare_inputs(n, params, opts);
 
-all_out = cell(n,1);
+%% Kayıt Döngüsü
+vars = record_loop(scaled, params, opts, vars);
 
-names    = cell(n,1);
-scale    = zeros(n,1);
-SaT1     = zeros(n,1);
-t5       = zeros(n,1);
-t95      = zeros(n,1);
-coverage = zeros(n,1);
-rank_score = nan(n,1);
+%% Özet Tablo
+summary = build_summary_table(vars, opts);
+all_out = vars.all_out;
 
-    % politika/sıra bilgisi
+if ~isfield(opts,'quiet') || ~opts.quiet
+    fprintf('Worst PFA: %s\n', vars.worstPFA_name);
+    fprintf('Worst IDR: %s\n', vars.worstIDR_name);
+end
+
+if do_export
+    export_results(outdir, scaled, params, opts, summary, all_out);
+    if ~Utils.getfield_default(opts,'quiet',false)
+        diary off;
+    end
+end
+
+end
+
+function vars = prepare_inputs(n, params, opts)
+%PREPARE_INPUTS Çalışma için gerekli dizileri hazırla
+vars = struct();
+vars.all_out = cell(n,1);
+vars.names    = cell(n,1);
+vars.scale    = zeros(n,1);
+vars.SaT1     = zeros(n,1);
+vars.t5       = zeros(n,1);
+vars.t95      = zeros(n,1);
+vars.coverage = zeros(n,1);
+
 policy_val = Utils.getfield_default(opts,'thermal_reset','each');
 order_val  = Utils.getfield_default(opts,'order','natural');
-policy_col = repmat({policy_val}, n,1);
-order_col  = repmat({order_val}, n,1);
+vars.policy_col = repmat({policy_val}, n,1);
+vars.order_col  = repmat({order_val}, n,1);
 if isfield(opts,'cooldown_s')
     cooldown_val = opts.cooldown_s;
 else
     cooldown_val = NaN;
 end
-cooldown_col = repmat(cooldown_val, n,1);
+vars.cooldown_col = repmat(cooldown_val, n,1);
 
-PFA    = zeros(n,1);
-IDR    = zeros(n,1);
-dP95   = zeros(n,1);
-Qcap95 = zeros(n,1);
-cav_pct = zeros(n,1);
-zeta1_hot       = zeros(n,1);
-z2_over_z1_hot  = zeros(n,1);
-P_mech      = zeros(n,1);
-Re_max      = zeros(n,1);
-Q_q95  = zeros(n,1);
-Q_q50  = zeros(n,1);
-dP50   = zeros(n,1);
-x10_max_D = zeros(n,1);
-a10abs_max_D = zeros(n,1);
-E_orifice = zeros(n,1);
-E_struct  = zeros(n,1);
-E_ratio   = zeros(n,1);
-qc_pass   = false(n,1);
+vars.PFA    = zeros(n,1);
+vars.IDR    = zeros(n,1);
+vars.dP95   = zeros(n,1);
+vars.Qcap95 = zeros(n,1);
+vars.cav_pct = zeros(n,1);
+vars.zeta1_hot       = zeros(n,1);
+vars.z2_over_z1_hot  = zeros(n,1);
+vars.P_mech      = zeros(n,1);
+vars.Re_max      = zeros(n,1);
+vars.Q_q95  = zeros(n,1);
+vars.Q_q50  = zeros(n,1);
+vars.dP50   = zeros(n,1);
+vars.x10_max_D = zeros(n,1);
+vars.a10abs_max_D = zeros(n,1);
+vars.E_orifice = zeros(n,1);
+vars.E_struct  = zeros(n,1);
+vars.qc_pass   = false(n,1);
 
-T_start    = zeros(n,1);
-T_end      = zeros(n,1);
-mu_end     = zeros(n,1);
-clamp_hits = zeros(n,1);
+vars.T_start    = zeros(n,1);
+vars.T_end      = zeros(n,1);
+vars.mu_end     = zeros(n,1);
+vars.clamp_hits = zeros(n,1);
 
-Dp_mm_col   = repmat(Utils.getfield_default(params,'Dp_mm',NaN), n,1);
-mu_ref_col  = repmat(Utils.getfield_default(params,'mu_ref',NaN), n,1);
+vars.Dp_mm_col   = repmat(Utils.getfield_default(params,'Dp_mm',NaN), n,1);
+vars.mu_ref_col  = repmat(Utils.getfield_default(params,'mu_ref',NaN), n,1);
 
-worstPFA = -inf; worstPFA_name = '';
-worstIDR = -inf; worstIDR_name = '';
+vars.worstPFA = -inf; vars.worstPFA_name = '';
+vars.worstIDR = -inf; vars.worstIDR_name = '';
+end
 
-%% Kayıt Döngüsü
-% Her kayıt için pencere analizi
+function vars = record_loop(scaled, params, opts, vars)
+%RECORD_LOOP Her kaydı pencere analizine tabi tutar
 prev_diag = [];
-for k = 1:n
+for k = 1:numel(scaled)
     rec = scaled(k);
     out = run_one_record_windowed(rec, params, opts, prev_diag);
     prev_diag = out.diag;
-    all_out{k} = out; %#ok<AGROW>
+    vars.all_out{k} = out; %#ok<AGROW>
 
-    names{k}    = out.name;
-    scale(k)    = out.scale;
-    SaT1(k)     = out.SaT1;
-    t5(k)       = out.win.t5;
-    t95(k)      = out.win.t95;
-    coverage(k) = out.win.coverage;
-    % rank skoru yalnızca order='worst_first' için hesaplanır
-    if strcmpi(order_val,'worst_first')
-        if isfield(out,'metr') && isfield(out.metr,'E_orifice_win')
-            rank_score(k) = out.metr.E_orifice_win;
-        end
-    end
+    vars.names{k}    = out.name;
+    vars.scale(k)    = out.scale;
+    vars.SaT1(k)     = out.SaT1;
+    vars.t5(k)       = out.win.t5;
+    vars.t95(k)      = out.win.t95;
+    vars.coverage(k) = out.win.coverage;
 
-    T_start(k)    = out.T_start;
-    T_end(k)      = out.T_end;
-    mu_end(k)     = out.mu_end;
-    clamp_hits(k) = out.clamp_hits;
+    vars.T_start(k)    = out.T_start;
+    vars.T_end(k)      = out.T_end;
+    vars.mu_end(k)     = out.mu_end;
+    vars.clamp_hits(k) = out.clamp_hits;
     m_nom = out.metr;
-    PFA(k)    = m_nom.PFA_top;
-    IDR(k)    = m_nom.IDR_max;
-    dP95(k)   = m_nom.dP_orf_q95;
-    Qcap95(k) = m_nom.Qcap_ratio_q95;
-    cav_pct(k)= m_nom.cav_pct;
-    zeta1_hot(k)       = Utils.getfield_default(m_nom,'zeta1_hot',NaN);
-    z2_over_z1_hot(k)  = Utils.getfield_default(m_nom,'z2_over_z1_hot',NaN);
-    P_mech(k)          = Utils.getfield_default(m_nom,'P_mech',NaN);
-    Re_max(k)          = Utils.getfield_default(m_nom,'Re_max',NaN);
-    Q_q95(k)  = Utils.getfield_default(m_nom,'Q_q95',NaN);
-    Q_q50(k)  = Utils.getfield_default(m_nom,'Q_q50',NaN);
-    dP50(k)   = Utils.getfield_default(m_nom,'dP_orf_q50',NaN);
-    x10_max_D(k) = Utils.getfield_default(m_nom,'x10_max_D',Utils.getfield_default(m_nom,'x10_pk_D',NaN));
-    a10abs_max_D(k) = Utils.getfield_default(m_nom,'a10abs_max_D',Utils.getfield_default(m_nom,'a10abs_pk_D',NaN));
-    E_orifice(k) = Utils.getfield_default(m_nom,'E_orifice_full',NaN);
-    E_struct(k)  = Utils.getfield_default(m_nom,'E_struct_full',NaN);
-    E_ratio(k)   = Utils.getfield_default(m_nom,'E_ratio_full',NaN);
-    qc_pass(k)   = out.qc_pass;
+    vars.PFA(k)    = m_nom.PFA_top;
+    vars.IDR(k)    = m_nom.IDR_max;
+    vars.dP95(k)   = m_nom.dP_orf_q95;
+    vars.Qcap95(k) = m_nom.Qcap_ratio_q95;
+    vars.cav_pct(k)= m_nom.cav_pct;
+    vars.zeta1_hot(k)       = Utils.getfield_default(m_nom,'zeta1_hot',NaN);
+    vars.z2_over_z1_hot(k)  = Utils.getfield_default(m_nom,'z2_over_z1_hot',NaN);
+    vars.P_mech(k)          = Utils.getfield_default(m_nom,'P_mech',NaN);
+    vars.Re_max(k)          = Utils.getfield_default(m_nom,'Re_max',NaN);
+    vars.Q_q95(k)  = Utils.getfield_default(m_nom,'Q_q95',NaN);
+    vars.Q_q50(k)  = Utils.getfield_default(m_nom,'Q_q50',NaN);
+    vars.dP50(k)   = Utils.getfield_default(m_nom,'dP_orf_q50',NaN);
+    vars.x10_max_D(k) = Utils.getfield_default(m_nom,'x10_max_D',Utils.getfield_default(m_nom,'x10_pk_D',NaN));
+    vars.a10abs_max_D(k) = Utils.getfield_default(m_nom,'a10abs_max_D',Utils.getfield_default(m_nom,'a10abs_pk_D',NaN));
+    vars.E_orifice(k) = Utils.getfield_default(m_nom,'E_orifice_full',NaN);
+    vars.E_struct(k)  = Utils.getfield_default(m_nom,'E_struct_full',NaN);
+    vars.qc_pass(k)   = out.qc_pass;
 
-    if PFA(k) > worstPFA
-        worstPFA = PFA(k);
-        worstPFA_name = out.name;
+    if vars.PFA(k) > vars.worstPFA
+        vars.worstPFA = vars.PFA(k);
+        vars.worstPFA_name = out.name;
     end
-    if IDR(k) > worstIDR
-        worstIDR = IDR(k);
-        worstIDR_name = out.name;
+    if vars.IDR(k) > vars.worstIDR
+        vars.worstIDR = vars.IDR(k);
+        vars.worstIDR_name = out.name;
     end
 end
+end
 
-%% Özet Tablo
-% Hesaplanan metrikleri tabloya dönüştür
+function summary = build_summary_table(vars, opts)
+%BUILD_SUMMARY_TABLE Hesaplanan metrikleri tabloya dönüştür ve QC uygula
 summary = struct();
 
-summary.table = table(names, scale, SaT1, t5, t95, coverage, rank_score, policy_col, order_col, cooldown_col, ...
-    PFA, IDR, dP95, Qcap95, cav_pct, zeta1_hot, z2_over_z1_hot, P_mech, Re_max, ...
-    Q_q95, Q_q50, dP50, x10_max_D, a10abs_max_D, E_orifice, E_struct, E_ratio, qc_pass, ...
-    T_start, T_end, mu_end, clamp_hits, Dp_mm_col, mu_ref_col, ...
-    'VariableNames', {'name','scale','SaT1','t5','t95','coverage','rank_score','policy','order','cooldown_s', ...
+summary.table = table(vars.names, vars.scale, vars.SaT1, vars.t5, vars.t95, vars.coverage, vars.policy_col, vars.order_col, vars.cooldown_col, ...
+    vars.PFA, vars.IDR, vars.dP95, vars.Qcap95, vars.cav_pct, vars.zeta1_hot, vars.z2_over_z1_hot, vars.P_mech, vars.Re_max, ...
+    vars.Q_q95, vars.Q_q50, vars.dP50, vars.x10_max_D, vars.a10abs_max_D, vars.E_orifice, vars.E_struct, vars.qc_pass, ...
+    vars.T_start, vars.T_end, vars.mu_end, vars.clamp_hits, vars.Dp_mm_col, vars.mu_ref_col, ...
+    'VariableNames', {'name','scale','SaT1','t5','t95','coverage','policy','order','cooldown_s', ...
     'PFA','IDR','dP95','Qcap95','cav_pct','zeta1_hot','z2_over_z1_hot','P_mech','Re_max', ...
-    'Q_q95','Q_q50','dP50','x10_max_D','a10abs_max_D','E_orifice','E_struct','E_ratio','qc_pass', ...
+    'Q_q95','Q_q50','dP50','x10_max_D','a10abs_max_D','E_orifice','E_struct','qc_pass', ...
     'T_start','T_end','mu_end','clamp_hits','Dp_mm','mu_ref'});
 
-summary.all_out = all_out;
-%% QC Kontrolü
-% QC eşiklerine göre sonuçların değerlendirilmesi
-% --- summary.csv kullanıcıları için QC bayrakları ve sebep kodları ---
+summary.all_out = vars.all_out;
+
 thr = opts.thr;
 ok_T    = summary.table.T_end   <= thr.T_end_max;
 ok_mu   = summary.table.mu_end  >= thr.mu_end_min;
@@ -190,17 +203,5 @@ summary.table.ok_dP = ok_dP;
 summary.table.ok_Qcap = ok_Qcap;
 summary.table.ok_cav = ok_cav;
 summary.table.qc_reason = qc_reason;
-
-if ~isfield(opts,'quiet') || ~opts.quiet
-    fprintf('Worst PFA: %s\n', worstPFA_name);
-    fprintf('Worst IDR: %s\n', worstIDR_name);
 end
 
-if do_export
-    export_results(outdir, scaled, params, opts, summary, all_out);
-    if ~Utils.getfield_default(opts,'quiet',false)
-        diary off;
-    end
-end
-
-end
