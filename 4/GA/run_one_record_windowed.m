@@ -34,7 +34,6 @@ end
 % QC eşikleri (eksik alanlar varsayılanlarla doldurulur)
 if ~isfield(opts,'thr'), opts.thr = struct(); end
 thr = Utils.default_qc_thresholds(opts.thr);
-opts.thr = thr;
 
 assert(isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), ...
     'run_one_record_windowed: params.thermal.hA_W_perK eksik');
@@ -166,25 +165,14 @@ else
 end
 
 %% Çıktıların Derlenmesi
-out = struct();
-out.name  = rec.name;
-out.scale = Utils.getfield_default(rec,'scale',1);
-out.SaT1  = Utils.getfield_default(rec,'IM',NaN);
-out.win   = win;
-out.metr  = metr;
-out.ts = ts;
-out.qc_pass = qc_pass;
-out.T_start = T_start;
-out.T_end = T_end;
-out.mu_end = mu_end;
-out.clamp_hits = clamp_hits;
-% kolaylık amaçlı telemetri alanları
-out.PFA  = metr.PFA;
-out.IDR  = metr.IDR;
-out.dP95 = metr.dP95;
-out.Qcap95 = metr.Qcap95;
-out.cav_pct = metr.cav_pct;
-out.t5 = win.t5; out.t95 = win.t95; out.coverage = win.coverage;
+out = struct('name', rec.name, ...
+    'scale', Utils.getfield_default(rec,'scale',1), ...
+    'SaT1', Utils.getfield_default(rec,'IM',NaN), ...
+    'win', win, 'metr', metr, 'ts', ts, 'qc_pass', qc_pass, ...
+    'T_start', T_start, 'T_end', T_end, 'mu_end', mu_end, ...
+    'clamp_hits', clamp_hits, ...
+    'PFA', metr.PFA, 'IDR', metr.IDR, 'dP95', metr.dP95, 'Qcap95', metr.Qcap95, ...
+    'cav_pct', metr.cav_pct, 't5', win.t5, 't95', win.t95, 'coverage', win.coverage);
 % ayarlanmışsa PF rampasının başlangıcı
 try
     if isfield(params,'cfg') && isfield(params.cfg,'PF')
