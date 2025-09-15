@@ -26,12 +26,17 @@ parpool_hard_reset(16);
         params_local = [];
     end
     % Girdi verilmemişse (ör. editörde Run'a basıldığında) GA'nın başlayabilmesi
-    % için temel çalışma alanından 'scaled' ve 'params' değişkenlerini almaya çalış.
+    % için temel çalışma alanında değişkenlerin varlığını kontrol et.
+    % Yoksa boş bırak; aşağıdaki "auto-prep" bloğu eksikleri doldurur.
     if isempty(scaledOrSnap_local)
-        scaledOrSnap_local = evalin('base','scaled');
+        if evalin('base','exist(''scaled'',''var'')')
+            scaledOrSnap_local = evalin('base','scaled');
+        end
     end
     if isempty(params_local)
-        params_local = evalin('base','params');
+        if evalin('base','exist(''params'',''var'')')
+            params_local = evalin('base','params');
+        end
     end
     if nargin < 3 || isempty(optsEval), optsEval = struct; end
     if nargin < 4 || isempty(optsGA),   optsGA   = struct; end
