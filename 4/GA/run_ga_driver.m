@@ -131,8 +131,8 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
         % Tablo sütunlarını güvenle al
             v_PFA = Si.table.PFA;
             v_IDR = Si.table.IDR;
-            v_x10 = Si.table.x10_max_D;
-            v_a10 = Si.table.a10abs_max_D;
+            v_x10 = tg(Si.table,'x10_max_damperli',0);
+            v_a10 = tg(Si.table,'a10abs_max_damperli',0);
 
             v_dP95 = Si.table.dP95;
             v_Qcap = Si.table.Qcap95;
@@ -145,9 +145,9 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
             v_Q_q95  = tg(Si.table,'Q_q95',0);
             v_dP50 = tg(Si.table,'dP50',0);
 
-        v_E_orifice_sum = tg(Si.table,'E_orifice_sum', tg(Si.table,'E_orifice',0));
-        v_E_struct_sum = tg(Si.table,'E_struct_sum', tg(Si.table,'E_struct',0));
-        v_P_mech_sum  = tg(Si.table,'P_mech_sum', tg(Si.table,'P_mech',0));
+        v_E_orifice_sum = tg(Si.table,'E_orifice_sum',0);
+        v_E_struct_sum = tg(Si.table,'E_struct_sum',0);
+        v_P_mech_sum  = tg(Si.table,'P_mech_sum',0);
 
         PFA_mean(i) = mean(v_PFA(:));
         IDR_mean(i) = mean(v_IDR(:));
@@ -319,11 +319,11 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     end
     x10_max_damperli_local = 0; a10abs_max_damperli_local = 0;
     if isfield(S,'table') && istable(S.table)
-        if ismember('x10_max_D', S.table.Properties.VariableNames)
-            x10_max_damperli_local = max(S.table.x10_max_D);
+        if ismember('x10_max_damperli', S.table.Properties.VariableNames)
+            x10_max_damperli_local = max(S.table.x10_max_damperli);
         end
-        if ismember('a10abs_max_D', S.table.Properties.VariableNames)
-            a10abs_max_damperli_local = max(S.table.a10abs_max_D);
+        if ismember('a10abs_max_damperli', S.table.Properties.VariableNames)
+            a10abs_max_damperli_local = max(S.table.a10abs_max_damperli);
         end
     end
     meta = struct('x',x,'f',f,'PFA_mean',f1,'IDR_mean',f2, ...
@@ -338,7 +338,7 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
               'PF_p95', ...
               'Q_q50','Q_q95','dP50', ...
               'energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum', ...
-              'x10_max_D','a10abs_max_D','P_mech','E_orifice','E_struct','Re_max' ...
+              'x10_max_damperli','a10abs_max_damperli','Re_max' ...
             };
             % Gerekirse alan adları için takma adlar sağla
                 if ismember('E_orifice_sum', S.table.Properties.VariableNames) && ...
@@ -462,11 +462,11 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         assign('pen_mu',  pen_mu_0);
 
         % damper tepe değerleri
-            if ismember('x10_max_damperli', vn) && ismember('x10_max_D', T0bl.Properties.VariableNames)
-                assign('x10_max_damperli', max(T0bl.x10_max_D));
+            if ismember('x10_max_damperli', vn) && ismember('x10_max_damperli', T0bl.Properties.VariableNames)
+                assign('x10_max_damperli', max(T0bl.x10_max_damperli));
             end
-            if ismember('a10abs_max_damperli', vn) && ismember('a10abs_max_D', T0bl.Properties.VariableNames)
-                assign('a10abs_max_damperli', max(T0bl.a10abs_max_D));
+            if ismember('a10abs_max_damperli', vn) && ismember('a10abs_max_damperli', T0bl.Properties.VariableNames)
+                assign('a10abs_max_damperli', max(T0bl.a10abs_max_damperli));
             end
 
         % diğer diagnostikler
@@ -497,19 +497,11 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             if ismember('dP50', vn) && ismember('dP50', T0bl.Properties.VariableNames)
                 assign('dP50', max(T0bl.dP50));
             end
-            if ismember('E_orifice_sum', vn)
-                if ismember('E_orifice_sum', T0bl.Properties.VariableNames)
-                    assign('E_orifice_sum', nansum(T0bl.E_orifice_sum));
-                elseif ismember('E_orifice', T0bl.Properties.VariableNames)
-                    assign('E_orifice_sum', nansum(T0bl.E_orifice));
-                end
+            if ismember('E_orifice_sum', vn) && ismember('E_orifice_sum', T0bl.Properties.VariableNames)
+                assign('E_orifice_sum', nansum(T0bl.E_orifice_sum));
             end
-            if ismember('E_struct_sum', vn)
-                if ismember('E_struct_sum', T0bl.Properties.VariableNames)
-                    assign('E_struct_sum', nansum(T0bl.E_struct_sum));
-                elseif ismember('E_struct', T0bl.Properties.VariableNames)
-                    assign('E_struct_sum', nansum(T0bl.E_struct));
-                end
+            if ismember('E_struct_sum', vn) && ismember('E_struct_sum', T0bl.Properties.VariableNames)
+                assign('E_struct_sum', nansum(T0bl.E_struct_sum));
             end
             if ismember('energy_tot_sum', vn)
                 if ismember('energy_tot_sum', T0bl.Properties.VariableNames)
@@ -521,12 +513,8 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             if ismember('E_ratio', vn)
                 assign('E_ratio', (T0.E_struct_sum>0) * (T0.E_orifice_sum / max(T0.E_struct_sum, eps)));
             end
-            if ismember('P_mech_sum', vn)
-                if ismember('P_mech_sum', T0bl.Properties.VariableNames)
-                    assign('P_mech_sum', nansum(T0bl.P_mech_sum));
-                elseif ismember('P_mech', T0bl.Properties.VariableNames)
-                    assign('P_mech_sum', nansum(T0bl.P_mech));
-                end
+            if ismember('P_mech_sum', vn) && ismember('P_mech_sum', T0bl.Properties.VariableNames)
+                assign('P_mech_sum', nansum(T0bl.P_mech_sum));
             end
 
         % Bas satırı en üste ekle
