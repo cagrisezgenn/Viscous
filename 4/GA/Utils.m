@@ -210,6 +210,21 @@ classdef Utils
             end
         end
 
+        %% Tablo Degiskenini Guvenle Al
+        function v = table_get(tbl, var, defaultVal)
+            %TABLE_GET Tablo degiskenini guvenle dondurur.
+            if nargin < 3, defaultVal = [];
+            end
+            if istable(tbl) && ismember(var, tbl.Properties.VariableNames)
+                v = tbl.(var);
+                if isempty(v)
+                    v = defaultVal;
+                end
+            else
+                v = defaultVal;
+            end
+        end
+
         %% Alan Mevcutsa Atama
         function arr = assign_if_field(S, fname, arr, idx)
             % Belirtilen alan mevcutsa deÄeri hedef dizinin idx konumuna atar.
