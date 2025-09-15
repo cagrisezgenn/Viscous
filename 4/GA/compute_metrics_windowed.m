@@ -21,28 +21,15 @@ idx = win.idx;
 % yanıtın temel göstergelerini hesaplar.
 % Tepe katın mutlak ivmesi
 a_top_abs = a_rel(:,end) + ag(:);
-metr.PFA_top = max(abs(a_top_abs(idx)));
+metr.PFA = max(abs(a_top_abs(idx)));
 
-% Damperli 10. kat için tepe değerler (tek kayıt/pencere)
-try
-    % x: damperli bağıl yerdeğiştirme [Nt x n], a_top_abs: damperli mutlak
-    % ivme [Nt x 1]
-    metr.x10_pk_D      = max(abs(x(idx,end)));
-    metr.a10abs_pk_D   = max(abs(a_top_abs(idx)));
-catch
-    if ~isfield(metr,'x10_pk_D'),    metr.x10_pk_D = 0;      end
-    if ~isfield(metr,'a10abs_pk_D'), metr.a10abs_pk_D = 0;   end
-end
-
-% Pencere içindeki tepe kat mutlak yerdeğiştirmesi
-metr.x10_max_D = max(abs(x(idx,end)));
-
-% Pencere içindeki tepe kat mutlak ivmesi
+% Pencere içindeki tepe kat mutlak yerdeğiştirmesi ve ivmesi
+metr.x10_max_D    = max(abs(x(idx,end)));
 metr.a10abs_max_D = max(abs(a_top_abs(idx)));
 
 % Katlar arası göreli ötelenme oranının maksimumu
 drift = (x(:,2:end) - x(:,1:end-1)) / story_height;
-metr.IDR_max = max(max(abs(drift(idx,:))));
+metr.IDR = max(max(abs(drift(idx,:))));
 
 %% Kat Bazlı İstatistikler
 % Her kat için yüzde 50 ve yüzde 95'lik değerler ile kavitasyon oranı
@@ -80,7 +67,7 @@ dP_q50         = local_quantile(abs_dP, 0.50);
 dP_q95         = local_quantile(abs_dP, 0.95);
 Q_q50          = local_quantile(abs_Q, 0.50);
 Q_q95          = local_quantile(abs_Q, 0.95);
-Qcap_ratio_q95 = local_quantile(Qcap_ratio, 0.95);
+Qcap95 = local_quantile(Qcap_ratio, 0.95);
 story_force_q95= local_quantile(abs_story_force, 0.95);
 
 % Her kat için ortalama kavitasyon yüzdesi
@@ -91,11 +78,11 @@ cav_mean = mean(ts.cav_mask(idx,:),1);
 ws = metr.which_story;
 
 % Kritik katın istatistiklerinin saklanması
-metr.dP_orf_q95      = dP_q95(ws);
-metr.dP_orf_q50      = dP_q50(ws);
-metr.Q_q95           = Q_q95(ws);
-metr.Q_q50           = Q_q50(ws);
-metr.Qcap_ratio_q95  = Qcap_ratio_q95(ws);
+metr.dP95   = dP_q95(ws);
+metr.dP50   = dP_q50(ws);
+metr.Q_q95  = Q_q95(ws);
+metr.Q_q50  = Q_q50(ws);
+metr.Qcap95 = Qcap95(ws);
 metr.cav_pct         = cav_mean(ws);
 
 %% Enerji Hesapları
@@ -105,25 +92,25 @@ w_last  = find(idx,1,'last');
 i0 = max(w_first-1,1);
 
 % Toplam süreç sonundaki orifis ve yapı enerjileri
-metr.E_orifice_full = ts.E_orf(end);
-metr.E_struct_full  = ts.E_struct(end);
-metr.E_ratio_full   = metr.E_orifice_full / max(metr.E_struct_full, eps);
+metr.E_orifice_sum = ts.E_orf(end);
+metr.E_struct_sum  = ts.E_struct(end);
+metr.E_ratio   = metr.E_orifice_sum / max(metr.E_struct_sum, eps);
 % Toplam enerji ve ortalama mekanik güç
-metr.energy_tot = metr.E_orifice_full + metr.E_struct_full;
+metr.energy_tot_sum = metr.E_orifice_sum + metr.E_struct_sum;
 try
     if isfield(ts,'P_sum') && ~isempty(ts.P_sum)
-        metr.P_mech = mean(ts.P_sum(idx));
+        metr.P_mech_sum = mean(ts.P_sum(idx));
     else
-        metr.P_mech = NaN;
+        metr.P_mech_sum = NaN;
     end
 catch
-    metr.P_mech = NaN;
+    metr.P_mech_sum = NaN;
 end
 
 % Seçilen pencere içindeki enerji birikimleri
-metr.E_orifice_win = ts.E_orf(w_last) - ts.E_orf(i0);
-metr.E_struct_win  = ts.E_struct(w_last) - ts.E_struct(i0);
-metr.E_ratio_win   = metr.E_orifice_win / max(metr.E_struct_win, eps);
+metr.E_orifice_win_sum = ts.E_orf(w_last) - ts.E_orf(i0);
+metr.E_struct_win_sum  = ts.E_struct(w_last) - ts.E_struct(i0);
+metr.E_ratio_win   = metr.E_orifice_win_sum / max(metr.E_struct_win_sum, eps);
 
 %% Termal Metrikler
 % Yağ sıcaklığı ve viskozite gibi termal büyüklükler değerlendirilir.

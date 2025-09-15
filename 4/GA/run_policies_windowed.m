@@ -18,7 +18,7 @@ if ~isfield(opts,'policies'), opts.policies = {'each','carry','cooldown'}; end
 if ~isfield(opts,'orders'), opts.orders = {'natural','random','worst_first'}; end
 if ~isfield(opts,'cooldown_s_list'), opts.cooldown_s_list = [60 180 300]; end
 if ~isfield(opts,'rng_seed'), opts.rng_seed = 42; end
-if ~isfield(opts,'rank_metric'), opts.rank_metric = 'E_orifice_win'; end
+if ~isfield(opts,'rank_metric'), opts.rank_metric = 'E_orifice_win_sum'; end
 
 % Konsol başlığı
 
@@ -62,12 +62,12 @@ if any(strcmp(opts.orders,'random'))
 end
 if any(strcmp(opts.orders,'worst_first'))
     switch lower(opts.rank_metric)
-        case 'pfa_top'
-            rk = cellfun(@(s) s.metr.PFA_top, base_all);
-        case 'idr_max'
-            rk = cellfun(@(s) s.metr.IDR_max, base_all);
+        case 'pfa'
+            rk = cellfun(@(s) s.metr.PFA, base_all);
+        case 'idr'
+            rk = cellfun(@(s) s.metr.IDR, base_all);
         otherwise
-            rk = cellfun(@(s) s.metr.E_orifice_win, base_all);
+            rk = cellfun(@(s) s.metr.E_orifice_win_sum, base_all);
     end
     [~,idx] = sort(rk,'descend');
     orders_struct.worst_first = idx;
