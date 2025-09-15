@@ -70,6 +70,7 @@ vars.x10_max_D = zeros(n,1);
 vars.a10abs_max_D = zeros(n,1);
 vars.E_orifice = zeros(n,1);
 vars.E_struct  = zeros(n,1);
+vars.E_ratio   = zeros(n,1);
 vars.qc_pass   = false(n,1);
 
 vars.T_start    = zeros(n,1);
@@ -105,10 +106,10 @@ for k = 1:numel(scaled)
     vars.mu_end(k)     = out.mu_end;
     vars.clamp_hits(k) = out.clamp_hits;
     m_nom = out.metr;
-    vars.PFA(k)    = m_nom.PFA_top;
-    vars.IDR(k)    = m_nom.IDR_max;
-    vars.dP95(k)   = m_nom.dP_orf_q95;
-    vars.Qcap95(k) = m_nom.Qcap_ratio_q95;
+    vars.PFA(k)    = m_nom.PFA;
+    vars.IDR(k)    = m_nom.IDR;
+    vars.dP95(k)   = m_nom.dP95;
+    vars.Qcap95(k) = m_nom.Qcap95;
     vars.cav_pct(k)= m_nom.cav_pct;
     vars.zeta1_hot(k)       = Utils.getfield_default(m_nom,'zeta1_hot',NaN);
     vars.z2_over_z1_hot(k)  = Utils.getfield_default(m_nom,'z2_over_z1_hot',NaN);
@@ -116,11 +117,12 @@ for k = 1:numel(scaled)
     vars.Re_max(k)          = Utils.getfield_default(m_nom,'Re_max',NaN);
     vars.Q_q95(k)  = Utils.getfield_default(m_nom,'Q_q95',NaN);
     vars.Q_q50(k)  = Utils.getfield_default(m_nom,'Q_q50',NaN);
-    vars.dP50(k)   = Utils.getfield_default(m_nom,'dP_orf_q50',NaN);
-    vars.x10_max_D(k) = Utils.getfield_default(m_nom,'x10_max_D',Utils.getfield_default(m_nom,'x10_pk_D',NaN));
-    vars.a10abs_max_D(k) = Utils.getfield_default(m_nom,'a10abs_max_D',Utils.getfield_default(m_nom,'a10abs_pk_D',NaN));
-    vars.E_orifice(k) = Utils.getfield_default(m_nom,'E_orifice_full',NaN);
-    vars.E_struct(k)  = Utils.getfield_default(m_nom,'E_struct_full',NaN);
+    vars.dP50(k)   = Utils.getfield_default(m_nom,'dP50',NaN);
+    vars.x10_max_D(k) = Utils.getfield_default(m_nom,'x10_max_D',NaN);
+    vars.a10abs_max_D(k) = Utils.getfield_default(m_nom,'a10abs_max_D',NaN);
+    vars.E_orifice(k) = Utils.getfield_default(m_nom,'E_orifice',NaN);
+    vars.E_struct(k)  = Utils.getfield_default(m_nom,'E_struct',NaN);
+    vars.E_ratio(k)   = Utils.getfield_default(m_nom,'E_ratio',NaN);
     vars.qc_pass(k)   = out.qc_pass;
 
     if vars.PFA(k) > vars.worstPFA
@@ -140,11 +142,11 @@ summary = struct();
 
 summary.table = table(vars.names, vars.scale, vars.SaT1, vars.t5, vars.t95, vars.coverage, vars.policy_col, vars.order_col, vars.cooldown_col, ...
     vars.PFA, vars.IDR, vars.dP95, vars.Qcap95, vars.cav_pct, vars.zeta1_hot, vars.z2_over_z1_hot, vars.P_mech, vars.Re_max, ...
-    vars.Q_q95, vars.Q_q50, vars.dP50, vars.x10_max_D, vars.a10abs_max_D, vars.E_orifice, vars.E_struct, vars.qc_pass, ...
+    vars.Q_q95, vars.Q_q50, vars.dP50, vars.x10_max_D, vars.a10abs_max_D, vars.E_orifice, vars.E_struct, vars.E_ratio, vars.qc_pass, ...
     vars.T_start, vars.T_end, vars.mu_end, vars.clamp_hits, vars.Dp_mm_col, vars.mu_ref_col, ...
     'VariableNames', {'name','scale','SaT1','t5','t95','coverage','policy','order','cooldown_s', ...
     'PFA','IDR','dP95','Qcap95','cav_pct','zeta1_hot','z2_over_z1_hot','P_mech','Re_max', ...
-    'Q_q95','Q_q50','dP50','x10_max_D','a10abs_max_D','E_orifice','E_struct','qc_pass', ...
+    'Q_q95','Q_q50','dP50','x10_max_D','a10abs_max_D','E_orifice','E_struct','E_ratio','qc_pass', ...
     'T_start','T_end','mu_end','clamp_hits','Dp_mm','mu_ref'});
 
 summary.all_out = vars.all_out;

@@ -62,10 +62,10 @@ if any(strcmp(opts.orders,'random'))
 end
 if any(strcmp(opts.orders,'worst_first'))
     switch lower(opts.rank_metric)
-        case 'pfa_top'
-            rk = cellfun(@(s) s.metr.PFA_top, base_all);
-        case 'idr_max'
-            rk = cellfun(@(s) s.metr.IDR_max, base_all);
+        case 'pfa'
+            rk = cellfun(@(s) s.metr.PFA, base_all);
+        case 'idr'
+            rk = cellfun(@(s) s.metr.IDR, base_all);
         otherwise
             rk = cellfun(@(s) s.metr.E_orifice_win, base_all);
     end

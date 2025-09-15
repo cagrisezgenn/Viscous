@@ -13,8 +13,8 @@ function out = run_one_record_windowed(rec, params, opts, prev_ts)
 %   zaman serisi yapısına sahiptir.
 %
 %   OUT yapısı; name, scale, SaT1, win, metr, ts, qc_pass, T_start,
-%   T_end, mu_end, clamp_hits, PFA_top, IDR_max, dP_orf_q95,
-%   Qcap_ratio_q95, cav_pct, t5, t95 ve coverage alanlarını içerir. TS
+%   T_end, mu_end, clamp_hits, PFA, IDR, dP95,
+%   Qcap95, cav_pct, t5, t95 ve coverage alanlarını içerir. TS
 %   yalnızca COMPUTE_METRICS_WINDOWED için gerekli zaman serilerini barındırır.
 %
 %   Bu fonksiyon MCK_WITH_DAMPER ve COMPUTE_METRICS_WINDOWED
@@ -144,8 +144,8 @@ end
 metr = compute_metrics_windowed(rec.t, x, a_rel, rec.ag, ts, params.story_height, win, params);
 
 qc_pass = (metr.cav_pct <= thr.cav_pct_max) && ...
-          (metr.dP_orf_q95 <= thr.dP95_max) && ...
-          (metr.Qcap_ratio_q95 <= thr.Qcap95_max) && ...
+          (metr.dP95 <= thr.dP95_max) && ...
+          (metr.Qcap95 <= thr.Qcap95_max) && ...
           (metr.T_oil_end <= thr.T_end_max) && ...
           (metr.mu_end >= thr.mu_end_min);
 
@@ -179,10 +179,10 @@ out.T_end = T_end;
 out.mu_end = mu_end;
 out.clamp_hits = clamp_hits;
 % kolaylık amaçlı telemetri alanları
-out.PFA_top = metr.PFA_top;
-out.IDR_max = metr.IDR_max;
-out.dP_orf_q95 = metr.dP_orf_q95;
-out.Qcap_ratio_q95 = metr.Qcap_ratio_q95;
+out.PFA  = metr.PFA;
+out.IDR  = metr.IDR;
+out.dP95 = metr.dP95;
+out.Qcap95 = metr.Qcap95;
 out.cav_pct = metr.cav_pct;
 out.t5 = win.t5; out.t95 = win.t95; out.coverage = win.coverage;
 % ayarlanmışsa PF rampasının başlangıcı

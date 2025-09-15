@@ -103,13 +103,13 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
 
     % === Re-evaluate Pareto designs to collect metrics per-row ===
     nF = size(X,1);
-    x10pk  = zeros(nF,1);  a10pk = zeros(nF,1);
-    dP95   = zeros(nF,1);  Qcap95 = zeros(nF,1); cavW = zeros(nF,1);
-    Tend   = zeros(nF,1);  muend  = zeros(nF,1);
-    PFp95  = zeros(nF,1);  Qq50 = zeros(nF,1);  Qq95 = zeros(nF,1);
-    dPq50  = zeros(nF,1);  Toil = nan(nF,1); Tsteel = nan(nF,1);
-    Etot   = zeros(nF,1);  Eor = zeros(nF,1);   Estr  = zeros(nF,1); Eratio = zeros(nF,1); Pmech = zeros(nF,1);
-    PFAw   = zeros(nF,1);  IDRw  = zeros(nF,1);
+    x10_max_damperli  = zeros(nF,1);  a10abs_max_damperli = zeros(nF,1);
+    dP95   = zeros(nF,1);  Qcap95 = zeros(nF,1); cav_pct = zeros(nF,1);
+    T_end  = zeros(nF,1);  mu_end  = zeros(nF,1);
+    PF_p95 = zeros(nF,1);  Q_q50 = zeros(nF,1);  Q_q95 = zeros(nF,1);
+    dP50   = zeros(nF,1);  Toil = nan(nF,1); Tsteel = nan(nF,1);
+    energy_tot_sum   = zeros(nF,1);  E_orifice_sum = zeros(nF,1);   E_struct_sum  = zeros(nF,1); E_ratio = zeros(nF,1); P_mech_sum = zeros(nF,1);
+    PFA_mean   = zeros(nF,1);  IDR_mean  = zeros(nF,1);
 
     % ceza bileşenleri (eval ile aynı)
     pen     = zeros(nF,1);
@@ -137,50 +137,50 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
             v_dP95 = Si.table.dP95;
             v_Qcap = Si.table.Qcap95;
             v_cav  = Si.table.cav_pct;
-            v_Tend = Si.table.T_end;
+            v_T_end = Si.table.T_end;
             v_mu   = Si.table.mu_end;
 
-            v_PFp95 = tg(Si.table,'PF_p95',0);
-            v_Qq50  = tg(Si.table,'Q_q50',0);
-            v_Qq95  = tg(Si.table,'Q_q95',0);
-            v_dPq50 = tg(Si.table,'dP50',0);
+            v_PF_p95 = tg(Si.table,'PF_p95',0);
+            v_Q_q50  = tg(Si.table,'Q_q50',0);
+            v_Q_q95  = tg(Si.table,'Q_q95',0);
+            v_dP50 = tg(Si.table,'dP50',0);
 
-        v_Eor = tg(Si.table,'E_orifice_sum',0);
-        v_Est = tg(Si.table,'E_struct_sum',0);
-        v_Pm  = tg(Si.table,'P_mech_sum',0);
+        v_E_orifice_sum = tg(Si.table,'E_orifice_sum',0);
+        v_E_struct_sum = tg(Si.table,'E_struct_sum',0);
+        v_P_mech_sum  = tg(Si.table,'P_mech_sum',0);
 
-        PFAw(i) = mean(v_PFA(:));
-        IDRw(i) = mean(v_IDR(:));
+        PFA_mean(i) = mean(v_PFA(:));
+        IDR_mean(i) = mean(v_IDR(:));
 
         % Aggregate across records (dataset) to scalars per design
-        x10pk(i)  = max(v_x10(:));
-        a10pk(i)  = max(v_a10(:));
+        x10_max_damperli(i)  = max(v_x10(:));
+        a10abs_max_damperli(i)  = max(v_a10(:));
 
         dP95(i)   = max(v_dP95(:));
         Qcap95(i) = max(v_Qcap(:));
-        cavW(i)   = max(v_cav(:));
-        Tend(i)   = max(v_Tend(:));
+        cav_pct(i)   = max(v_cav(:));
+        T_end(i)   = max(v_T_end(:));
         if isempty(v_mu), v_mu = 1; end
-        muend(i)  = min(v_mu(:));
+        mu_end(i)  = min(v_mu(:));
 
-        PFp95(i)  = max(v_PFp95(:));
-        Qq50(i)   = max(v_Qq50(:));
-        Qq95(i)   = max(v_Qq95(:));
-        dPq50(i)  = max(v_dPq50(:));
+        PF_p95(i)  = max(v_PF_p95(:));
+        Q_q50(i)   = max(v_Q_q50(:));
+        Q_q95(i)   = max(v_Q_q95(:));
+        dP50(i)  = max(v_dP50(:));
         Toil(i)   = max(tg(Si.table,'T_oil_end',NaN));
         Tsteel(i) = max(tg(Si.table,'T_steel_end',NaN));
 
-        Eor(i)    = sum(v_Eor(:));
-        Estr(i)   = sum(v_Est(:));
-        Etot(i)   = Eor(i) + Estr(i);
-        Eratio(i) = (Estr(i)>0) * (Eor(i)/max(Estr(i),eps));
-        Pmech(i)  = sum(v_Pm(:));
+        E_orifice_sum(i)    = sum(v_E_orifice_sum(:));
+        E_struct_sum(i)   = sum(v_E_struct_sum(:));
+        energy_tot_sum(i)   = E_orifice_sum(i) + E_struct_sum(i);
+        E_ratio(i) = (E_struct_sum(i)>0) * (E_orifice_sum(i)/max(E_struct_sum(i),eps));
+        P_mech_sum(i)  = sum(v_P_mech_sum(:));
 
         % Penalty parts (mirror eval_design_fast): mean over records
         vv_dP   = v_dP95(:); if isempty(vv_dP), vv_dP = 0; end
         vv_Qcap = v_Qcap(:); if isempty(vv_Qcap), vv_Qcap = 0; end
         vv_cav  = v_cav(:);  if isempty(vv_cav), vv_cav = 0; end
-        vv_Tend = v_Tend(:); if isempty(vv_Tend), vv_Tend = 0; end
+        vv_T_end = v_T_end(:); if isempty(vv_T_end), vv_T_end = 0; end
         vv_mu   = v_mu(:);   if isempty(vv_mu), vv_mu = 1; end
 
         pen_dP(i)   = mean(rel(vv_dP,   Opost.thr.dP95_max));
@@ -190,7 +190,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
         else
             pen_cav(i) = mean(rel(vv_cav, Opost.thr.cav_pct_max));
         end
-        pen_T(i)    = mean(rel(vv_Tend, Opost.thr.T_end_max));
+        pen_T(i)    = mean(rel(vv_T_end, Opost.thr.T_end_max));
         pen_mu(i)   = mean(rev(vv_mu,   Opost.thr.mu_end_min));
         pen(i)      = lambda*(W.dP*pen_dP(i)+W.Qcap*pen_Qcap(i)+W.cav*pen_cav(i)+W.T*pen_T(i)+W.mu*pen_mu(i));
     end
@@ -199,20 +199,20 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
     if all(isnan(Tsteel)), Tsteel = []; end
 
     % Satır başına dizilerden T tablosunu oluştur
-    T = array2table([X F PFAw IDRw pen pen_dP pen_Qcap pen_cav pen_T pen_mu], 'VariableNames', ...
+    T = array2table([X F PFA_mean IDR_mean pen pen_dP pen_Qcap pen_cav pen_T pen_mu], 'VariableNames', ...
        {'d_o_mm','n_orf','PF_tau','PF_gain','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK','Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref','PF_t_on', ...
-        'f1','f2','PFA','IDR','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu'});
+        'f1','f2','PFA_mean','IDR_mean','pen','pen_dP','pen_Qcap','pen_cav','pen_T','pen_mu'});
 
-    T.x10_max_damperli    = x10pk;
-    T.a10abs_max_damperli = a10pk;
+    T.x10_max_damperli    = x10_max_damperli;
+    T.a10abs_max_damperli = a10abs_max_damperli;
     % extra diagnostics wanted
-    T.dP95          = dP95;     T.Qcap95      = Qcap95;   T.cav_pct = cavW;
-    T.T_end         = Tend;     T.mu_end      = muend;    T.PF_p95  = PFp95;
-    T.Q_q50         = Qq50;     T.Q_q95       = Qq95;     T.dP50 = dPq50;
+    T.dP95          = dP95;     T.Qcap95      = Qcap95;   T.cav_pct = cav_pct;
+    T.T_end         = T_end;    T.mu_end      = mu_end;    T.PF_p95  = PF_p95;
+    T.Q_q50         = Q_q50;    T.Q_q95       = Q_q95;    T.dP50 = dP50;
     if ~isempty(Toil),   T.T_oil_end   = Toil;   end
     if ~isempty(Tsteel), T.T_steel_end = Tsteel; end
-    T.energy_tot_sum      = Etot;     T.E_orifice_sum     = Eor;      T.E_struct_sum  = Estr;
-    T.E_ratio             = Eratio;   T.P_mech_sum        = Pmech;
+    T.energy_tot_sum      = energy_tot_sum;     T.E_orifice_sum     = E_orifice_sum;      T.E_struct_sum  = E_struct_sum;
+    T.E_ratio             = E_ratio;   T.P_mech_sum        = P_mech_sum;
 
     % === BASELINE (pre-GA) ROW: params başlangıcıyla tek koşu, ilk satır ===
     T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W);
@@ -299,8 +299,8 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     dP95v   = S.table.dP95;
     qcapv   = S.table.Qcap95;
     cavv    = S.table.cav_pct;
-    Tendv   = S.table.T_end;
-    muendv  = S.table.mu_end;
+    T_endv   = S.table.T_end;
+    mu_endv  = S.table.mu_end;
     % --- PENALTY (soft, multiplicative) ---
     lambda  = Utils.getfield_default(optsEval,'penalty_scale',10);
     pwr     = Utils.getfield_default(optsEval,'penalty_power',1.0);
@@ -314,8 +314,8 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     else
         pen_cav = 0;
     end
-    pen_T    = isfield(thr,'T_end_max')  * mean(rel(Tendv,  thr.T_end_max));
-    pen_mu   = isfield(thr,'mu_end_min') * mean(rev(muendv, thr.mu_end_min));
+    pen_T    = isfield(thr,'T_end_max')  * mean(rel(T_endv,  thr.T_end_max));
+    pen_mu   = isfield(thr,'mu_end_min') * mean(rev(mu_endv, thr.mu_end_min));
     pen = W.dP*pen_dP + W.Qcap*pen_Qcap + W.cav*pen_cav + W.T*pen_T + W.mu*pen_mu;
     % multiplicative penalty keeps scale of objectives
     f = [f1, f2] .* (1 + lambda*pen);
@@ -339,23 +339,23 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     meta.pen_mu   = pen_parts.mu;
     meta.pen_parts = pen_parts;
     % --- append damperli peak metrics (zeros if unavailable)
-    x10pk = 0; a10pk = 0;
+    x10_max_damperli_local = 0; a10abs_max_damperli_local = 0;
             if isfield(S,'table') && istable(S.table)
                 if ismember('x10_max_D', S.table.Properties.VariableNames)
-                        x10pk = max(S.table.x10_max_D);
+                        x10_max_damperli_local = max(S.table.x10_max_D);
                 end
                 if ismember('a10abs_max_D', S.table.Properties.VariableNames)
-                        a10pk = max(S.table.a10abs_max_D);
+                        a10abs_max_damperli_local = max(S.table.a10abs_max_D);
                 end
             end
-    meta.x10_max_damperli    = x10pk;
-    meta.a10abs_max_damperli = a10pk;
+    meta.x10_max_damperli    = x10_max_damperli_local;
+    meta.a10abs_max_damperli = a10abs_max_damperli_local;
     % === Penaltı sürücüleri ve diagnostikleri ekle (varsa) ===
         if isfield(S,'table') && istable(S.table)
             candCols = { ...
               'dP95','Qcap95','cav_pct','T_end','mu_end', ...
               'PF_p95', ...
-              'Q_q50','Q_q95','dP_orf_q50','dP_orf_q95','dP50', ...
+              'Q_q50','Q_q95','dP50', ...
               'T_oil_end','T_steel_end', ...
               'energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum', ...
               'x10_max_D','a10abs_max_D','P_mech','E_orifice','E_struct','Re_max' ...
@@ -432,16 +432,16 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             PFA0 = mean(T0bl.PFA);
             IDR0 = mean(T0bl.IDR);
         % Penalty parts (same formula)
-        dP95_0   = max(T0bl.dP95);
-        Qcap95_0 = max(T0bl.Qcap95);
-        cavW_0   = max(T0bl.cav_pct);
-        Tend_0   = max(T0bl.T_end);
-        muend_0  = min(T0bl.mu_end);
+        dP95_0     = max(T0bl.dP95);
+        Qcap95_0   = max(T0bl.Qcap95);
+        cav_pct_0  = max(T0bl.cav_pct);
+        T_end_0    = max(T0bl.T_end);
+        mu_end_0   = min(T0bl.mu_end);
         pen_dP_0   = rel(dP95_0,  Opost.thr.dP95_max);
         pen_Qcap_0 = rel(Qcap95_0,Opost.thr.Qcap95_max);
-        if Opost.thr.cav_pct_max<=0, pen_cav_0 = max(0,cavW_0).^pwr; else, pen_cav_0 = rel(cavW_0,Opost.thr.cav_pct_max); end
-        pen_T_0    = rel(Tend_0,  Opost.thr.T_end_max);
-        pen_mu_0   = rev(muend_0, Opost.thr.mu_end_min);
+        if Opost.thr.cav_pct_max<=0, pen_cav_0 = max(0,cav_pct_0).^pwr; else, pen_cav_0 = rel(cav_pct_0,Opost.thr.cav_pct_max); end
+        pen_T_0    = rel(T_end_0,  Opost.thr.T_end_max);
+        pen_mu_0   = rev(mu_end_0, Opost.thr.mu_end_min);
         pen_0      = lambda*(W.dP*pen_dP_0 + W.Qcap*pen_Qcap_0 + W.cav*pen_cav_0 + W.T*pen_T_0 + W.mu*pen_mu_0);
 
         % Baz satırı için tablonun ilk satırını kopyala
@@ -470,8 +470,8 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         % amaç fonksiyonları
         assign('f1', f0(1));
         assign('f2', f0(2));
-        assign('PFA', PFA0);
-        assign('IDR', IDR0);
+        assign('PFA_mean', PFA0);
+        assign('IDR_mean', IDR0);
 
         % cezalar
         assign('pen',     pen_0);
@@ -514,19 +514,8 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
             if ismember('Q_q95', vn) && ismember('Q_q95', T0bl.Properties.VariableNames)
                 assign('Q_q95', max(T0bl.Q_q95));
             end
-            if ismember('dP_orf_q50', vn)
-                if ismember('dP_orf_q50', T0bl.Properties.VariableNames)
-                    assign('dP_orf_q50', max(T0bl.dP_orf_q50));
-                elseif ismember('dP50', T0bl.Properties.VariableNames)
-                    assign('dP_orf_q50', max(T0bl.dP50));
-                end
-            end
-            if ismember('dP_orf_q95', vn)
-                if ismember('dP_orf_q95', T0bl.Properties.VariableNames)
-                    assign('dP_orf_q95', max(T0bl.dP_orf_q95));
-                elseif ismember('dP95', T0bl.Properties.VariableNames)
-                    assign('dP_orf_q95', max(T0bl.dP95));
-                end
+            if ismember('dP50', vn) && ismember('dP50', T0bl.Properties.VariableNames)
+                assign('dP50', max(T0bl.dP50));
             end
             if ismember('T_oil_end', vn) && ismember('T_oil_end', T0bl.Properties.VariableNames)
                 assign('T_oil_end', max(T0bl.T_oil_end));
