@@ -590,7 +590,7 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
         % Baz satırı için tablonun ilk satırını kopyala
         vn = T.Properties.VariableNames;
         T0 = T(1,:);
-        T0{1,:} = repmat({nan},1,width(T0));
+        T0{1,:} = nan(1,width(T0));
 
         % T0'ya değer yazarken sütun tiplerini koru
 
