@@ -1,26 +1,27 @@
 %% Kayıt Analiz Fonksiyonu
-function out = run_one_record_windowed(rec, params, opts, prev_diag)
+function out = run_one_record_windowed(rec, params, opts, prev_ts)
 %RUN_ONE_RECORD_WINDOWED Pencereli metriklerle tek yer hareketini analiz eder.
-%   OUT = RUN_ONE_RECORD_WINDOWED(REC, PARAMS, OPTS, PREV_DIAG) ölçekli kayıt
-%   REC için doğrusal olmayan sönümleyici modelini çalıştırır ve Arias yoğunluğu
+%   OUT = RUN_ONE_RECORD_WINDOWED(REC, PARAMS, OPTS, PREV_TS) ölçekli kayıt
+%   REC için doğrusal olmayan sönümleyici modeli çalıştırır ve Arias yoğunluğu
 %   tabanlı bir zaman penceresi içinde performans metriklerini hesaplar. PARAMS
 %   yapısı, yapı ve sönümleyici özelliklerini (bkz. PARAMETRELER.M) içerir.
 %   OPTS davranışı kontrol eder:
 %       window        - MAKE_ARIAS_WINDOW fonksiyonuna iletilen ayarlar
 %       thermal_reset - 'each', 'carry' veya 'cooldown'
 %       cooldown_s    - 'cooldown' modu için soğuma süresi [s]
-%   PREV_DIAG, kayıtlara arasında termal durumu taşımak için isteğe bağlı bir
-%   diagnostiğe sahiptir.
+%   PREV_TS, kayıtlara arasında termal durumu taşımak için isteğe bağlı bir
+%   zaman serisi yapısına sahiptir.
 %
-%   OUT yapısı; name, scale, SaT1, win, metr, diag, ts, qc_pass, T_start,
+%   OUT yapısı; name, scale, SaT1, win, metr, ts, qc_pass, T_start,
 %   T_end, mu_end, clamp_hits, PFA_top, IDR_max, dP_orf_q95,
-%   Qcap_ratio_q95, cav_pct, t5, t95 ve coverage alanlarını içerir.
+%   Qcap_ratio_q95, cav_pct, t5, t95 ve coverage alanlarını içerir. TS
+%   yalnızca COMPUTE_METRICS_WINDOWED için gerekli zaman serilerini barındırır.
 %
-%   Bu fonksiyon, dosya sonunda yer alan MCK_WITH_DAMPER_TS yardımcı
-%   rutini ve COMPUTE_METRICS_WINDOWED fonksiyonunu kullanır.
+%   Bu fonksiyon MCK_WITH_DAMPER ve COMPUTE_METRICS_WINDOWED
+%   fonksiyonlarını kullanır.
 
 % varsayılan argümanlar
-if nargin < 4, prev_diag = []; end
+if nargin < 4, prev_ts = []; end
 if nargin < 3 || isempty(opts), opts = struct(); end
 
 % Türetilmiş damper sabitlerini güncelle
@@ -68,8 +69,7 @@ try
             params.cfg.PF.t_on = t5v + 0.5;
         end
     end
-catch ME
-    warning('PF auto_t_on başarısız: %s', ME.message);
+catch
     % parametreler değiştirilmeden bırakıldı
 end
 
@@ -97,14 +97,14 @@ switch mode
     case 'each'
         Tinit = params.T0_C;
     case 'carry'
-        if ~isempty(prev_diag) && isfield(prev_diag,'T_oil')
-            Tinit = prev_diag.T_oil(end);
+        if ~isempty(prev_ts) && isfield(prev_ts,'T_oil')
+            Tinit = prev_ts.T_oil(end);
         else
             Tinit = params.T0_C;
         end
     case 'cooldown'
-        if ~isempty(prev_diag) && isfield(prev_diag,'T_oil')
-            Tprev = prev_diag.T_oil(end);
+        if ~isempty(prev_ts) && isfield(prev_ts,'T_oil')
+            Tprev = prev_ts.T_oil(end);
         else
             Tprev = params.T0_C;
         end
@@ -125,7 +125,7 @@ end
 [x0, a_rel0] = Utils.lin_MCK(rec.t, rec.ag, params.M, params.C0, params.K); %#ok<NASGU>
 
 %% Damperli Çözüm
-% Damperli çözüm doğrudan mck_with_damper_ts fonksiyonu üzerinden yürütülür.
+% Damperli çözüm mck_with_damper fonksiyonu üzerinden yürütülür.
 
 mu_ref_eff   = params.mu_ref;
 c_lam0_eff   = params.c_lam0;
@@ -144,15 +144,14 @@ try
 catch
     % sessiz geç
 end
-[x,a_rel,ts,diag] = mck_with_damper_ts(rec.t, rec.ag, params.M, params.C0, params.K, ...
+[x,a_rel,ts] = mck_with_damper(rec.t, rec.ag, params.M, params.C0, params.K, ...
     params.k_sd, c_lam0_eff, params.Lori, true, params.orf, params.rho, params.Ap, ...
     params.A_o, params.Qcap_big, mu_ref_eff, true, params.thermal, Tinit, ...
     params.T_ref_C, params.b_mu, params.c_lam_min, params.c_lam_cap, params.Lgap, ...
     params.cp_oil, params.cp_steel, params.steel_to_oil_mass_ratio, ...
     params.story_mask, params.n_dampers_per_story, params.resFactor, params.cfg);
 
-params_m = params; params_m.diag = diag;
-metr = compute_metrics_windowed(rec.t, x, a_rel, rec.ag, ts, params.story_height, win, params_m);
+metr = compute_metrics_windowed(rec.t, x, a_rel, rec.ag, ts, params.story_height, win, params);
 
 qc_pass = (metr.cav_pct <= thr.cav_pct_max) && ...
           (metr.dP_orf_q95 <= thr.dP95_max) && ...
@@ -162,16 +161,16 @@ qc_pass = (metr.cav_pct <= thr.cav_pct_max) && ...
 
 % Nominal koşu için son termal ve viskozite durumları kaydedilir
 T_start = Tinit;
-if isfield(diag,'T_oil')
-    T_end = diag.T_oil(end);
+if isfield(ts,'T_oil')
+    T_end = ts.T_oil(end);
     Tmax = params.T0_C + params.thermal.dT_max;
-    clamp_hits = sum(diff(diag.T_oil >= Tmax) > 0);
+    clamp_hits = sum(diff(ts.T_oil >= Tmax) > 0);
 else
     T_end = NaN;
     clamp_hits = NaN;
 end
-if isfield(diag,'mu')
-    mu_end = diag.mu(end);
+if isfield(ts,'mu')
+    mu_end = ts.mu(end);
 else
     mu_end = NaN;
 end
@@ -183,7 +182,6 @@ out.scale = Utils.getfield_default(rec,'scale',1);
 out.SaT1  = Utils.getfield_default(rec,'IM',NaN);
 out.win   = win;
 out.metr  = metr;
-out.diag  = diag;
 out.ts = ts;
 out.qc_pass = qc_pass;
 out.T_start = T_start;
@@ -216,8 +214,7 @@ try
             out.PF_auto_t_on = logical(params.cfg.PF.auto_t_on);
         end
     end
-catch ME
-    warning('PF telemetri yakalama başarısız: %s', ME.message);
+catch
 end
 
 % Yeni parametreleri isteğe bağlı olarak kaydet
@@ -228,65 +225,6 @@ for ii = 1:numel(param_fields)
         out.(fn) = params.(fn);
     end
 end
-end
-
-%% =====================================================================
-%% mck_with_damper_ts Yerel Fonksiyonu
-%% =====================================================================
-function [x,a_rel,ts,diag] = mck_with_damper_ts(t,ag,M,C,K, k_sd,c_lam0,Lori, ...
-    use_orifice, orf, rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, ...
-    T0_C, T_ref_C, b_mu, c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, ...
-    steel_to_oil_mass_ratio, story_mask, n_dampers_per_story, ...
-    resFactor, cfg)
-%1) MCK_WITH_DAMPER çözümü
-[x,a_rel,diag] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, use_orifice, orf, ...
-    rho, Ap, Ao, Qcap, mu_ref, use_thermal, thermal, T0_C, T_ref_C, b_mu, ...
-    c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, ...
- story_mask, n_dampers_per_story, resFactor, cfg);
-
-%2) Öykü vektörlerinin hazırlanması
-nStories = size(diag.drift,2);
-mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
-ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
-multi = (mask .* ndps).';
-
-%3) Zaman serisi yapılarının oluşturulması
-ts = struct();
-ts.t = t;
-ts.drift = diag.drift;
-ts.dvel = diag.dvel;
-ts.story_force = diag.story_force;
-ts.PF = diag.PF;
-ts.Q = diag.Q;
-ts.dP_orf = diag.dP_orf;
-ts.Qcap_ratio = abs(diag.Q) ./ Qcap;
-ts.cav_mask = diag.dP_orf < 0;
-
-%4) Güç bileşenlerinin hesabı
-P_visc_per = diag.c_lam .* (diag.dvel.^2);
-ts.P_visc = sum(P_visc_per .* multi, 2);
-
-if isfield(diag,'P_orf_per') && ~isempty(diag.P_orf_per)
-    P_orf_per = diag.P_orf_per;
-else
-    P_orf_per = abs(diag.dP_orf .* diag.Q);
-end
-ts.P_orf = sum(P_orf_per .* multi, 2);
-
-if isfield(diag,'P_sum')
-    ts.P_sum = diag.P_sum;
-elseif isfield(ts,'P_orf') && isfield(ts,'P_visc')
-    ts.P_sum = ts.P_orf + ts.P_visc;
-else
-    ts.P_sum = [];
-end
-
-%5) Enerji birikimlerinin hesaplanması
-P_struct = sum(diag.story_force .* diag.dvel, 2);
-ts.E_orf = cumtrapz(t, ts.P_orf);
-ts.E_struct = cumtrapz(t, P_struct);
-
-% DIAG yapısı değiştirilmeden geri döndürülür
 end
 
 

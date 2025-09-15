@@ -185,11 +185,10 @@ function Cth = compute_Cth_effective(params)
 end
 
 function safe_write(obj, filepath, writeFcn)
-% Verilen yazma fonksiyonunu güvenle çağırır, hataları uyarı olarak bildirir
+% Verilen yazma fonksiyonunu güvenle çağırır
     try
         writeFcn(obj, filepath);
-    catch ME
-        warning('Yazma hatası (%s): %s', filepath, ME.message);
+    catch
     end
 end
 
