@@ -540,11 +540,11 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     f1 = mean(S.table.PFA);
     f2 = mean(S.table.IDR);
     thr = O.thr;
-    dP95v   = S.table.dP95_worst;    
-    qcapv   = S.table.Qcap95_worst;
-    cavv    = S.table.cav_pct_worst;
-    Tendv   = S.table.T_end_worst;
-    muendv  = S.table.mu_end_worst;
+    dP95v   = S.table.dP95;
+    qcapv   = S.table.Qcap95;
+    cavv    = S.table.cav_pct;
+    Tendv   = S.table.T_end;
+    muendv  = S.table.mu_end;
     % --- PENALTY (soft, multiplicative) ---
     lambda  = Utils.getfield_default(optsEval,'penalty_scale',10);
     pwr     = Utils.getfield_default(optsEval,'penalty_power',1.0);
@@ -586,20 +586,20 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     x10pk = 0; a10pk = 0;
         try
             if isfield(S,'table') && istable(S.table)
-                if ismember('x10_max_D_worst', S.table.Properties.VariableNames)
+                if ismember('x10_max_D', S.table.Properties.VariableNames)
                     try
-                        x10pk = max(S.table.x10_max_D_worst);
+                        x10pk = max(S.table.x10_max_D);
                     catch ME
-                        x10pk = S.table.x10_max_D_worst;
+                        x10pk = S.table.x10_max_D;
                         if numel(x10pk)>1, x10pk = max(x10pk(:)); end
                         warning('x10 pik değer okuması başarısız: %s', ME.message);
                     end
                 end
-                if ismember('a10abs_max_D_worst', S.table.Properties.VariableNames)
+                if ismember('a10abs_max_D', S.table.Properties.VariableNames)
                     try
-                        a10pk = max(S.table.a10abs_max_D_worst);
+                        a10pk = max(S.table.a10abs_max_D);
                     catch ME
-                        a10pk = S.table.a10abs_max_D_worst;
+                        a10pk = S.table.a10abs_max_D;
                         if numel(a10pk)>1, a10pk = max(a10pk(:)); end
                         warning('a10 pik değer okuması başarısız: %s', ME.message);
                     end
@@ -614,22 +614,15 @@ function [f, meta] = eval_design_fast(x, scaled, params_base, optsEval)
     try
         if isfield(S,'table') && istable(S.table)
             candCols = { ...
-              'dP95_worst', 'Qcap95_worst', 'cav_pct_worst', 'T_end_worst', 'mu_end_worst', ...
-              'PF_p95_worst', ...
-              'Q_q50_worst','Q_q95_worst','dP_orf_q50_worst','dP_orf_q95_worst', ...
-              'T_oil_end_worst','T_steel_end_worst', ...
-              'energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum' ...
+              'dP95','Qcap95','cav_pct','T_end','mu_end', ...
+              'PF_p95', ...
+              'Q_q50','Q_q95','dP_orf_q50','dP_orf_q95','dP50', ...
+              'T_oil_end','T_steel_end', ...
+              'energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum', ...
+              'x10_max_D','a10abs_max_D','P_mech','E_orifice','E_struct','Re_max' ...
             };
             % Gerekirse alan adları için takma adlar sağla
             try
-                if ismember('T_end_worst', S.table.Properties.VariableNames) && ...
-                   ~ismember('T_oil_end_worst', S.table.Properties.VariableNames)
-                    S.table.T_oil_end_worst = S.table.T_end_worst; %#ok<AGROW>
-                end
-                if ismember('dP95_worst', S.table.Properties.VariableNames) && ...
-                   ~ismember('dP_orf_q95_worst', S.table.Properties.VariableNames)
-                    S.table.dP_orf_q95_worst = S.table.dP95_worst; %#ok<AGROW>
-                end
                 if ismember('E_orifice_sum', S.table.Properties.VariableNames) && ...
                    ismember('E_struct_sum', S.table.Properties.VariableNames) && ...
                    ~ismember('energy_tot_sum', S.table.Properties.VariableNames)
@@ -827,11 +820,11 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
 
         % damper tepe değerleri
         try
-            if ismember('x10_max_damperli', vn) && ismember('x10_max_D_worst', T0bl.Properties.VariableNames)
-                assign('x10_max_damperli', max(T0bl.x10_max_D_worst));
+            if ismember('x10_max_damperli', vn) && ismember('x10_max_D', T0bl.Properties.VariableNames)
+                assign('x10_max_damperli', max(T0bl.x10_max_D));
             end
-            if ismember('a10abs_max_damperli', vn) && ismember('a10abs_max_D_worst', T0bl.Properties.VariableNames)
-                assign('a10abs_max_damperli', max(T0bl.a10abs_max_D_worst));
+            if ismember('a10abs_max_damperli', vn) && ismember('a10abs_max_D', T0bl.Properties.VariableNames)
+                assign('a10abs_max_damperli', max(T0bl.a10abs_max_D));
             end
         catch ME
             warning('Başlangıç damper tepe hesaplanamadı: %s', ME.message);
@@ -839,48 +832,52 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
 
         % diğer diagnostikler
         try
-            if ismember('dP95_worst', vn) && ismember('dP95_worst', T0bl.Properties.VariableNames)
-                assign('dP95_worst', max(T0bl.dP95_worst));
+            if ismember('dP95', vn) && ismember('dP95', T0bl.Properties.VariableNames)
+                assign('dP95', max(T0bl.dP95));
             end
-            if ismember('Qcap95_worst', vn) && ismember('Qcap95_worst', T0bl.Properties.VariableNames)
-                assign('Qcap95_worst', max(T0bl.Qcap95_worst));
+            if ismember('Qcap95', vn) && ismember('Qcap95', T0bl.Properties.VariableNames)
+                assign('Qcap95', max(T0bl.Qcap95));
             end
-            if ismember('cav_pct_worst', vn) && ismember('cav_pct_worst', T0bl.Properties.VariableNames)
-                assign('cav_pct_worst', max(T0bl.cav_pct_worst));
+            if ismember('cav_pct', vn) && ismember('cav_pct', T0bl.Properties.VariableNames)
+                assign('cav_pct', max(T0bl.cav_pct));
             end
-            if ismember('T_end_worst', vn) && ismember('T_end_worst', T0bl.Properties.VariableNames)
-                assign('T_end_worst', max(T0bl.T_end_worst));
+            if ismember('T_end', vn) && ismember('T_end', T0bl.Properties.VariableNames)
+                assign('T_end', max(T0bl.T_end));
             end
-            if ismember('mu_end_worst', vn) && ismember('mu_end_worst', T0bl.Properties.VariableNames)
-                assign('mu_end_worst', min(T0bl.mu_end_worst));
+            if ismember('mu_end', vn) && ismember('mu_end', T0bl.Properties.VariableNames)
+                assign('mu_end', min(T0bl.mu_end));
             end
-            if ismember('PF_p95_worst', vn) && ismember('PF_p95_worst', T0bl.Properties.VariableNames)
-                assign('PF_p95_worst', max(T0bl.PF_p95_worst));
+            if ismember('PF_p95', vn) && ismember('PF_p95', T0bl.Properties.VariableNames)
+                assign('PF_p95', max(T0bl.PF_p95));
             end
-            if ismember('Q_q50_worst', vn) && ismember('Q_q50_worst', T0bl.Properties.VariableNames)
-                assign('Q_q50_worst', max(T0bl.Q_q50_worst));
+            if ismember('Q_q50', vn) && ismember('Q_q50', T0bl.Properties.VariableNames)
+                assign('Q_q50', max(T0bl.Q_q50));
             end
-            if ismember('Q_q95_worst', vn) && ismember('Q_q95_worst', T0bl.Properties.VariableNames)
-                assign('Q_q95_worst', max(T0bl.Q_q95_worst));
+            if ismember('Q_q95', vn) && ismember('Q_q95', T0bl.Properties.VariableNames)
+                assign('Q_q95', max(T0bl.Q_q95));
             end
-            if ismember('dP_orf_q50_worst', vn) && ismember('dP_orf_q50_worst', T0bl.Properties.VariableNames)
-                assign('dP_orf_q50_worst', max(T0bl.dP_orf_q50_worst));
-            end
-            if ismember('dP_orf_q95_worst', vn)
-                if ismember('dP_orf_q95_worst', T0bl.Properties.VariableNames)
-                    assign('dP_orf_q95_worst', max(T0bl.dP_orf_q95_worst));
-                else
-                    assign('dP_orf_q95_worst', max(T0bl.dP95_worst));
+            if ismember('dP_orf_q50', vn)
+                if ismember('dP_orf_q50', T0bl.Properties.VariableNames)
+                    assign('dP_orf_q50', max(T0bl.dP_orf_q50));
+                elseif ismember('dP50', T0bl.Properties.VariableNames)
+                    assign('dP_orf_q50', max(T0bl.dP50));
                 end
             end
-            if ismember('T_oil_end_worst', vn) && ismember('T_oil_end_worst', T0bl.Properties.VariableNames)
-                assign('T_oil_end_worst', max(T0bl.T_oil_end_worst));
+            if ismember('dP_orf_q95', vn)
+                if ismember('dP_orf_q95', T0bl.Properties.VariableNames)
+                    assign('dP_orf_q95', max(T0bl.dP_orf_q95));
+                elseif ismember('dP95', T0bl.Properties.VariableNames)
+                    assign('dP_orf_q95', max(T0bl.dP95));
+                end
             end
-            if ismember('T_steel_end_worst', vn) && ismember('T_steel_end_worst', T0bl.Properties.VariableNames)
-                if iscell(T.T_steel_end_worst)
-                    T0.T_steel_end_worst = {max(T0bl.T_steel_end_worst)};
+            if ismember('T_oil_end', vn) && ismember('T_oil_end', T0bl.Properties.VariableNames)
+                assign('T_oil_end', max(T0bl.T_oil_end));
+            end
+            if ismember('T_steel_end', vn) && ismember('T_steel_end', T0bl.Properties.VariableNames)
+                if iscell(T.T_steel_end)
+                    T0.T_steel_end = {max(T0bl.T_steel_end)};
                 else
-                    T0.T_steel_end_worst = max(T0bl.T_steel_end_worst);
+                    T0.T_steel_end = max(T0bl.T_steel_end);
                 end
             end
             if ismember('E_orifice_sum', vn) && ismember('E_orifice_sum', T0bl.Properties.VariableNames)
