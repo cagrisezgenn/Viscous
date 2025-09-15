@@ -83,9 +83,7 @@ ub = [3.0,8, 0.90, 5, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 2.00, 3];
                 seed = [seed, 0.75*ones(size(seed,1), size(P0,2)-size(seed,2))];
             end
             % Tohumları güvenli aralığa sıkıştır (lb/ub)
-            for si = 1:size(seed,1)
-                seed(si,:) = max(min(seed(si,:), ub), lb);
-            end
+            seed = max(min(seed, ub), lb);
             ns = min(size(seed,1), size(P0,1));
             P0(1:ns,:) = seed(1:ns,:);
             % Önceki Pareto'yu kullanmak için en son ga_front.csv dosyasını okumayı dene
