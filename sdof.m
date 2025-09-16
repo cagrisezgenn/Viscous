@@ -743,6 +743,8 @@ function [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per, cav_mask_per] = calc
 
     P_orf_per = P_lam_per + P_kv_per;
 
-    tol = max(1e-3 .* max(dP_cav, 1), 1e-6);
-    cav_mask_per = raw_mag > (dP_orf_mag + tol);
+    % Flag cavitation when the raw drop outruns the limited magnitude by a
+    % small tolerance.
+    tol = max(1e-6 .* max(dP_cav, 1), 1e-6);
+    cav_mask_per = (raw_mag - dP_orf_mag) > tol;
 end

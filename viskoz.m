@@ -1442,9 +1442,10 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         % Diagnostics (positive power)
         P_orf_per = P_lam_per + P_kv_per;
 
-        % Cavitation flag indicates activation of the cavitation limit
-        tol = max(1e-3 .* max(dP_cav, 1), 1e-6);
-        cav_mask_per = raw_mag > (dP_orf_mag + tol);
+        % Cavitation flag engages once the raw drop exceeds the cavitation
+        % limited magnitude by a small tolerance.
+        tol = max(1e-6 .* max(dP_cav, 1), 1e-6);
+        cav_mask_per = (raw_mag - dP_orf_mag) > tol;
     end
 end
 
