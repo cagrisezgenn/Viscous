@@ -63,9 +63,10 @@ vars.zeta1_hot       = zeros(n,1);
 vars.z2_over_z1_hot  = zeros(n,1);
 vars.P_mech_sum      = zeros(n,1);
 vars.Re_max      = zeros(n,1);
-vars.Q_q95  = zeros(n,1);
-vars.Q_q50  = zeros(n,1);
-vars.dP50   = zeros(n,1);
+    vars.Q_q95  = zeros(n,1);
+    vars.Q_q50  = zeros(n,1);
+    vars.dP50   = zeros(n,1);
+    vars.PF_p95 = zeros(n,1);
 vars.x10_max_damperli = zeros(n,1);
 vars.a10abs_max_damperli = zeros(n,1);
 vars.E_orifice_sum = zeros(n,1);
@@ -119,6 +120,11 @@ for k = 1:numel(scaled)
     vars.Q_q95(k)  = Utils.getfield_default(m_nom,'Q_q95',NaN);
     vars.Q_q50(k)  = Utils.getfield_default(m_nom,'Q_q50',NaN);
     vars.dP50(k)   = Utils.getfield_default(m_nom,'dP50',NaN);
+    pf95_local = Utils.getfield_default(m_nom,'PF_p95',NaN);
+    if ~isfinite(pf95_local)
+        pf95_local = Utils.getfield_default(m_nom,'story_force_q95',pf95_local);
+    end
+    vars.PF_p95(k) = pf95_local;
     vars.x10_max_damperli(k) = Utils.getfield_default(m_nom,'x10_max_damperli',NaN);
     vars.a10abs_max_damperli(k) = Utils.getfield_default(m_nom,'a10abs_max_damperli',NaN);
     vars.E_orifice_sum(k) = Utils.getfield_default(m_nom,'E_orifice_sum',NaN);
@@ -160,12 +166,12 @@ for r = 1:numel(vars.names)
 end
 
 summary.table = table(vars.names, vars.scale, vars.SaT1, vars.t5, vars.t95, vars.coverage, vars.policy_col, vars.order_col, vars.cooldown_col, ...
-    vars.PFA, vars.IDR, vars.dP95, vars.Qcap95, vars.cav_pct, vars.zeta1_hot, vars.z2_over_z1_hot, vars.P_mech_sum, vars.Re_max, ...
+    vars.PFA, vars.IDR, vars.dP95, vars.Qcap95, vars.cav_pct, vars.PF_p95, vars.zeta1_hot, vars.z2_over_z1_hot, vars.P_mech_sum, vars.Re_max, ...
     vars.Q_q95, vars.Q_q50, vars.dP50, vars.x10_max_damperli, vars.a10abs_max_damperli, vars.E_orifice_sum, vars.E_struct_sum, vars.energy_tot_sum, vars.E_ratio, vars.qc_pass, ...
     vars.T_start, vars.T_end, vars.mu_end, vars.clamp_hits, vars.Dp_mm_col, vars.mu_ref_col, ...
     ok_T, ok_mu, ok_dP, ok_Qcap, ok_cav, qc_reason, ...
     'VariableNames', {'name','scale','SaT1','t5','t95','coverage','policy','order','cooldown_s', ...
-    'PFA','IDR','dP95','Qcap95','cav_pct','zeta1_hot','z2_over_z1_hot','P_mech_sum','Re_max', ...
+    'PFA','IDR','dP95','Qcap95','cav_pct','PF_p95','zeta1_hot','z2_over_z1_hot','P_mech_sum','Re_max', ...
     'Q_q95','Q_q50','dP50','x10_max_damperli','a10abs_max_damperli','E_orifice_sum','E_struct_sum','energy_tot_sum','E_ratio','qc_pass', ...
     'T_start','T_end','mu_end','clamp_hits','Dp_mm','mu_ref','ok_T','ok_mu','ok_dP','ok_Qcap','ok_cav','qc_reason'});
 

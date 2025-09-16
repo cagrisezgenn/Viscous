@@ -158,12 +158,34 @@ else
 end
 
 % ----------------------- PF metrikleri (isteğe bağlı) -----------------
-try
-    if isfield(ts,'PF')
-        PF_abs = abs(ts.PF(idx,:));
-    metr.PF_p95 = local_quantile(PF_abs(:,ws), 0.95);
+metr.PF_p95 = NaN;
+pf_q95 = [];
+if isfield(ts,'PF') && ~isempty(ts.PF)
+    PF_abs = abs(ts.PF(idx,:));
+    if ~isempty(PF_abs)
+        pf_q95 = local_quantile(PF_abs, 0.95);
+        if isscalar(pf_q95)
+            metr.PF_p95 = pf_q95;
+        else
+            ws_idx = metr.which_story;
+            if ~(isfinite(ws_idx) && ws_idx >= 1 && ws_idx <= numel(pf_q95) && isfinite(pf_q95(ws_idx)))
+                finite_cols = find(isfinite(pf_q95), 1, 'first');
+                ws_idx = finite_cols;
+            end
+            if ~isempty(ws_idx) && isfinite(ws_idx) && ws_idx >= 1 && ws_idx <= numel(pf_q95)
+                metr.PF_p95 = pf_q95(ws_idx);
+            end
+        end
     end
-catch
+end
+if (~isfinite(metr.PF_p95) || isempty(metr.PF_p95)) && ~isempty(pf_q95)
+    finite_pf = pf_q95(isfinite(pf_q95));
+    if ~isempty(finite_pf)
+        metr.PF_p95 = max(finite_pf);
+    end
+end
+if ~isfinite(metr.PF_p95) && isfield(metr,'story_force_q95') && isfinite(metr.story_force_q95)
+    metr.PF_p95 = metr.story_force_q95;
 end
 
 % Parametrelerden gerekli alanlar kayıt altına alınır
@@ -179,8 +201,33 @@ end
 
 function q = local_quantile(A, p)
 %LOCAL_QUANTILE Verilen verinin p yüzdelik değerini hesaplar.
-%   A matrisi ve 0-1 aralığındaki p değeri ile bu yardımcı fonksiyon
-%   MATLAB'in QUANTILE fonksiyonunu çağırarak yüzdelik değeri döndürür.
-q = quantile(A, p);
+%   Bu sürüm, NaN veya sonsuz değerleri göz ardı ederek sütun bazında
+%   yüzde hesaplar.
+if nargin < 2
+    p = 0.5;
+end
+if isempty(A)
+    q = NaN;
+    return;
+end
+if isvector(A)
+    col = A(:);
+    col = col(isfinite(col));
+    if isempty(col)
+        q = NaN;
+    else
+        q = quantile(col, p);
+    end
+    return;
+end
+nCols = size(A,2);
+q = NaN(1,nCols);
+for jj = 1:nCols
+    col = A(:,jj);
+    col = col(isfinite(col));
+    if ~isempty(col)
+        q(jj) = quantile(col, p);
+    end
+end
 end
 
