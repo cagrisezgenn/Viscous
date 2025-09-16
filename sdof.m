@@ -723,8 +723,8 @@ function [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per, cav_mask_per] = calc
     denom = max(1, nd * n_orf);
     R_lam = (128 * params.mu .* params.Lori ./ (pi * d_o.^4)) / denom;
     dP_lam = R_lam .* Q;
-    dP_h   = dP_lam + dP_kv;
-    dP_h_mag = abs(dP_h);
+    dP_raw    = dP_lam + dP_kv;
+    dP_raw_mag = abs(dP_raw);
 
     p_up   = params.orf.p_amb + abs(params.F_lin)./max(params.Ap,1e-12);
     dP_cav = max( (p_up - params.orf.p_cav_eff).*params.orf.cav_sf, 0 );
@@ -732,9 +732,12 @@ function [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per, cav_mask_per] = calc
     if isfield(params,'orf') && isfield(params.orf,'softmin_eps') && isfinite(params.orf.softmin_eps)
         epsm = params.orf.softmin_eps;
     end
-    dP_orf_mag = softmin_local(dP_h_mag, dP_cav, epsm);
-    tol = 1e-6 * max(1, dP_h_mag) + 1e-2 * epsm;
-    cav_mask_per = dP_h_mag > (dP_orf_mag + tol);
+    dP_orf_mag = softmin_local(dP_raw_mag, dP_cav, epsm);
+    % Sürtünme sınırlandırıcısının devrede olup olmadığını anlamak için
+    % sert kavitasyon limitini baz al.
+    dP_lim_mag = min(dP_raw_mag, dP_cav);
+    tol = max(1e-9, sqrt(eps) * max(1, dP_lim_mag));
+    cav_mask_per = dP_raw_mag > (dP_lim_mag + tol);
 
     dP_orf = dP_orf_mag .* sgn;
     F_orf  = dP_orf .* params.Ap;
