@@ -24,13 +24,12 @@ function [records, scaled, meta] = load_ground_motions(T1, opts)
 
 %% Girdi Parametreleri
 if nargin < 2, opts = struct(); end
+if ~isfield(opts,'verbose'), opts.verbose = true; end
 hp_cut   = Utils.getfield_default(opts,'hp_cut',0.05);   % yuksek gecis [Hz]
 IM_mode  = Utils.getfield_default(opts,'IM_mode','band');
 band_fac = Utils.getfield_default(opts,'band_fac',[0.8 1.2]);
 band_N   = Utils.getfield_default(opts,'band_N',21);
 s_bounds = Utils.getfield_default(opts,'s_bounds',[0.2 2.2]);
-verbose  = Utils.getfield_default(opts,'verbose',true);
-logf     = @(varargin) verbose && fprintf(varargin{:});
 
 %% MAT dosyasını Yükle
 raw = load('acc_matrix.mat');
@@ -74,11 +73,11 @@ for k = 1:numel(fn)
 end
 
 %% Yükleme Özeti
-logf('Toplam %d zemin hareketi kaydı yüklendi:\n', numel(records));
+if opts.verbose, fprintf('Toplam %d zemin hareketi kaydı yüklendi:\n', numel(records)); end
 for k = 1:numel(records)
     r = records(k);
-    logf('%2d) %-12s dt=%6.4f s dur=%6.2f s PGA=%7.3f PGV=%7.3f\n', ...
-        k, r.name, r.dt, r.duration, r.PGA, r.PGV);
+    if opts.verbose, fprintf('%2d) %-12s dt=%6.4f s dur=%6.2f s PGA=%7.3f PGV=%7.3f\n', ...
+        k, r.name, r.dt, r.duration, r.PGA, r.PGV); end
 end
 
 scaled = [];
@@ -109,7 +108,7 @@ if nargin >= 1 && ~isempty(T1)
         records(idx) = [];
         IM(idx) = [];
     end
-    if ~isempty(dropped), logf('TRIM: ayıklanan uç değerler = %s\n', strjoin(dropped,', ')); end
+    if ~isempty(dropped) && opts.verbose, fprintf('TRIM: ayıklanan uç değerler = %s\n', strjoin(dropped,', ')); end
     IM_low  = max(s_bounds(1)*IM);
     IM_high = min(s_bounds(2)*IM);
     targetIM0 = median(IM);
@@ -146,8 +145,8 @@ if nargin >= 1 && ~isempty(T1)
         modeStr = 'PSA@T1';
     end
     clipCount = n_clipped * doClip;
-    logf('Hedef IM = %.3f (%s). Maks hata = %.2f%% | uygun aralık=[%.3f, %.3f] | s_min=%.2f s_max=%.2f | KIRPILAN=%d\n', ...
-        targetIM, modeStr, max(err), IM_low, IM_high, min(s_all), max(s_all), clipCount);
+    if opts.verbose, fprintf('Hedef IM = %.3f (%s). Maks hata = %.2f%% | uygun aralık=[%.3f, %.3f] | s_min=%.2f s_max=%.2f | KIRPILAN=%d\n', ...
+        targetIM, modeStr, max(err), IM_low, IM_high, min(s_all), max(s_all), clipCount); end
 
     meta = struct('IM_mode', IM_mode, 'band_fac', band_fac, 's_bounds', s_bounds);
     if exist('dropped','var'), meta.TRIM_names = dropped; else, meta.TRIM_names = {}; end
