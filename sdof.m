@@ -618,7 +618,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
     end
     params_orf = struct('Ap',Ap,'Qcap',Qcap_eff,'orf',orf_loc,'rho',rho,...
                         'Ao',Ao,'mu',mu_abs,'F_lin',F_lin,'Lori',Lori);
-    [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per] = calc_orifice_force_local(dvel, params_orf);
+    [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per, cav_mask_per] = calc_orifice_force_local(dvel, params_orf);
 
     qmag_loc = Qcap_eff * tanh( (Ap/Qcap_eff) * sqrt(dvel.^2 + orf.veps^2) );
     Re_loc   = (rho .* qmag_loc .* max(orf.d_o,1e-9)) ./ max(Ao*mu_abs,1e-9);
@@ -676,7 +676,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
     a_rel = ( -(M\(C*v.' + K*x.' + F.')).' - ag.*r.' );
 
     ts = struct('dvel', dvel, 'story_force', F_story, 'Q', Q, ...
-        'dP_orf', dP_orf, 'PF', F_p, 'cav_mask', dP_orf < 0, 'P_sum', P_sum, ...
+        'dP_orf', dP_orf, 'PF', F_p, 'cav_mask', cav_mask_per, 'P_sum', P_sum, ...
         'E_orf', E_orf, 'E_struct', E_struct, 'T_oil', T_o, 'mu', mu, ...
         'c_lam', c_lam, 'P_lam', P_lam_per, 'P_kv', P_kv_per, 'P_orf', P_orf_net_per);
 
@@ -686,7 +686,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         F_lin_ = k_sd*drift_;
         params_loc = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
                         'Ao',Ao,'mu',mu_abs_loc,'F_lin',F_lin_,'Lori',Lori);
-        [~, dP_orf_, ~, ~, ~, ~] = calc_orifice_force_local(dvel_, params_loc);
+        [~, dP_orf_, ~, ~, ~, ~, ~] = calc_orifice_force_local(dvel_, params_loc);
         dp_pf_ = dP_orf_;
         if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
             s = tanh(20*dvel_);
@@ -701,7 +701,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
     end
 end
 
-function [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per] = calc_orifice_force_local(dvel, params)
+function [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per, cav_mask_per] = calc_orifice_force_local(dvel, params)
     qmag = params.Qcap * tanh( (params.Ap/params.Qcap) * sqrt(dvel.^2 + params.orf.veps^2) );
     sgn  = dvel ./ sqrt(dvel.^2 + params.orf.veps^2);
     Q    = qmag .* sgn;
@@ -724,6 +724,7 @@ function [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per] = calc_orifice_force
     R_lam = (128 * params.mu .* params.Lori ./ (pi * d_o.^4)) / denom;
     dP_lam = R_lam .* Q;
     dP_h   = dP_lam + dP_kv;
+    dP_h_mag = abs(dP_h);
 
     p_up   = params.orf.p_amb + abs(params.F_lin)./max(params.Ap,1e-12);
     dP_cav = max( (p_up - params.orf.p_cav_eff).*params.orf.cav_sf, 0 );
@@ -731,7 +732,9 @@ function [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per] = calc_orifice_force
     if isfield(params,'orf') && isfield(params.orf,'softmin_eps') && isfinite(params.orf.softmin_eps)
         epsm = params.orf.softmin_eps;
     end
-    dP_orf_mag = softmin_local(abs(dP_h), dP_cav, epsm);
+    dP_orf_mag = softmin_local(dP_h_mag, dP_cav, epsm);
+    tol = 1e-6 * max(1, dP_h_mag) + 1e-2 * epsm;
+    cav_mask_per = dP_h_mag > (dP_orf_mag + tol);
 
     dP_orf = dP_orf_mag .* sgn;
     F_orf  = dP_orf .* params.Ap;
