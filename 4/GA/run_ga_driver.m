@@ -27,13 +27,11 @@ catch ME
     usePool = false;
 end
 
-meta = struct('thr', Utils.default_qc_thresholds(struct()));
-
 assert(~isempty(scaled), 'run_ga_driver: scaled dataset is empty.');
 assert(~isempty(params), 'run_ga_driver: params is empty.');
 
 % ---------- Varsayılan değerlendirme ayarları (IO yok) ----------
-optsEval.thr = Utils.default_qc_thresholds(Utils.getfield_default(optsEval,'thr', meta.thr));
+optsEval.thr = Utils.default_qc_thresholds(Utils.getfield_default(optsEval,'thr', struct()));
 %% GA Kurulumu
 % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
     rng(42);
@@ -85,7 +83,7 @@ optsEval.thr = Utils.default_qc_thresholds(Utils.getfield_default(optsEval,'thr'
     outdir = fullfile('out', ['ga_' tstamp]);
     if ~exist(outdir,'dir'), mkdir(outdir); end
     date_str = tstamp;
-    front = struct('X',X,'F',F,'options',options,'meta',meta,'date_str',date_str);
+    front = struct('X',X,'F',F,'options',options,'date_str',date_str);
     save(fullfile(outdir,'ga_front.mat'), '-struct', 'front', '-v7.3');
 
     % === Re-evaluate Pareto designs to collect metrics per-row ===
@@ -107,7 +105,7 @@ optsEval.thr = Utils.default_qc_thresholds(Utils.getfield_default(optsEval,'thr'
     rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
     rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
 
-    Opost = struct('thr', meta.thr);
+    Opost = struct('thr', optsEval.thr);
 
     parfor i = 1:nF
         Xi = quant_clamp_x(X(i,:));
@@ -479,7 +477,14 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
                           W.cav*metrics.pen_cav + W.T*metrics.pen_T + W.mu*metrics.pen_mu);
 
     function arr = get_numeric(varName, defaultVal)
-        v = Utils.table_get(tbl, varName, defaultVal);
+        if istable(tbl) && ismember(varName, tbl.Properties.VariableNames)
+            v = tbl.(varName);
+            if isempty(v)
+                v = defaultVal;
+            end
+        else
+            v = defaultVal;
+        end
         if ~isnumeric(v) || isempty(v)
             arr = defaultVal;
         else

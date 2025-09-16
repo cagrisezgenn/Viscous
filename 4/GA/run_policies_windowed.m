@@ -63,7 +63,7 @@ end
 
 function P = run_combinations(scaled, params, opts, orders_struct, base_metrics)
 %RUN_COMBINATIONS Politika-sıra kombinasyonlarını değerlendirir
-P = struct('policy',{},'order',{},'cooldown_s',{},'summary',{},'qc',{},'deltas',{});
+P = struct('policy',{},'order',{},'cooldown_s',{},'summary',{},'deltas',{});
 for ip = 1:numel(opts.policies)
     pol = opts.policies{ip};
     for io = 1:numel(opts.orders)
@@ -83,9 +83,6 @@ for ip = 1:numel(opts.policies)
             if strcmp(pol,'cooldown'), run_opts.cooldown_s = cdval; end
             [summary, ~] = run_batch_windowed(scaled, params, run_opts);
 
-            qc.pass_fraction = mean(summary.table.qc_pass);
-            qc.n = height(summary.table);
-
             curPFA_mean = mean(summary.table.PFA);
             curIDR_mean = mean(summary.table.IDR);
             cur_T_end_max = max(summary.table.T_end);
@@ -94,7 +91,7 @@ for ip = 1:numel(opts.policies)
                             'T_end', cur_T_end_max - base_metrics.T_end_max);
 
             P(end+1) = struct('policy',pol,'order',ord,'cooldown_s',cdval, ...
-                'summary',summary.table,'qc',qc,'deltas',deltas); %#ok<AGROW>
+                'summary',summary.table,'deltas',deltas); %#ok<AGROW>
         end
     end
 end

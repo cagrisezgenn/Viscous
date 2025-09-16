@@ -52,10 +52,14 @@ else
 end
 
 % PF auto_t_on, Arias t5'e göre belirlenir (çözücü çağrısından önce)
-try
-    if isfield(params,'cfg') && isfield(params.cfg,'PF') && ...
-       isfield(params.cfg.PF,'auto_t_on') && params.cfg.PF.auto_t_on
-        t5v = NaN; if isfield(win,'t5'), t5v = win.t5; end
+if isfield(params,'cfg') && isstruct(params.cfg) && ...
+        isfield(params.cfg,'PF') && isstruct(params.cfg.PF)
+    pf = params.cfg.PF;
+    if isfield(pf,'auto_t_on') && pf.auto_t_on
+        t5v = NaN;
+        if isfield(win,'t5')
+            t5v = win.t5;
+        end
         if ~(isnumeric(t5v) && isfinite(t5v))
             idxnz = find(abs(rec.ag)>1e-6,1,'first');
             if isempty(idxnz), idxnz = 1; end
@@ -65,8 +69,6 @@ try
             params.cfg.PF.t_on = t5v + 0.5;
         end
     end
-catch
-    % parametreler değiştirilmeden bırakıldı
 end
 
 % ham ve ölçekli kayıt karşılaştırması kaldırıldı (üst seviyede kullanılmıyor)
@@ -112,20 +114,18 @@ end
 
 mu_ref_eff   = params.mu_ref;
 c_lam0_eff   = params.c_lam0;
-try
-    if isfield(params,'cfg') && isfield(params.cfg,'on') && isfield(params.cfg.on,'mu_floor') && params.cfg.on.mu_floor
-        mu_min_phys = NaN;
-        if isfield(params.cfg,'num') && isfield(params.cfg.num,'mu_min_phys') && isfinite(params.cfg.num.mu_min_phys)
-            mu_min_phys = params.cfg.num.mu_min_phys;
-        end
-        if isfinite(mu_min_phys) && (mu_ref_eff < mu_min_phys)
-            mu_ref_eff = mu_min_phys;
-            scale_mu = mu_ref_eff / max(params.mu_ref, eps);
-            c_lam0_eff = params.c_lam0 * scale_mu;
-        end
+if isfield(params,'cfg') && isstruct(params.cfg) && isfield(params.cfg,'on') && isstruct(params.cfg.on) && ...
+        isfield(params.cfg.on,'mu_floor') && params.cfg.on.mu_floor
+    mu_min_phys = NaN;
+    if isfield(params.cfg,'num') && isstruct(params.cfg.num) && ...
+            isfield(params.cfg.num,'mu_min_phys') && isfinite(params.cfg.num.mu_min_phys)
+        mu_min_phys = params.cfg.num.mu_min_phys;
     end
-catch
-    % sessiz geç
+    if isfinite(mu_min_phys) && (mu_ref_eff < mu_min_phys)
+        mu_ref_eff = mu_min_phys;
+        scale_mu = mu_ref_eff / max(params.mu_ref, eps);
+        c_lam0_eff = params.c_lam0 * scale_mu;
+    end
 end
     [x,a_rel,ts] = mck_with_damper(rec.t, rec.ag, params.M, params.C0, params.K, ...
     params.k_sd, c_lam0_eff, params.Lori, params.orf, params.rho, params.Ap, ...
@@ -167,26 +167,15 @@ out = struct('name', rec.name, ...
     'clamp_hits', clamp_hits, ...
     'PFA', metr.PFA, 'IDR', metr.IDR, 'dP95', metr.dP95, 'Qcap95', metr.Qcap95, ...
     'cav_pct', metr.cav_pct, 't5', win.t5, 't95', win.t95, 'coverage', win.coverage);
-% ayarlanmışsa PF rampasının başlangıcı
-try
-    if isfield(params,'cfg') && isfield(params.cfg,'PF')
-        if isfield(params.cfg.PF,'t_on')
-            out.PF_t_on = params.cfg.PF.t_on;
-        end
-        if isfield(params.cfg.PF,'tau')
-            out.PF_tau = params.cfg.PF.tau;
-        end
-        if isfield(params.cfg.PF,'gain')
-            out.PF_gain = params.cfg.PF.gain;
-        end
-        if isfield(params.cfg.PF,'mode')
-            out.PF_mode = params.cfg.PF.mode;
-        end
-        if isfield(params.cfg.PF,'auto_t_on')
-            out.PF_auto_t_on = logical(params.cfg.PF.auto_t_on);
-        end
+if isfield(params,'cfg') && isstruct(params.cfg) && isfield(params.cfg,'PF') && isstruct(params.cfg.PF)
+    pf = params.cfg.PF;
+    if isfield(pf,'t_on'),   out.PF_t_on = pf.t_on;   end
+    if isfield(pf,'tau'),    out.PF_tau = pf.tau;     end
+    if isfield(pf,'gain'),   out.PF_gain = pf.gain;   end
+    if isfield(pf,'mode'),   out.PF_mode = pf.mode;   end
+    if isfield(pf,'auto_t_on')
+        out.PF_auto_t_on = logical(pf.auto_t_on);
     end
-catch
 end
 
 % Yeni parametreleri isteğe bağlı olarak kaydet
