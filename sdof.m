@@ -618,7 +618,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
     end
     params_orf = struct('Ap',Ap,'Qcap',Qcap_eff,'orf',orf_loc,'rho',rho,...
                         'Ao',Ao,'mu',mu_abs,'F_lin',F_lin,'Lori',Lori);
-    [F_orf, dP_orf, Q, P_orf_per, P_lam_per] = calc_orifice_force_local(dvel, params_orf);
+    [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per] = calc_orifice_force_local(dvel, params_orf);
 
     qmag_loc = Qcap_eff * tanh( (Ap/Qcap_eff) * sqrt(dvel.^2 + orf.veps^2) );
     Re_loc   = (rho .* qmag_loc .* max(orf.d_o,1e-9)) ./ max(Ao*mu_abs,1e-9);
@@ -639,12 +639,10 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
     F_p = k_sd*drift + (w_pf_vec .* dp_pf) * Ap;
 
     F_story = F_p;
-    % Split the laminar component from the total orifice power so the
-    % accumulator uses the true dissipation without double counting.
-    P_lam_share = min(P_lam_per, P_orf_per);
-    P_kv_per = max(P_orf_per - P_lam_share, 0);
-    P_orf_net_per = P_lam_share + P_kv_per;
-    P_sum = sum(P_orf_net_per .* multi, 2);
+    % Orifis gücünü laminer ve kv bileşenlerine ayır ve toplam gücü bunların
+    % toplamı olarak hesapla.
+    P_orf_net_per = P_lam_per + P_kv_per;
+    P_sum = sum((P_lam_per + P_kv_per) .* multi, 2);
     P_orf_tot = sum(P_orf_net_per .* multi, 2);
     P_struct_tot = sum(F_story .* dvel, 2);
     E_orf = cumtrapz(t, P_orf_tot);
@@ -688,7 +686,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         F_lin_ = k_sd*drift_;
         params_loc = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
                         'Ao',Ao,'mu',mu_abs_loc,'F_lin',F_lin_,'Lori',Lori);
-        [~, dP_orf_, ~, ~, ~] = calc_orifice_force_local(dvel_, params_loc);
+        [~, dP_orf_, ~, ~, ~, ~] = calc_orifice_force_local(dvel_, params_loc);
         dp_pf_ = dP_orf_;
         if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
             s = tanh(20*dvel_);
@@ -703,7 +701,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
     end
 end
 
-function [F_orf, dP_orf, Q, P_orf_per, P_lam_per] = calc_orifice_force_local(dvel, params)
+function [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per] = calc_orifice_force_local(dvel, params)
     qmag = params.Qcap * tanh( (params.Ap/params.Qcap) * sqrt(dvel.^2 + params.orf.veps^2) );
     sgn  = dvel ./ sqrt(dvel.^2 + params.orf.veps^2);
     Q    = qmag .* sgn;
@@ -738,7 +736,9 @@ function [F_orf, dP_orf, Q, P_orf_per, P_lam_per] = calc_orifice_force_local(dve
     dP_orf = dP_orf_mag .* sgn;
     F_orf  = dP_orf .* params.Ap;
 
-    P_orf_per = dP_orf_mag .* abs(Q);
-    P_lam_per = dP_lam .* Q;
-    P_lam_per = max(P_lam_per, 0);
+    dP_lam_eff = sign(Q) .* min(abs(dP_lam), dP_orf_mag);
+    P_lam_per  = abs(dP_lam_eff) .* abs(Q);
+    P_kv_per   = max(dP_orf_mag - abs(dP_lam_eff), 0) .* abs(Q);
+
+    P_orf_per = P_lam_per + P_kv_per;
 end
