@@ -22,17 +22,6 @@ if ~isfield(opts,'rank_metric'), opts.rank_metric = 'E_orifice_win'; end
 
 % Konsol başlığı
 
-% Hidrolik ve termal temel parametreleri yazdır
-try
-    n_orf = NaN; if isfield(params,'Ao'), n_orf = numel(params.Ao); end
-    Ao = Utils.getfield_default(params,'Ao',NaN);
-    d_o = NaN; try, d_o = sqrt(4*mean(Ao)/pi); catch, end
-    Qcap_big = Utils.getfield_default(params,'Qcap_big',NaN);
-    hA = NaN; if isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), hA = params.thermal.hA_W_perK; end
-    resFactor = Utils.getfield_default(params,'resFactor',NaN);
-catch
-end
-
 %% Temel Koşu
 % Delta hesapları ve worst_first sıralaması için baz koşu
 base_opts = opts; base_opts.thermal_reset = 'each'; base_opts.order = 'natural';
@@ -44,8 +33,6 @@ base_dP95_max = max(base_summary.table.dP95);
 base_Qcap95_max = max(base_summary.table.Qcap95);
 base_cav_max = max(base_summary.table.cav_pct);
 base_mu_end_min = min(base_summary.table.mu_end);
-base_qc_pass = sum(base_summary.table.qc_pass);
-base_qc_n = height(base_summary.table);
 
 orders_struct = compute_orders(opts, scaled, base_all);
 base_metrics = struct('PFA_mean', basePFA_mean, 'IDR_mean', baseIDR_mean, 'T_end_max', base_T_end_max);
@@ -71,10 +58,6 @@ if any(strcmp(opts.orders,'worst_first'))
     end
     [~,idx] = sort(rk,'descend');
     orders_struct.worst_first = idx;
-    try
-        rank_names = {scaled(idx).name}; %#ok<NASGU>
-    catch
-    end
 end
 end
 
@@ -110,15 +93,9 @@ for ip = 1:numel(opts.policies)
                             'IDR', curIDR_mean - base_metrics.IDR_mean, ...
                             'T_end', cur_T_end_max - base_metrics.T_end_max);
 
-            report_combination(pol, ord, cdval, summary, deltas, qc, base_metrics);
-
             P(end+1) = struct('policy',pol,'order',ord,'cooldown_s',cdval, ...
                 'summary',summary.table,'qc',qc,'deltas',deltas); %#ok<AGROW>
         end
     end
 end
-end
-
-function report_combination(varargin)
-%REPORT_COMBINATION Kombinasyon sonuçlarını loglar (devre dışı)
 end
