@@ -1,7 +1,7 @@
 %% ================================================================
 %  Parametre Tanımları
 %  --------------------
-%  Bu dosya, ana betik olan <code>damperlinon.m</code> tarafından
+%  Bu dosya, ana sürücü betik olan <code>run_ga_driver.m</code> tarafından
 %  çağrılır ve analizde kullanılan tüm yapısal, damper ve akış/termal
 %  parametrelerini tanımlar. 3 bölümden oluşur:
 %    1) 10 katlı çerçevenin kütle, rijitlik ve sönüm özellikleri
@@ -106,8 +106,6 @@ cfg.on.pressure_force     = true;
 cfg.compat_simple = false;           % true: eski 4/GA ramp eğrisi; false: softplus
 % PF ramp ve klemp parametreleri
 cfg.PF.k               = 0.01;      % softplus yumuşatma ölçeği [s]
-cfg.PF.resistive_only  = false;     % PF yalnız dirençli bileşeni uygulasın
-cfg.PF.resistive_slope = 20;        % tanh(α*χ) eğimi [1/(m/s)]
 % Sayısal/fiziksel yardımcı parametreler
 cfg.on.mu_floor        = false;     % μ (viskozite) için fiziksel taban aç/kapa
 cfg.num = struct();
