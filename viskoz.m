@@ -1015,7 +1015,7 @@ end
 % Damperli çözüm mck_with_damper fonksiyonu üzerinden yürütülür.
 
 mu_ref_eff   = params.mu_ref;
-c_lam0_eff   = util_getfield_default(params, 'c_lam0', 0);  % PF laminar term disabled; retain for diagnostics only
+c_lam0_eff   = params.c_lam0;
 if isfield(params,'cfg') && isstruct(params.cfg) && isfield(params.cfg,'on') && isstruct(params.cfg.on) && ...
         isfield(params.cfg.on,'mu_floor') && params.cfg.on.mu_floor
     mu_min_phys = NaN;
@@ -1299,7 +1299,7 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     end
     params = struct('Ap',Ap,'Qcap',Qcap_eff,'orf',orf_loc,'rho',rho,...
                     'Ao',Ao,'mu',mu_abs,'F_lin',F_lin,'Lori',Lori);
-    [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per, cav_mask_per] = calc_orifice_force(dvel, params);
+    [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params);
     % Ek diagnostikler: dP_kv ve dP_cav (kv ve kavitasyon limitleri)
     qmag_loc = Qcap_eff * tanh( (Ap/Qcap_eff) * sqrt(dvel.^2 + orf.veps^2) );
     Re_loc   = (rho .* qmag_loc .* max(orf.d_o,1e-9)) ./ max(Ao*mu_abs,1e-9);
@@ -1309,9 +1309,9 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     dP_kv_loc = 0.5*rho .* ( qmag_loc ./ max(Cd_loc.*Ao,1e-12) ).^2;
     p_up_loc  = orf.p_amb + abs(F_lin)./max(Ap,1e-12);
     dP_cav_loc= max( (p_up_loc - orf.p_cav_eff).*orf.cav_sf, 0 );
-    F_pf_base = F_lin + F_orf;
+    F_p = F_lin + F_orf;
 
-    dp_pf = (F_pf_base - k_sd*drift) ./ Ap;
+    dp_pf = (c_lam*dvel + (F_p - k_sd*drift)) ./ Ap;
     if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
         s = tanh(20*dvel);
         dp_pf = s .* max(0, s .* dp_pf);
@@ -1321,11 +1321,9 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
 
     % Geometri ölçeklendirmesi R sadece montajda uygulanır
     F_story = F_p;
-    % Toplam orifis gücünü laminer ve kv bileşenleri olarak ayır ve ısı
-    % birikiminde bu iki parçanın toplamını kullan.
-    P_orf_net_per = P_lam_per + P_kv_per;
-    P_sum = sum((P_lam_per + P_kv_per) .* multi, 2);
-    P_orf_tot = sum(P_orf_net_per .* multi, 2);
+    P_visc_per = c_lam * (dvel.^2);
+    P_sum = sum( (P_visc_per + P_orf_per) .* multi, 2 );
+    P_orf_tot = sum(P_orf_per .* multi, 2);
     % Yapısal güç kat toplam kuvvetini kullanır; ekstra çarpan kullanılmaz
     P_struct_tot = sum(F_story .* dvel, 2);
     E_orf = cumtrapz(t, P_orf_tot);
@@ -1362,9 +1360,8 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     a_rel = ( -(M\(C*v.' + K*x.' + F.')).' - ag.*r.' );
 
     ts = struct('dvel', dvel, 'story_force', F_story, 'Q', Q, ...
-        'dP_orf', dP_orf, 'PF', F_p, 'cav_mask', cav_mask_per, 'P_sum', P_sum, ...
-        'E_orf', E_orf, 'E_struct', E_struct, 'T_oil', T_o, 'mu', mu, ...
-        'c_lam', c_lam, 'P_lam', P_lam_per, 'P_kv', P_kv_per, 'P_orf', P_orf_net_per);
+        'dP_orf', dP_orf, 'PF', F_p, 'cav_mask', dP_orf < 0, 'P_sum', P_sum, ...
+        'E_orf', E_orf, 'E_struct', E_struct, 'T_oil', T_o, 'mu', mu, 'c_lam', c_lam);
 
 %% İç Fonksiyonlar
     function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)
@@ -1375,8 +1372,8 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         F_lin_ = k_sd*drift_;
         params = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
                         'Ao',Ao,'mu',mu_abs_loc,'F_lin',F_lin_,'Lori',Lori);
-        [~, dP_orf_, ~, ~, ~, ~, ~] = calc_orifice_force(dvel_, params);
-        dp_pf_ = dP_orf_;
+        [F_orf_, ~, ~, ~] = calc_orifice_force(dvel_, params);
+        dp_pf_ = (c_lam_loc*dvel_ + F_orf_) ./ Ap;
         if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
             s = tanh(20*dvel_);
             dp_pf_ = s .* max(0, s .* dp_pf_);
@@ -1389,60 +1386,41 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         Fd(Nvec) = Fd(Nvec) - F_story_;
         Fd(Mvec) = Fd(Mvec) + F_story_;
     end
-    function [F_orf, dP_orf, Q, P_orf_per, P_lam_per, P_kv_per, cav_mask_per] = calc_orifice_force(dvel, params)
-        % Phase 6 (no p-states): smoother Cd(Re) with laminar + kv drop.
+    function [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params)
+        % Phase 6 (no p-states): smoother Cd(Re) and kv-only orifice drop.
+        % Laminar viscous loss is accounted in PF via c_lam*dvel; avoid double counting here.
 
         % Saturated volumetric flow magnitude (stability)
         qmag = params.Qcap * tanh( (params.Ap/params.Qcap) * sqrt(dvel.^2 + params.orf.veps^2) );
 
-        % Flow sign surrogate and signed volumetric flow
-        sgn = dvel ./ sqrt(dvel.^2 + params.orf.veps^2);
-        Q   = qmag .* sgn;
-
-        % Reynolds number and discharge coefficient (clamped)
-        d_o  = max(util_getfield_default(params.orf,'d_o',0), 1e-9);
-        Re   = (params.rho .* abs(Q) .* d_o) ./ max(params.Ao .* params.mu, 1e-9);
+        % Reynolds and discharge coefficient (clamped)
+        Re   = (params.rho .* qmag .* max(params.orf.d_o,1e-9)) ./ max(params.Ao*params.mu,1e-9);
         Cd0   = params.orf.Cd0;
         CdInf = params.orf.CdInf;
         p_exp = params.orf.p_exp;
-        Rec   = max(params.orf.Rec, 1);
-        Cd    = CdInf - (CdInf - Cd0) ./ (1 + (Re./Rec).^p_exp);
+        Rec   = params.orf.Rec;
+        Cd    = CdInf - (CdInf - Cd0) ./ (1 + (Re./max(Rec,1)).^p_exp);
         Cd    = max(min(Cd, 1.2), 0.2);
 
-        % kv and laminar drops (signed)
-        RQ = params.rho ./ max(2 * (Cd .* params.Ao).^2, 1e-18);
-        dP_kv  = RQ .* Q .* abs(Q);
+        % kv-only drop
+        dP_kv  = 0.5*params.rho .* ( qmag ./ max(Cd.*params.Ao,1e-12) ).^2;
 
-        n_orf = util_getfield_default(params.orf, 'n_orf', 1);
-        nd     = util_getfield_default(params, 'n_parallel', util_getfield_default(params, 'nd', 1));
-        denom  = max(1, nd * n_orf);
-        R_lam  = (128 * params.mu .* params.Lori ./ (pi * d_o.^4)) / denom;
-        dP_lam = R_lam .* Q;
-        dP_raw    = dP_lam + dP_kv;
-        dP_raw_mag = abs(dP_raw);
-
-        % Cavitation soft-limit via softmin (magnitude)
-        p_up     = params.orf.p_amb + abs(params.F_lin)./max(params.Ap,1e-12);
-        dP_cav   = max( (p_up - params.orf.p_cav_eff).*params.orf.cav_sf, 0 );
-        epsm     = 1e5;
+        % Cavitation soft-limit via softmin
+        p_up   = params.orf.p_amb + abs(params.F_lin)./max(params.Ap,1e-12);
+        dP_cav = max( (p_up - params.orf.p_cav_eff).*params.orf.cav_sf, 0 );
+        epsm = 1e5;
         if isfield(params,'orf') && isfield(params.orf,'softmin_eps') && isfinite(params.orf.softmin_eps)
             epsm = params.orf.softmin_eps;
         end
-        dP_orf_mag = util_softmin(dP_raw_mag, dP_cav, epsm);
-        tol = 1e-6 * max(1, dP_raw_mag) + 1e-2 * epsm;
-        cav_mask_per = dP_raw_mag > (dP_orf_mag + tol);
+        dP_orf = util_softmin(dP_kv, dP_cav, epsm);
 
         % Force sign from velocity (no p-states)
-        dP_orf = dP_orf_mag .* sgn;
-        F_orf  = dP_orf .* params.Ap;
+        sgn = dvel ./ sqrt(dvel.^2 + params.orf.veps^2);
+        F_orf = dP_orf .* params.Ap .* sgn;
 
-        % Laminer ve kv bileşenlerini kavitatif limitlerle tutarlı şekilde ayır
-        dP_lam_eff = sign(Q) .* min(abs(dP_lam), dP_orf_mag);
-        P_lam_per  = abs(dP_lam_eff) .* abs(Q);
-        P_kv_per   = max(dP_orf_mag - abs(dP_lam_eff), 0) .* abs(Q);
-
-        % Diagnostics (positive power)
-        P_orf_per = P_lam_per + P_kv_per;
+        % Diagnostics (positive)
+        Q = qmag;
+        P_orf_per = dP_kv .* qmag;   % avoid counting laminar twice
     end
 end
 
@@ -1801,7 +1779,7 @@ params.k_p = k_p;
 params.k_sd_simple = k_sd_simple;
 params.k_sd_adv = k_sd_adv;
 params.k_sd = k_sd_adv;
-params.c_lam0 = util_getfield_default(params, 'c_lam0', c_lam0); % diagnostic viscous coefficient (PF laminar disabled)
+params.c_lam0 = c_lam0;
 end
 
 function win = util_make_arias_window(t, ag, varargin)
