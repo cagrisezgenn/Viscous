@@ -112,7 +112,6 @@ cfg.num = struct();
 cfg.num.softmin_eps    = 1e4;       % dP birleştirme yumuşatma ölçeği [Pa]
 cfg.num.mu_min_phys    = 0.6;      % μ(T) tabanı [Pa·s]
 cfg.num.dP_cap         = NaN;       % dP doygunluk kapasitesi (ileri adımlar için)
-cfg.on.pf_resistive_only = true;  % sadece rezistif (viskoz+orifis) bileşeni filtrele
 
 %% Parametre yapısını oluştur ve türetilmiş alanları hesapla
 params = struct('M',M,'C0',C0,'K',K,'Dp',Dp,'Lgap',Lgap,'d_w',d_w, ...
