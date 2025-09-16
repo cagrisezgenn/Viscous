@@ -63,12 +63,12 @@ catch
 end
 
 % 50. ve 95. yüzdelik değerler
-dP_q50         = local_quantile(abs_dP, 0.50);
-dP_q95         = local_quantile(abs_dP, 0.95);
-Q_q50          = local_quantile(abs_Q, 0.50);
-Q_q95          = local_quantile(abs_Q, 0.95);
-Qcap95 = local_quantile(Qcap_ratio, 0.95);
-story_force_q95= local_quantile(abs_story_force, 0.95);
+dP_q50         = quantile(abs_dP, 0.50);
+dP_q95         = quantile(abs_dP, 0.95);
+Q_q50          = quantile(abs_Q, 0.50);
+Q_q95          = quantile(abs_Q, 0.95);
+Qcap95 = quantile(Qcap_ratio, 0.95);
+story_force_q95= quantile(abs_story_force, 0.95);
 
 % Her kat için ortalama kavitasyon yüzdesi
 cav_mean = mean(ts.cav_mask(idx,:),1);
@@ -161,7 +161,7 @@ end
 try
     if isfield(ts,'PF')
         PF_abs = abs(ts.PF(idx,:));
-    metr.PF_p95 = local_quantile(PF_abs(:,ws), 0.95);
+        metr.PF_p95 = quantile(PF_abs(:,ws), 0.95);
     end
 catch
 end
@@ -175,12 +175,5 @@ for ii = 1:numel(param_fields)
     end
 end
 
-end
-
-function q = local_quantile(A, p)
-%LOCAL_QUANTILE Verilen verinin p yüzdelik değerini hesaplar.
-%   A matrisi ve 0-1 aralığındaki p değeri ile bu yardımcı fonksiyon
-%   MATLAB'in QUANTILE fonksiyonunu çağırarak yüzdelik değeri döndürür.
-q = quantile(A, p);
 end
 
