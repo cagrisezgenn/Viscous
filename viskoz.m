@@ -1321,8 +1321,13 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
 
     % Geometri ölçeklendirmesi R sadece montajda uygulanır
     F_story = F_p;
-    P_sum = sum( (P_lam_per + P_orf_per) .* multi, 2 );
-    P_orf_tot = sum(P_orf_per .* multi, 2);
+    % Orifice dissipation already includes the laminar component; split it so
+    % that the thermal power sum does not double count the laminar estimate.
+    P_lam_share = min(P_lam_per, P_orf_per);
+    P_kv_per = max(P_orf_per - P_lam_share, 0);
+    P_orf_net_per = P_lam_share + P_kv_per;
+    P_sum = sum(P_orf_net_per .* multi, 2);
+    P_orf_tot = sum(P_orf_net_per .* multi, 2);
     % Yapısal güç kat toplam kuvvetini kullanır; ekstra çarpan kullanılmaz
     P_struct_tot = sum(F_story .* dvel, 2);
     E_orf = cumtrapz(t, P_orf_tot);
@@ -1361,7 +1366,7 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     ts = struct('dvel', dvel, 'story_force', F_story, 'Q', Q, ...
         'dP_orf', dP_orf, 'PF', F_p, 'cav_mask', dP_orf < 0, 'P_sum', P_sum, ...
         'E_orf', E_orf, 'E_struct', E_struct, 'T_oil', T_o, 'mu', mu, ...
-        'c_lam', c_lam, 'P_lam', P_lam_per);
+        'c_lam', c_lam, 'P_lam', P_lam_per, 'P_kv', P_kv_per, 'P_orf', P_orf_net_per);
 
 %% İç Fonksiyonlar
     function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)
