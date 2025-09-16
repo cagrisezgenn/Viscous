@@ -82,8 +82,6 @@ vars.clamp_hits = zeros(n,1);
 vars.Dp_mm_col   = repmat(Utils.getfield_default(params,'Dp_mm',NaN), n,1);
 vars.mu_ref_col  = repmat(Utils.getfield_default(params,'mu_ref',NaN), n,1);
 
-vars.worstPFA = -inf; vars.worstPFA_name = '';
-vars.worstIDR = -inf; vars.worstIDR_name = '';
 end
 
 function vars = record_loop(scaled, params, opts, vars)
@@ -127,14 +125,6 @@ for k = 1:numel(scaled)
     vars.E_ratio(k)   = Utils.getfield_default(m_nom,'E_ratio',NaN);
     vars.qc_pass(k)   = out.qc_pass;
 
-    if vars.PFA(k) > vars.worstPFA
-        vars.worstPFA = vars.PFA(k);
-        vars.worstPFA_name = out.name;
-    end
-    if vars.IDR(k) > vars.worstIDR
-        vars.worstIDR = vars.IDR(k);
-        vars.worstIDR_name = out.name;
-    end
 end
 end
 
