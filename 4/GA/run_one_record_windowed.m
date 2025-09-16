@@ -79,9 +79,6 @@ else
     mode = 'each';
 end
 
-% soğuma seçeneği için termal kapasite hesaplanır
-C_th = Utils.compute_Cth_effective(params);
-
 switch mode
     case 'each'
         Tinit = params.T0_C;
@@ -102,16 +99,13 @@ switch mode
         else
             td = 0;
         end
+        C_th = Utils.compute_Cth_effective(params);
         hA = params.thermal.hA_W_perK;
         Tenv = params.thermal.T_env_C;
         Tinit = Tenv + (Tprev - Tenv) * exp(-hA*td / C_th);
     otherwise
         Tinit = params.T0_C;
 end
-
-%% Sönümleyicisiz Çözüm
-% Lineer MCK sistemi sönümleyici olmadan çözülür.
-[x0, a_rel0] = Utils.lin_MCK(rec.t, rec.ag, params.M, params.C0, params.K); %#ok<NASGU>
 
 %% Damperli Çözüm
 % Damperli çözüm mck_with_damper fonksiyonu üzerinden yürütülür.
