@@ -1387,40 +1387,51 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         Fd(Mvec) = Fd(Mvec) + F_story_;
     end
     function [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params)
-        % Phase 6 (no p-states): smoother Cd(Re) and kv-only orifice drop.
-        % Laminar viscous loss is accounted in PF via c_lam*dvel; avoid double counting here.
+        % Phase 6 (no p-states): smoother Cd(Re) with laminar + kv drop.
 
         % Saturated volumetric flow magnitude (stability)
         qmag = params.Qcap * tanh( (params.Ap/params.Qcap) * sqrt(dvel.^2 + params.orf.veps^2) );
 
-        % Reynolds and discharge coefficient (clamped)
-        Re   = (params.rho .* qmag .* max(params.orf.d_o,1e-9)) ./ max(params.Ao*params.mu,1e-9);
+        % Flow sign surrogate and signed volumetric flow
+        sgn = dvel ./ sqrt(dvel.^2 + params.orf.veps^2);
+        Q   = qmag .* sgn;
+
+        % Reynolds number and discharge coefficient (clamped)
+        d_o  = max(util_getfield_default(params.orf,'d_o',0), 1e-9);
+        Re   = (params.rho .* abs(Q) .* d_o) ./ max(params.Ao .* params.mu, 1e-9);
         Cd0   = params.orf.Cd0;
         CdInf = params.orf.CdInf;
         p_exp = params.orf.p_exp;
-        Rec   = params.orf.Rec;
-        Cd    = CdInf - (CdInf - Cd0) ./ (1 + (Re./max(Rec,1)).^p_exp);
+        Rec   = max(params.orf.Rec, 1);
+        Cd    = CdInf - (CdInf - Cd0) ./ (1 + (Re./Rec).^p_exp);
         Cd    = max(min(Cd, 1.2), 0.2);
 
-        % kv-only drop
-        dP_kv  = 0.5*params.rho .* ( qmag ./ max(Cd.*params.Ao,1e-12) ).^2;
+        % kv and laminar drops (signed)
+        RQ = params.rho ./ max(2 * (Cd .* params.Ao).^2, 1e-18);
+        dP_kv  = RQ .* Q .* abs(Q);
 
-        % Cavitation soft-limit via softmin
-        p_up   = params.orf.p_amb + abs(params.F_lin)./max(params.Ap,1e-12);
-        dP_cav = max( (p_up - params.orf.p_cav_eff).*params.orf.cav_sf, 0 );
-        epsm = 1e5;
+        n_orf = util_getfield_default(params.orf, 'n_orf', 1);
+        nd     = util_getfield_default(params, 'n_parallel', util_getfield_default(params, 'nd', 1));
+        denom  = max(1, nd * n_orf);
+        R_lam  = (128 * params.mu .* params.Lori ./ (pi * d_o.^4)) / denom;
+        dP_lam = R_lam .* Q;
+        dP_h   = dP_lam + dP_kv;
+
+        % Cavitation soft-limit via softmin (magnitude)
+        p_up     = params.orf.p_amb + abs(params.F_lin)./max(params.Ap,1e-12);
+        dP_cav   = max( (p_up - params.orf.p_cav_eff).*params.orf.cav_sf, 0 );
+        epsm     = 1e5;
         if isfield(params,'orf') && isfield(params.orf,'softmin_eps') && isfinite(params.orf.softmin_eps)
             epsm = params.orf.softmin_eps;
         end
-        dP_orf = util_softmin(dP_kv, dP_cav, epsm);
+        dP_orf_mag = util_softmin(abs(dP_h), dP_cav, epsm);
 
         % Force sign from velocity (no p-states)
-        sgn = dvel ./ sqrt(dvel.^2 + params.orf.veps^2);
-        F_orf = dP_orf .* params.Ap .* sgn;
+        dP_orf = dP_orf_mag .* sgn;
+        F_orf  = dP_orf .* params.Ap;
 
-        % Diagnostics (positive)
-        Q = qmag;
-        P_orf_per = dP_kv .* qmag;   % avoid counting laminar twice
+        % Diagnostics (positive power)
+        P_orf_per = dP_orf_mag .* abs(Q);
     end
 end
 
