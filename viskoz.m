@@ -1418,8 +1418,8 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         denom  = max(1, nd * n_orf);
         R_lam  = (128 * params.mu .* params.Lori ./ (pi * d_o.^4)) / denom;
         dP_lam = R_lam .* Q;
-        dP_h   = dP_lam + dP_kv;
-        dP_h_mag = abs(dP_h);
+        dP_raw    = dP_lam + dP_kv;
+        dP_raw_mag = abs(dP_raw);
 
         % Cavitation soft-limit via softmin (magnitude)
         p_up     = params.orf.p_amb + abs(params.F_lin)./max(params.Ap,1e-12);
@@ -1428,9 +1428,9 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         if isfield(params,'orf') && isfield(params.orf,'softmin_eps') && isfinite(params.orf.softmin_eps)
             epsm = params.orf.softmin_eps;
         end
-        dP_orf_mag = util_softmin(dP_h_mag, dP_cav, epsm);
-        tol = 1e-6 * max(1, dP_h_mag) + 1e-2 * epsm;
-        cav_mask_per = dP_h_mag > (dP_orf_mag + tol);
+        dP_orf_mag = util_softmin(dP_raw_mag, dP_cav, epsm);
+        tol = 1e-6 * max(1, dP_raw_mag) + 1e-2 * epsm;
+        cav_mask_per = dP_raw_mag > (dP_orf_mag + tol);
 
         % Force sign from velocity (no p-states)
         dP_orf = dP_orf_mag .* sgn;
