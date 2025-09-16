@@ -1015,7 +1015,7 @@ end
 % Damperli çözüm mck_with_damper fonksiyonu üzerinden yürütülür.
 
 mu_ref_eff   = params.mu_ref;
-c_lam0_eff   = params.c_lam0;
+c_lam0_eff   = util_getfield_default(params, 'c_lam0', 0);  % PF laminar term disabled; retain for diagnostics only
 if isfield(params,'cfg') && isstruct(params.cfg) && isfield(params.cfg,'on') && isstruct(params.cfg.on) && ...
         isfield(params.cfg.on,'mu_floor') && params.cfg.on.mu_floor
     mu_min_phys = NaN;
@@ -1309,9 +1309,9 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     dP_kv_loc = 0.5*rho .* ( qmag_loc ./ max(Cd_loc.*Ao,1e-12) ).^2;
     p_up_loc  = orf.p_amb + abs(F_lin)./max(Ap,1e-12);
     dP_cav_loc= max( (p_up_loc - orf.p_cav_eff).*orf.cav_sf, 0 );
-    F_p = F_lin + F_orf;
+    F_pf_base = F_lin + F_orf;
 
-    dp_pf = (c_lam*dvel + (F_p - k_sd*drift)) ./ Ap;
+    dp_pf = (F_pf_base - k_sd*drift) ./ Ap;
     if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
         s = tanh(20*dvel);
         dp_pf = s .* max(0, s .* dp_pf);
@@ -1373,7 +1373,7 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         params = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
                         'Ao',Ao,'mu',mu_abs_loc,'F_lin',F_lin_,'Lori',Lori);
         [F_orf_, ~, ~, ~] = calc_orifice_force(dvel_, params);
-        dp_pf_ = (c_lam_loc*dvel_ + F_orf_) ./ Ap;
+        dp_pf_ = F_orf_ ./ Ap;
         if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
             s = tanh(20*dvel_);
             dp_pf_ = s .* max(0, s .* dp_pf_);
@@ -1790,7 +1790,7 @@ params.k_p = k_p;
 params.k_sd_simple = k_sd_simple;
 params.k_sd_adv = k_sd_adv;
 params.k_sd = k_sd_adv;
-params.c_lam0 = c_lam0;
+params.c_lam0 = util_getfield_default(params, 'c_lam0', c_lam0); % diagnostic viscous coefficient (PF laminar disabled)
 end
 
 function win = util_make_arias_window(t, ag, varargin)
