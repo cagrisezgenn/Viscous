@@ -1,3 +1,5 @@
+Aynısını bir de aşağıdaki kod için ver.
+
 function [X,F,gaout] = run_ga_driver(scaled, params, optsEval, optsGA)
 %RUN_GA_DRIVER Hibrit GA sürücüsü
 %   [X,F,GAOUT] = RUN_GA_DRIVER(SCALED, PARAMS, OPTSEVAL, OPTSGA)
@@ -1259,561 +1261,169 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, story_mask, ...
     n_dampers_per_story, resFactor, cfg)
-%% Coupled structural-hydraulic-thermal damper model
-    n = size(M,1);
-    Ns = n-1;
-    r = ones(n,1);
-    if Ns <= 0
-        x = zeros(numel(t), n);
-        a_rel = zeros(numel(t), n);
-        ts = struct();
-        return;
-    end
+%% Girdi Parametreleri
+    n = size(M,1); r = ones(n,1);
+    agf = griddedInterpolant(t,ag,'linear','nearest');
+    z0 = zeros(2*n,1);
+    opts= odeset('RelTol',1e-3,'AbsTol',1e-6);
 
-    if nargin < 25 || isempty(cfg) || ~isstruct(cfg)
-        cfg = struct();
-    end
-    if ~isfield(cfg,'on') || ~isstruct(cfg.on),  cfg.on  = struct(); end
-    if ~isfield(cfg,'num') || ~isstruct(cfg.num), cfg.num = struct(); end
-    if ~isfield(cfg,'PF') || ~isstruct(cfg.PF),  cfg.PF  = struct(); end
+    % Kat vektörleri
+    nStories = n-1;
+    mask = story_mask(:);  if numel(mask)==1,  mask  = mask *ones(nStories,1); end
+    ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
+    multi= (mask .* ndps).';
+    Nvec = 1:nStories; Mvec = 2:n;
 
-    cfg.use_orifice = util_getfield_default(cfg, 'use_orifice', true);
-    cfg.use_thermal = util_getfield_default(cfg, 'use_thermal', true);
+    % Başlangıç sıcaklığı ve viskozitesi
+    Tser = T0_C*ones(numel(t),1);
+    mu_abs = mu_ref;
+    c_lam = c_lam0;
 
-    cfg.on.pressure_force    = util_getfield_default(cfg.on, 'pressure_force', true);
-    cfg.on.mu_floor          = util_getfield_default(cfg.on, 'mu_floor', false);
-    cfg.on.pf_resistive_only = util_getfield_default(cfg.on, 'pf_resistive_only', false);
-    cfg.on.Rlam        = util_getfield_default(cfg.on, 'Rlam', true);
-    cfg.on.Rkv         = util_getfield_default(cfg.on, 'Rkv', true);
-    cfg.on.CdRe        = util_getfield_default(cfg.on, 'CdRe', true);
-    cfg.on.cavitation  = util_getfield_default(cfg.on, 'cavitation', true);
-    cfg.on.hyd_inertia = util_getfield_default(cfg.on, 'hyd_inertia', true);
-    cfg.on.leak        = util_getfield_default(cfg.on, 'leak', false);
-    cfg.on.pressure_ode= util_getfield_default(cfg.on, 'pressure_ode', true);
-    cfg.on.Qsat        = util_getfield_default(cfg.on, 'Qsat', true);
-
-    cfg.PF.t_on = util_getfield_default(cfg.PF, 't_on', 0);
-    cfg.PF.tau  = util_getfield_default(cfg.PF, 'tau', 1.0);
-    cfg.PF.gain = util_getfield_default(cfg.PF, 'gain', 0.85);
-    cfg.PF.k    = util_getfield_default(cfg.PF, 'k', 0.01);
-
-    cfg.num.softmin_eps = util_getfield_default(cfg.num, 'softmin_eps', 1e5);
-    cfg.num.mu_min_phys = util_getfield_default(cfg.num, 'mu_min_phys', 0);
-    cfg.num.dP_cap      = util_getfield_default(cfg.num, 'dP_cap', NaN);
-    cfg.num.Qcap_scale  = util_getfield_default(cfg.num, 'Qcap_scale', 1);
-    cfg.num.K_leak      = util_getfield_default(cfg.num, 'K_leak', 0);
-    cfg.num.Vmin_fac    = util_getfield_default(cfg.num, 'Vmin_fac', 0.97);
-
-    agf = griddedInterpolant(t, ag, 'linear', 'nearest');
-
-    mask = story_mask(:);
-    if numel(mask)==1, mask = mask*ones(Ns,1); end
-    ndps = n_dampers_per_story(:);
-    if numel(ndps)==1, ndps = ndps*ones(Ns,1); end
-    multi = double(mask .* ndps);
-    has_damper = multi > 0;
-    multi_safe = multi;
-    multi_safe(~has_damper) = 1;
-
-    Nvec = (1:Ns).';
-    Mvec = (2:n).';
-
-    d_o = util_getfield_default(orf, 'd_o', 1e-3);
-    Ao_single = pi * d_o^2 / 4;
-    base_n_orf = util_getfield_default(orf, 'n_orf', max(round(Ao / max(Ao_single,1e-12)),1));
-    n_parallel_story = max(round(multi_safe), 1);
-    hole_count = max(base_n_orf * n_parallel_story, 1);
-    hole_count(~has_damper) = 1;
-
-    Ap_story = Ap * multi;
-    Ap_story_safe = Ap * multi_safe;
-    Ap_story(~has_damper) = 0;
-    Ao_story = Ao * multi;
-    Ao_story_safe = max(Ao * multi_safe, 1e-12);
-    Ao_story(~has_damper) = 0;
-
-    Qcap_eff = max(Qcap * cfg.num.Qcap_scale, 1e-9);
-    Qcap_story = max(Qcap_eff * multi_safe, 1e-9);
-    Qcap_story(~has_damper) = 1;
-
-    Lori_eff = max(Lori, 1e-9);
-    R_lam_factor = 128 * Lori_eff / (pi * max(d_o^4, 1e-18));
-
-    V0_single = 0.5 * (2*Lgap) * Ap * 1.2;
-    V0_story = V0_single * multi_safe;
-    V0_story(~has_damper) = 1;
-    Vmin_story = cfg.num.Vmin_fac * V0_single * multi_safe;
-    Vmin_story(~has_damper) = 1;
-
-    rho_ref = util_getfield_default(thermal, 'rho_ref', rho);
-    alpha_rho = util_getfield_default(thermal, 'alpha_rho', 7e-4);
-    beta0 = util_getfield_default(thermal, 'beta0', 1.6e9);
-    b_beta = util_getfield_default(thermal, 'b_beta', -3.5e-3);
-    resFactor_eff = util_getfield_default(thermal, 'resFactor', resFactor);
-    hA_os   = util_getfield_default(thermal, 'hA_os',   util_getfield_default(thermal, 'hA_W_perK', 600));
-    hA_o_env= util_getfield_default(thermal, 'hA_o_env', hA_os);
-    hA_s_env= util_getfield_default(thermal, 'hA_s_env', hA_os);
-    T_env   = util_getfield_default(thermal, 'T_env_C', T0_C);
-    Ts0_C   = util_getfield_default(thermal, 'Ts0_C', T0_C);
-    dT_max  = util_getfield_default(thermal, 'dT_max', 80);
-    T_floor = T0_C;
-    T_cap   = T0_C + dT_max;
-    T_s_floor = Ts0_C;
-    T_s_cap   = T0_C + dT_max;
-
-    V_oil_per = resFactor_eff * (Ap * (2*Lgap));
-    nDtot = sum(multi(has_damper));
-    m_oil_tot = max(nDtot * rho_ref * V_oil_per, 0);
-    m_steel_tot = steel_to_oil_mass_ratio * m_oil_tot;
-    C_oil   = max(m_oil_tot * cp_oil,   eps);
-    C_steel = max(m_steel_tot * cp_steel, eps);
-
-    mu_min_phys = cfg.num.mu_min_phys;
-    mu_geom_min = 0;
-    mu_geom_cap = inf;
-    if any(has_damper)
-        denom_mu = R_lam_factor * (Ap_story_safe(has_damper).^2);
-        if isfinite(c_lam_min) && c_lam_min > 0
-            mu_geom_min = max(c_lam_min * hole_count(has_damper) ./ max(denom_mu, 1e-18));
-        end
-        if isfinite(c_lam_cap)
-            mu_geom_cap = min(c_lam_cap * hole_count(has_damper) ./ max(denom_mu, 1e-18));
-        end
-        if ~(isfinite(mu_geom_cap)) || mu_geom_cap <= 0
-            mu_geom_cap = inf;
-        end
-        if mu_geom_cap < mu_geom_min
-            mu_geom_cap = mu_geom_min;
-        end
-    end
-
-    rho_min = 100;
-    beta_min = 1e8;
-
-    p_amb = util_getfield_default(orf, 'p_amb', 1.0e5);
-    cav_sf = util_getfield_default(orf, 'cav_sf', 0.9);
-
-    Cd0   = util_getfield_default(orf, 'Cd0', 0.61);
-    CdInf = util_getfield_default(orf, 'CdInf', 0.80);
-    p_exp = util_getfield_default(orf, 'p_exp', 1.1);
-    Rec   = max(util_getfield_default(orf, 'Rec', 3000), 1);
-
-    K_leak = cfg.num.K_leak;
-    dP_cap = cfg.num.dP_cap;
-
-    mask_vec = double(mask(:));
-    mask_row = mask_vec.';
-    has_row = double(has_damper).';
-
-    idx_p1 = 2*n + (1:Ns);
-    idx_p2 = 2*n + Ns + (1:Ns);
-    idx_Q  = 2*n + 2*Ns + (1:Ns);
-    idx_To = 2*n + 3*Ns + 1;
-    idx_Ts = idx_To + 1;
-
-    z0 = zeros(2*n + 3*Ns + 2, 1);
-    z0(idx_p1) = p_amb * ones(Ns,1);
-    z0(idx_p2) = p_amb * ones(Ns,1);
-    z0(idx_To) = T0_C;
-    z0(idx_Ts) = Ts0_C;
-
-    AbsTol = [1e-6*ones(n,1);
-              1e-4*ones(n,1);
-              1e3*ones(Ns,1);
-              1e3*ones(Ns,1);
-              1e-5*ones(Ns,1);
-              1e-3;
-              1e-3];
-
-    opts = odeset('RelTol',1e-3,'AbsTol',AbsTol);
-
-    odef = @(tt,z) rhs(tt,z);
-    sol = ode15s(odef, [t(1) t(end)], z0, opts);
-
-    z = deval(sol, t).';
-    x = z(:,1:n);
-    v = z(:,n+1:2*n);
-    p1 = z(:,idx_p1);
-    p2 = z(:,idx_p2);
-    Q  = z(:,idx_Q);
-    T_o = z(:,idx_To);
-    T_s = z(:,idx_Ts);
+%% ODE Çözümü
+    odef = @(tt,z) [ z(n+1:end); M \ ( -C*z(n+1:end) - K*z(1:n) - dev_force(tt,z(1:n),z(n+1:end),c_lam,mu_abs) - M*r*agf(tt) ) ];
+    sol  = ode15s(odef,[t(1) t(end)],z0,opts);
+    z    = deval(sol,t).';
+    x    = z(:,1:n); v = z(:,n+1:end);
 
     drift = x(:,Mvec) - x(:,Nvec);
     dvel  = v(:,Mvec) - v(:,Nvec);
+    % Faz 3: Lineer parçada sadece yay (laminer PF tarafında)
+    F_lin = k_sd*drift;
 
+    % Faz 6: Qcap ölçeği ve softmin eps opsiyonu
+    Qcap_eff = Qcap;
+    if isfield(cfg,'num') && isfield(cfg.num,'Qcap_scale') && isfinite(cfg.num.Qcap_scale)
+        Qcap_eff = max(1e-9, Qcap * cfg.num.Qcap_scale);
+    end
+    orf_loc = orf;
+    if isfield(cfg,'num') && isfield(cfg.num,'softmin_eps') && isfinite(cfg.num.softmin_eps)
+        orf_loc.softmin_eps = cfg.num.softmin_eps;
+    end
+    params = struct('Ap',Ap,'Qcap',Qcap_eff,'orf',orf_loc,'rho',rho,...
+                    'Ao',Ao,'mu',mu_abs,'F_lin',F_lin,'Lori',Lori);
+    [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params);
+    % Ek diagnostikler: dP_kv ve dP_cav (kv ve kavitasyon limitleri)
+    qmag_loc = Qcap_eff * tanh( (Ap/Qcap_eff) * sqrt(dvel.^2 + orf.veps^2) );
+    Re_loc   = (rho .* qmag_loc .* max(orf.d_o,1e-9)) ./ max(Ao*mu_abs,1e-9);
+    Cd_loc0  = orf.Cd0; Cd_locInf = orf.CdInf; Rec_loc = orf.Rec; pexp_loc = orf.p_exp;
+    Cd_loc = Cd_locInf - (Cd_locInf - Cd_loc0) ./ (1 + (Re_loc./max(Rec_loc,1)).^pexp_loc);
+    Cd_loc = max(min(Cd_loc,1.2),0.2);
+    dP_kv_loc = 0.5*rho .* ( qmag_loc ./ max(Cd_loc.*Ao,1e-12) ).^2;
+    p_up_loc  = orf.p_amb + abs(F_lin)./max(Ap,1e-12);
+    dP_cav_loc= max( (p_up_loc - orf.p_cav_eff).*orf.cav_sf, 0 );
+    F_p = F_lin + F_orf;
+
+    dp_pf = (c_lam*dvel + (F_p - k_sd*drift)) ./ Ap;
+    if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
+        s = tanh(20*dvel);
+        dp_pf = s .* max(0, s .* dp_pf);
+    end
     w_pf_vec = util_pf_weight(t, cfg) * cfg.PF.gain;
-    w_pf_vec = w_pf_vec(:);
-    diag = compute_diagnostics(drift, dvel, p1, p2, Q, T_o, T_s, w_pf_vec);
+    F_p = k_sd*drift + (w_pf_vec .* dp_pf) * Ap;
 
-    F_story = diag.F_story;
-    F = zeros(numel(t), n);
+    % Geometri ölçeklendirmesi R sadece montajda uygulanır
+    F_story = F_p;
+    P_visc_per = c_lam * (dvel.^2);
+    P_sum = sum( (P_visc_per + P_orf_per) .* multi, 2 );
+    P_orf_tot = sum(P_orf_per .* multi, 2);
+    % Yapısal güç kat toplam kuvvetini kullanır; ekstra çarpan kullanılmaz
+    P_struct_tot = sum(F_story .* dvel, 2);
+    E_orf = cumtrapz(t, P_orf_tot);
+    E_struct = cumtrapz(t, P_struct_tot);
+
+%% Termal Hesap (Phase 7: iki-düğüm diagnostik; dinamiğe geri besleme yok)
+    nDtot = sum(multi);
+    V_oil_per = resFactor*(Ap*(2*Lgap));
+    m_oil_tot = nDtot*(rho*V_oil_per);
+    m_steel_tot = steel_to_oil_mass_ratio*m_oil_tot;
+    C_oil   = max(m_oil_tot*cp_oil,   eps);
+    C_steel = max(m_steel_tot*cp_steel, eps);
+    T_o = Tser; T_s = T0_C*ones(numel(t),1);
+    hA_os   = util_getfield_default(thermal, 'hA_os',    thermal.hA_W_perK);
+    hA_o_env= util_getfield_default(thermal, 'hA_o_env', thermal.hA_W_perK);
+    hA_s_env= util_getfield_default(thermal, 'hA_s_env', thermal.hA_W_perK);
+    dtv = diff(t);
+    for k=1:numel(t)-1
+        Pk = 0.5*(P_sum(k)+P_sum(k+1));
+        dT_o = ( Pk - hA_os*(T_o(k)-T_s(k)) - hA_o_env*(T_o(k)-thermal.T_env_C) ) / C_oil;
+        dT_s = ( + hA_os*(T_o(k)-T_s(k)) - hA_s_env*(T_s(k)-thermal.T_env_C) ) / C_steel;
+        T_o(k+1) = T_o(k) + dtv(k)*dT_o;
+        T_s(k+1) = T_s(k) + dtv(k)*dT_s;
+        T_o(k+1) = min(max(T_o(k+1), T0_C), T0_C + thermal.dT_max);
+        T_s(k+1) = min(max(T_s(k+1), T0_C), T0_C + thermal.dT_max);
+    end
+    mu = mu_ref*exp(b_mu*(T_o - T_ref_C));
+
+%% Çıktı Hesabı
+    % İvme için düğüm kuvvetleri
+    F = zeros(numel(t),n);
     F(:,Nvec) = F(:,Nvec) - F_story;
     F(:,Mvec) = F(:,Mvec) + F_story;
-
     a_rel = ( -(M\(C*v.' + K*x.' + F.')).' - ag.*r.' );
 
-    ts = struct('dvel', dvel, ...
-                'story_force', F_story, ...
-                'Q', Q, ...
-                'Q_sat', diag.Q_sat, ...
-                'dP_orf', diag.dP_h, ...
-                'dP_lam', diag.dP_lam, ...
-                'dP_kv', diag.dP_kv, ...
-                'PF', F_story, ...
-                'p1', p1, 'p2', p2, 'p2_eff', diag.p2_eff, ...
-                'T_oil', T_o, 'T_steel', T_s, ...
-                'mu', diag.mu, 'rho', diag.rho, 'beta', diag.beta, ...
-                'p_vap', diag.p_vap, ...
-                'R_lam', diag.R_lam, ...
-                'c_lam', max(diag.c_lam_hot, 0), ...
-                'P_orf_per', diag.P_loss_story, ...
-                'P_sum', diag.P_sum, ...
-                'E_orf', diag.E_orf, ...
-                'E_struct', diag.E_struct, ...
-                'P_struct_tot', diag.P_struct_tot, ...
-                'cav_mask', diag.cav_mask);
+    ts = struct('dvel', dvel, 'story_force', F_story, 'Q', Q, ...
+        'dP_orf', dP_orf, 'PF', F_p, 'cav_mask', dP_orf < 0, 'P_sum', P_sum, ...
+        'E_orf', E_orf, 'E_struct', E_struct, 'T_oil', T_o, 'mu', mu, 'c_lam', c_lam);
 
-    function dz = rhs(tt,z)
-        x_ = z(1:n);
-        v_ = z(n+1:2*n);
-        p1_ = z(idx_p1);
-        p2_ = z(idx_p2);
-        Q_  = z(idx_Q);
-        T_o_ = z(idx_To);
-        T_s_ = z(idx_Ts);
-
+%% İç Fonksiyonlar
+    function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)
         drift_ = x_(Mvec) - x_(Nvec);
         dvel_  = v_(Mvec) - v_(Nvec);
-
-        [mu_loc, rho_loc, beta_loc, p_vap_loc] = material_props(T_o_);
-
-        V1 = V0_story + Ap_story .* drift_;
-        V2 = V0_story - Ap_story .* drift_;
-        V1 = max(V1, Vmin_story);
-        V2 = max(V2, Vmin_story);
-
-        Q_h = Q_;
-        if cfg.use_orifice && cfg.on.Qsat
-            Q_h(has_damper) = Qcap_story(has_damper) .* tanh(Q_(has_damper) ./ max(Qcap_story(has_damper),1e-9));
+        % Sütun yönelimli etkin parametreler
+        % Faz 3: Lineer parçada sadece yay
+        F_lin_ = k_sd*drift_;
+        params = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
+                        'Ao',Ao,'mu',mu_abs_loc,'F_lin',F_lin_,'Lori',Lori);
+        [F_orf_, ~, ~, ~] = calc_orifice_force(dvel_, params);
+        dp_pf_ = (c_lam_loc*dvel_ + F_orf_) ./ Ap;
+        if isfield(cfg.on,'pf_resistive_only') && cfg.on.pf_resistive_only
+            s = tanh(20*dvel_);
+            dp_pf_ = s .* max(0, s .* dp_pf_);
         end
-        if ~cfg.use_orifice
-            Q_h(:) = 0;
-        end
-
-        Cd_loc = CdInf * ones(Ns,1);
-        if cfg.use_orifice && cfg.on.CdRe
-            Re_loc = (rho_loc .* abs(Q_h) .* d_o) ./ max(Ao_story_safe .* mu_loc, 1e-9);
-            Cd_loc = CdInf - (CdInf - Cd0) ./ (1 + (Re_loc./Rec).^p_exp);
-            Cd_loc = max(min(Cd_loc, 1.2), 0.2);
-        end
-
-        dP_kv = zeros(Ns,1);
-        if cfg.use_orifice && cfg.on.Rkv
-            RQ = rho_loc ./ max(2 * (Cd_loc .* Ao_story_safe).^2, 1e-12);
-            dP_kv = RQ .* Q_h .* abs(Q_h);
-        end
-
-        dP_lam = zeros(Ns,1);
-        if cfg.use_orifice && cfg.on.Rlam
-            R_lam_vec = (mu_loc * R_lam_factor) ./ hole_count;
-            dP_lam = R_lam_vec .* Q_;
-        end
-
-        dP_h = dP_lam + dP_kv;
-
-        p2_eff = p2_;
-        if cfg.use_orifice && cfg.on.cavitation
-            p2_eff = max(p2_, cav_sf * p_vap_loc);
-        end
-
-        dP_raw = p1_ - p2_eff;
-        if isfinite(dP_cap)
-            dP_eff = dP_cap * tanh(dP_raw ./ max(dP_cap,1));
-        else
-            dP_eff = dP_raw;
-        end
-
-        dQ = zeros(Ns,1);
-        if cfg.use_orifice && cfg.on.hyd_inertia
-            Lh_vec = rho_loc * Lori_eff ./ max(Ao_story_safe.^2, 1e-18);
-            Lh_vec(~has_damper) = 1;
-            dQ(has_damper) = (dP_eff(has_damper) - dP_h(has_damper)) ./ max(Lh_vec(has_damper), 1e-12);
-        end
-
-        Q_leak = zeros(Ns,1);
-        if cfg.on.leak
-            Q_leak(has_damper) = K_leak * (p1_(has_damper) - p2_(has_damper));
-        end
-
-        dp1 = zeros(Ns,1);
-        dp2 = zeros(Ns,1);
-        if cfg.on.pressure_ode
-            flux_in  = -Q_ - Q_leak - Ap_story .* dvel_;
-            flux_out = +Q_ + Q_leak + Ap_story .* dvel_;
-            dp1(has_damper) = (beta_loc ./ V1(has_damper)) .* flux_in(has_damper);
-            dp2(has_damper) = (beta_loc ./ V2(has_damper)) .* flux_out(has_damper);
-            if cfg.on.cavitation
-                m1 = (p1_ <= p_vap_loc) & (flux_in < 0);
-                m2 = (p2_ <= p_vap_loc) & (flux_out < 0);
-                dp1(m1) = 0;
-                dp2(m2) = 0;
-            end
-        end
-
-        dp_pf = apply_pf_resistive(dP_raw, dvel_);
-        w_pf = util_pf_weight(tt, cfg) * cfg.PF.gain;
-        F_spring = k_sd .* drift_;
-        F_pf = Ap_story .* (w_pf .* dp_pf);
-        F_story_loc = mask_vec .* (F_spring + F_pf);
-
-        Fdev = zeros(n,1);
-        Fdev(Nvec) = Fdev(Nvec) - F_story_loc;
-        Fdev(Mvec) = Fdev(Mvec) + F_story_loc;
-
-        dv = M \ ( -C*v_ - K*x_ - Fdev - M*r*agf(tt) );
-
-        P_lam = dP_lam .* Q_;
-        P_kv  = dP_kv .* Q_h;
-        P_loss_total = sum((P_lam + P_kv) .* mask_vec);
-        P_loss_total = max(P_loss_total, 0);
-
-        dT_o = 0;
-        dT_s = 0;
-        if cfg.use_thermal
-            dT_o = ( P_loss_total ...
-                     - hA_os    * (T_o_ - T_s_) ...
-                     - hA_o_env * (T_o_ - T_env) ) / max(C_oil, eps);
-            dT_s = ( + hA_os    * (T_o_ - T_s_) ...
-                     - hA_s_env * (T_s_ - T_env) ) / max(C_steel, eps);
-            if T_o_ >= T_cap && dT_o > 0, dT_o = 0; end
-            if T_o_ <= T_floor && dT_o < 0, dT_o = 0; end
-            if T_s_ >= T_s_cap && dT_s > 0, dT_s = 0; end
-            if T_s_ <= T_s_floor && dT_s < 0, dT_s = 0; end
-        end
-
-        dz = [v_; dv; dp1; dp2; dQ; dT_o; dT_s];
+        w_pf = util_pf_weight(tt,cfg) * cfg.PF.gain;
+        F_p_ = k_sd*drift_ + (w_pf .* dp_pf_) * Ap;
+        % R ölçeklendirmesi yalnızca montajda uygulanır (R*multi)
+        F_story_ = F_p_;
+        Fd = zeros(n,1);
+        Fd(Nvec) = Fd(Nvec) - F_story_;
+        Fd(Mvec) = Fd(Mvec) + F_story_;
     end
+    function [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params)
+        % Phase 6 (no p-states): smoother Cd(Re) and kv-only orifice drop.
+        % Laminar viscous loss is accounted in PF via c_lam*dvel; avoid double counting here.
 
-    function [mu_loc, rho_loc, beta_loc, p_vap_loc] = material_props(T_o_loc)
-        T_vec = T_o_loc(:);
-        [mu_vec, rho_vec, beta_vec, p_vap_vec] = compute_props_vector(T_vec);
-        mu_loc = mu_vec(1);
-        rho_loc = rho_vec(1);
-        beta_loc = beta_vec(1);
-        p_vap_loc = p_vap_vec(1);
+        % Saturated volumetric flow magnitude (stability)
+        qmag = params.Qcap * tanh( (params.Ap/params.Qcap) * sqrt(dvel.^2 + params.orf.veps^2) );
+
+        % Reynolds and discharge coefficient (clamped)
+        Re   = (params.rho .* qmag .* max(params.orf.d_o,1e-9)) ./ max(params.Ao*params.mu,1e-9);
+        Cd0   = params.orf.Cd0;
+        CdInf = params.orf.CdInf;
+        p_exp = params.orf.p_exp;
+        Rec   = params.orf.Rec;
+        Cd    = CdInf - (CdInf - Cd0) ./ (1 + (Re./max(Rec,1)).^p_exp);
+        Cd    = max(min(Cd, 1.2), 0.2);
+
+        % kv-only drop
+        dP_kv  = 0.5*params.rho .* ( qmag ./ max(Cd.*params.Ao,1e-12) ).^2;
+
+        % Cavitation soft-limit via softmin
+        p_up   = params.orf.p_amb + abs(params.F_lin)./max(params.Ap,1e-12);
+        dP_cav = max( (p_up - params.orf.p_cav_eff).*params.orf.cav_sf, 0 );
+        epsm = 1e5;
+        if isfield(params,'orf') && isfield(params.orf,'softmin_eps') && isfinite(params.orf.softmin_eps)
+            epsm = params.orf.softmin_eps;
+        end
+        dP_orf = util_softmin(dP_kv, dP_cav, epsm);
+
+        % Force sign from velocity (no p-states)
+        sgn = dvel ./ sqrt(dvel.^2 + params.orf.veps^2);
+        F_orf = dP_orf .* params.Ap .* sgn;
+
+        % Diagnostics (positive)
+        Q = qmag;
+        P_orf_per = dP_kv .* qmag;   % avoid counting laminar twice
     end
-
-    function [mu_vec, rho_vec, beta_vec, p_vap_vec] = compute_props_vector(T_vec)
-        if cfg.use_thermal
-            mu_raw = mu_ref * exp(b_mu * (T_vec - T_ref_C));
-            rho_vec = rho_ref ./ (1 + alpha_rho * (T_vec - T_ref_C));
-            beta_vec = beta0 * exp(b_beta * (T_vec - T_ref_C));
-            p_vap_vec = p_vap_Antoine(T_vec);
-        else
-            mu_raw = mu_ref * ones(size(T_vec));
-            rho_vec = rho_ref * ones(size(T_vec));
-            beta_vec = beta0 * ones(size(T_vec));
-            p_vap_vec = p_vap_Antoine(T_ref_C) * ones(size(T_vec));
-        end
-        mu_vec = mu_raw;
-        if cfg.on.mu_floor
-            mu_vec = max(mu_vec, mu_min_phys);
-        end
-        if mu_geom_min > 0
-            mu_vec = max(mu_vec, mu_geom_min);
-        end
-        if isfinite(mu_geom_cap)
-            mu_vec = min(mu_vec, mu_geom_cap);
-        end
-        rho_vec = max(rho_min, rho_vec);
-        beta_vec = max(beta_min, beta_vec);
-    end
-
-    function diag = compute_diagnostics(drift_mat, dvel_mat, p1_mat, p2_mat, Q_mat, T_o_vec, T_s_vec, w_pf_vec_in)
-        %#ok<NASGU> T_s_vec retained for completeness
-        Nt = size(drift_mat,1);
-        [mu_vec, rho_vec, beta_vec, p_vap_vec] = compute_props_vector(T_o_vec);
-
-        mu_mat = repmat(mu_vec, 1, Ns);
-        rho_mat = repmat(rho_vec, 1, Ns);
-        p_vap_mat = repmat(p_vap_vec, 1, Ns);
-
-        Q_sat = Q_mat;
-        if cfg.use_orifice && cfg.on.Qsat
-            Qcap_mat = repmat(Qcap_story.', Nt, 1);
-            idx = has_damper.';
-            if any(idx)
-                Q_sat(:,idx) = Qcap_mat(:,idx) .* tanh(Q_mat(:,idx) ./ max(Qcap_mat(:,idx),1e-9));
-            end
-        else
-            Qcap_mat = repmat(Qcap_story.', Nt, 1);
-        end
-        if ~cfg.use_orifice
-            Q_sat(:) = 0;
-        end
-
-        Cd_mat = CdInf * ones(Nt,Ns);
-        if cfg.use_orifice && cfg.on.CdRe
-            Ao_mat = repmat(Ao_story_safe.', Nt, 1);
-            Re_mat = (rho_mat .* abs(Q_sat) .* d_o) ./ max(Ao_mat .* mu_mat, 1e-9);
-            Cd_mat = CdInf - (CdInf - Cd0) ./ (1 + (Re_mat./Rec).^p_exp);
-            Cd_mat = max(min(Cd_mat, 1.2), 0.2);
-        end
-
-        dP_kv = zeros(Nt,Ns);
-        if cfg.use_orifice && cfg.on.Rkv
-            Ao_mat = repmat(Ao_story_safe.', Nt, 1);
-            RQ_mat = rho_mat ./ max(2 * (Cd_mat .* Ao_mat).^2, 1e-12);
-            dP_kv = RQ_mat .* Q_sat .* abs(Q_sat);
-        end
-
-        dP_lam = zeros(Nt,Ns);
-        R_lam_mat = zeros(Nt,Ns);
-        if cfg.use_orifice && cfg.on.Rlam
-            hole_mat = repmat(hole_count.', Nt, 1);
-            R_lam_mat = (mu_mat * R_lam_factor) ./ hole_mat;
-            dP_lam = R_lam_mat .* Q_mat;
-        end
-
-        active_mask = repmat(has_row, Nt, 1);
-        dP_lam = dP_lam .* active_mask;
-        dP_kv  = dP_kv  .* active_mask;
-        R_lam_mat = R_lam_mat .* active_mask;
-
-        dP_h = dP_lam + dP_kv;
-
-        p2_eff = p2_mat;
-        if cfg.use_orifice && cfg.on.cavitation
-            p2_eff = max(p2_mat, cav_sf * p_vap_mat);
-        end
-
-        dP_raw = p1_mat - p2_eff;
-        if isfinite(dP_cap)
-            dP_eff = dP_cap * tanh(dP_raw ./ max(dP_cap,1)); %#ok<NASGU>
-        else
-            dP_eff = dP_raw; %#ok<NASGU>
-        end
-
-        dp_pf = apply_pf_resistive(dP_raw, dvel_mat);
-
-        w_pf_mat = repmat(w_pf_vec_in, 1, Ns);
-        F_spring = k_sd .* drift_mat;
-        F_pf = repmat(Ap_story.', Nt, 1) .* (w_pf_mat .* dp_pf);
-        F_story_mat = mask_row .* (F_spring + F_pf);
-
-        P_lam = dP_lam .* Q_mat;
-        P_kv  = dP_kv  .* Q_sat;
-        P_loss_story = (P_lam + P_kv) .* active_mask;
-        P_sum = sum(P_loss_story, 2);
-        P_sum = max(P_sum, 0);
-
-        P_struct_tot = sum(F_story_mat .* dvel_mat, 2);
-
-        E_orf = cumtrapz(t, P_sum);
-        E_struct = cumtrapz(t, P_struct_tot);
-
-        c_lam_series = (repmat(Ap_story_safe.', Nt, 1).^2) .* R_lam_mat;
-        c_lam_series = c_lam_series .* active_mask;
-        if any(has_damper)
-            c_lam_hot = mean(c_lam_series(end, has_damper));
-        else
-            c_lam_hot = 0;
-        end
-
-        cav_mask = false(Nt,Ns);
-        if cfg.use_orifice && cfg.on.cavitation
-            cav_mask = p2_mat <= cav_sf * p_vap_mat;
-        end
-
-        diag = struct('F_story', F_story_mat, ...
-                      'dP_h', dP_h, ...
-                      'dP_lam', dP_lam, ...
-                      'dP_kv', dP_kv, ...
-                      'Q_sat', Q_sat, ...
-                      'p2_eff', p2_eff, ...
-                      'mu', mu_vec, ...
-                      'rho', rho_vec, ...
-                      'beta', beta_vec, ...
-                      'p_vap', p_vap_vec, ...
-                      'R_lam', R_lam_mat, ...
-                      'c_lam_hot', c_lam_hot, ...
-                      'P_loss_story', P_loss_story, ...
-                      'P_sum', P_sum, ...
-                      'E_orf', E_orf, ...
-                      'E_struct', E_struct, ...
-                      'P_struct_tot', P_struct_tot, ...
-                      'cav_mask', cav_mask);
-    end
-
-    function val = apply_pf_resistive(val, dvel_loc)
-        if cfg.on.pf_resistive_only
-            s = tanh(20 * dvel_loc);
-            val = s .* max(0, s .* val);
-        end
-    end
-
-    function p_v = p_vap_Antoine(T_C)
-        if isfield(thermal,'antoine_A') && isfield(thermal,'antoine_B') && isfield(thermal,'antoine_C')
-            A = thermal.antoine_A; B = thermal.antoine_B; C = thermal.antoine_C;
-        else
-            A = 5.0; B = 1700; C = -80;
-        end
-        T_C = double(T_C);
-        p_v = 10.^(A - B ./ (C + T_C));
-        p_v = min(max(p_v, 5), 5e2);
-    end
-end
-
-function [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params)
-%CALC_ORIFICE_FORCE Smooth orifice drop with laminar + quadratic losses.
-
-Ap   = util_getfield_default(params, 'Ap', 1);
-Ao   = max(util_getfield_default(params, 'Ao', 1), 1e-12);
-Lori = util_getfield_default(params, 'Lori', 0);
-Qcap = max(util_getfield_default(params, 'Qcap', 1), 1e-9);
-mu   = max(util_getfield_default(params, 'mu', 1), 1e-9);
-rho  = max(util_getfield_default(params, 'rho', 800), 1);
-
-orf = util_getfield_default(params, 'orf', struct());
-veps = util_getfield_default(orf, 'veps', 0);
-d_o  = max(util_getfield_default(orf, 'd_o', 1e-3), 1e-9);
-n_orf = util_getfield_default(orf, 'n_orf', 1);
-n_parallel = util_getfield_default(params, 'n_parallel', util_getfield_default(params, 'multi', 1));
-n_parallel = max(1, n_parallel);
-hole_count = max(1, n_orf * n_parallel);
-
-dv_s = sqrt(dvel.^2 + veps^2);
-sgn  = dvel ./ sqrt(dvel.^2 + veps^2);
-Qmag = Qcap * tanh( (Ap/Qcap) * dv_s );
-Q    = Qmag .* sgn;
-
-Cd0   = util_getfield_default(orf, 'Cd0', 0.61);
-CdInf = util_getfield_default(orf, 'CdInf', 0.8);
-p_exp = util_getfield_default(orf, 'p_exp', 1.1);
-Rec   = max(util_getfield_default(orf, 'Rec', 3000), 1);
-Re    = (rho .* abs(Q) .* d_o) ./ max(Ao * mu, 1e-9);
-Cd    = CdInf - (CdInf - Cd0) ./ (1 + (Re./Rec).^p_exp);
-Cd    = max(min(Cd, 1.2), 0.2);
-
-jet   = Q ./ max(Cd .* Ao, 1e-12);
-dP_kv = 0.5 * rho .* jet .* abs(jet);
-
-R_lam_single = (128 * mu * Lori) / (pi * d_o^4);
-R_lam = R_lam_single / hole_count;
-dP_lam = R_lam .* Q;
-dP_h = dP_lam + dP_kv;
-
-p_up   = util_getfield_default(orf, 'p_amb', 1.0e5) + abs(util_getfield_default(params, 'F_lin', 0))./max(Ap,1e-12);
-p_cav = util_getfield_default(orf, 'p_cav_eff', 0);
-cav_sf = util_getfield_default(orf, 'cav_sf', 1);
-dP_cav = max((p_up - p_cav) .* cav_sf, 0);
-epsm = util_getfield_default(orf, 'softmin_eps', 1e5);
-dP_mag = util_softmin(abs(dP_h), dP_cav, epsm);
-dP_orf = dP_mag .* sgn;
-
-F_orf = dP_orf .* Ap;
-P_orf_per = dP_orf .* Q;
 end
 
 function [records, scaled, meta] = load_ground_motions(T1, opts)
