@@ -41,25 +41,19 @@ Qcap_ratio = abs_Q ./ max(params.Qcap_big, eps);
 abs_story_force = abs(ts.story_force(idx,:));
 
 % Reynolds sayısının pencere içindeki maksimumu
-try
-    if all(isfield(params,{'Qcap_big','Ap','Ao','rho','orf'})) && ...
-            isfield(ts,'mu') && isfield(ts,'dvel') && ...
-            all(isfield(params.orf,{'veps','d_o'}))
-        dvel_win = ts.dvel(idx,:);
-        qmag = params.Qcap_big * tanh((params.Ap/params.Qcap_big) * ...
-            sqrt(dvel_win.^2 + params.orf.veps^2));
-        mu_win = ts.mu(idx);
-        mu_mat = repmat(mu_win,1,size(qmag,2));
-        Ao = params.Ao; if numel(Ao)==1, Ao = Ao*ones(1,size(qmag,2)); end
-        Ao_mat = repmat(Ao,size(qmag,1),1);
-        Re = (params.rho .* qmag ./ max(Ao_mat .* mu_mat,1e-9)) .* ...
-             max(params.orf.d_o,1e-9);
-        metr.Re_max = max(Re,[],'all');
-    else
-        metr.Re_max = NaN;
-    end
-catch
-    metr.Re_max = NaN;
+metr.Re_max = NaN;
+if all(isfield(params,{'Qcap_big','Ap','Ao','rho','orf'})) && isfield(ts,'mu') && isfield(ts,'dvel') && ...
+        isstruct(params.orf) && all(isfield(params.orf,{'veps','d_o'}))
+    dvel_win = ts.dvel(idx,:);
+    qmag = params.Qcap_big * tanh((params.Ap/params.Qcap_big) * ...
+        sqrt(dvel_win.^2 + params.orf.veps^2));
+    mu_win = ts.mu(idx);
+    mu_mat = repmat(mu_win,1,size(qmag,2));
+    Ao = params.Ao; if numel(Ao)==1, Ao = Ao*ones(1,size(qmag,2)); end
+    Ao_mat = repmat(Ao,size(qmag,1),1);
+    Re = (params.rho .* qmag ./ max(Ao_mat .* mu_mat,1e-9)) .* ...
+         max(params.orf.d_o,1e-9);
+    metr.Re_max = max(Re,[],'all');
 end
 
 % 50. ve 95. yüzdelik değerler
@@ -97,14 +91,9 @@ metr.E_struct_sum  = ts.E_struct(end);
 metr.E_ratio   = metr.E_orifice_sum / max(metr.E_struct_sum, eps);
 % Toplam enerji ve ortalama mekanik güç
 metr.energy_tot_sum = metr.E_orifice_sum + metr.E_struct_sum;
-try
-    if isfield(ts,'P_sum') && ~isempty(ts.P_sum)
-        metr.P_mech_sum = mean(ts.P_sum(idx));
-    else
-        metr.P_mech_sum = NaN;
-    end
-catch
-    metr.P_mech_sum = NaN;
+metr.P_mech_sum = NaN;
+if isfield(ts,'P_sum') && ~isempty(ts.P_sum)
+    metr.P_mech_sum = mean(ts.P_sum(idx));
 end
 
 % Seçilen pencere içindeki enerji birikimleri
@@ -158,12 +147,9 @@ else
 end
 
 % ----------------------- PF metrikleri (isteğe bağlı) -----------------
-try
-    if isfield(ts,'PF')
-        PF_abs = abs(ts.PF(idx,:));
-        metr.PF_p95 = quantile(PF_abs(:,ws), 0.95);
-    end
-catch
+if isfield(ts,'PF') && ~isempty(ts.PF)
+    PF_abs = abs(ts.PF(idx,:));
+    metr.PF_p95 = quantile(PF_abs(:,ws), 0.95);
 end
 
 % Parametrelerden gerekli alanlar kayıt altına alınır
