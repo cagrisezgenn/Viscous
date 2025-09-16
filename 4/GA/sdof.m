@@ -51,7 +51,7 @@ rec = recs(1);  t = rec.t; ag = rec.ag;
 win = Utils.make_arias_window(t, ag); t5 = win.t5; t95 = win.t95;
 
 %% Damperless and damper responses
-[x0,a_rel0] = Utils.lin_MCK(t, ag, M, C0, K);
+[x0,a_rel0] = solve_linear_mck(t, ag, M, C0, K);
      [x_d,a_d,diag_d] = mck_with_damper(t, ag, M, C0, K, k_sd, c_lam0, Lori, ...
      orf, rho, Ap, Ao, Qcap_big, mu_ref, thermal, T0_C, T_ref_C, b_mu, ...
     c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, ...
@@ -131,3 +131,24 @@ fprintf(['Self-check zeta1: %.3f%% (dampersiz) vs %.3f%% (damperli); ' ...
          'IDR_{max}0=%.4g; IDR_{max}d=%.4g\n'], ...
         100*zeta0, 100*zeta_d, x10_max_0, x10_max_damperli, ...
         a10abs_max_0, a10abs_max_damperli, IDR_max_0, IDR_max_damperli);
+
+%% Local helpers
+function [x,a_rel] = solve_linear_mck(t, ag, M, C, K)
+%SOLVE_LINEAR_MCK Integrate linear MCK response to ground acceleration.
+    n = size(M,1);
+    r = ones(n,1);
+
+    ag_interp = griddedInterpolant(t, ag, 'linear', 'nearest');
+    odefun = @(tt,z) [ ...
+        z(n+1:end); ...
+        M \ (-C*z(n+1:end) - K*z(1:n) - M*r*ag_interp(tt)) ...
+    ];
+
+    z0 = zeros(2*n,1);
+    opts = odeset('RelTol',1e-3,'AbsTol',1e-6);
+    sol = ode15s(odefun, [t(1) t(end)], z0, opts);
+
+    z = deval(sol, t).';
+    x = z(:,1:n);
+    a_rel = (-(M \ (C*z(:,n+1:end).' + K*z(:,1:n).')).' - ag.*r.');
+end

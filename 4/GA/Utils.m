@@ -1,6 +1,6 @@
 % Bu dosya, farklÄ± statik yardÄ±mcÄ± fonksiyonlarÄ± barÄ±ndÄ±ran Utils sÄ±nÄ±fÄ±nÄ± tanÄ±mlar.
 classdef Utils
-%UTILS KÃ¼Ã§Ã¼k yardÄ±mcÄ± fonksiyonlarÄ± statik yÃ¶ntemler olarak toplayan sÄ±nÄ±f.
+%UTILS Küçük yardımcı fonksiyonları statik yöntemler olarak toplayan sınıf.
     methods(Static)
         %% YumuÅak Minimum
         function y = softmin(a,b,epsm)
@@ -129,21 +129,6 @@ classdef Utils
             params.c_lam0 = c_lam0;
         end
 
-        %% Lineer MCK ÃÃ¶zÃ¼mÃ¼
-        function [x,a] = lin_MCK(t,ag,M,C,K)
-            % Lineer MCK sistemi iÃ§in yer hareketi altÄ±ndaki tepkiyi Ã§Ã¶zer.
-            % Ãrnek kullanÄ±m: [x,a] = Utils.lin_MCK(t, ag, M, C, K);
-            n = size(M,1); r = ones(n,1);
-            agf = griddedInterpolant(t,ag,'linear','nearest');
-            odef = @(tt,z)[ z(n+1:end); M \ ( -C*z(n+1:end) - K*z(1:n) - M*r*agf(tt) ) ];
-            z0 = zeros(2*n,1);
-            opts = odeset('RelTol',1e-3,'AbsTol',1e-6);
-            sol = ode15s(odef,[t(1) t(end)],z0,opts);
-            z = deval(sol,t).';
-            x = z(:,1:n);
-            a = ( -(M\(C*z(:,n+1:end).' + K*z(:,1:n).')).' - ag.*r.' );
-        end
-
         %% Arias Penceresi OluÅturma
         function win = make_arias_window(t, ag, varargin)
             % Arias yoÄunluÄu tabanlÄ± pencere oluÅturur.
@@ -208,69 +193,6 @@ classdef Utils
                 end
             else
                 v = val;
-            end
-        end
-
-        %% Tablo Degiskenini Guvenle Al
-        function v = table_get(tbl, var, defaultVal)
-            %TABLE_GET Tablo degiskenini guvenle dondurur.
-            if nargin < 3, defaultVal = [];
-            end
-            if istable(tbl) && ismember(var, tbl.Properties.VariableNames)
-                v = tbl.(var);
-                if isempty(v)
-                    v = defaultVal;
-                end
-            else
-                v = defaultVal;
-            end
-        end
-
-        %% Alan Mevcutsa Atama
-        function arr = assign_if_field(S, fname, arr, idx)
-            % Belirtilen alan mevcutsa deÄeri hedef dizinin idx konumuna atar.
-            % Ãrnek kullanÄ±m: Q = Utils.assign_if_field(m,'Q_q95',Q,k);
-            if isfield(S, fname)
-                arr(idx) = S.(fname);
-            end
-        end
-
-        %% JSON Yazma
-        function writejson(data, filename)
-            % Verilen veriyi JSON dosyasına yazar.
-            % Örnek kullanım: Utils.writejson(data,'cikti.json');
-            txt = jsonencode(data);
-            fid = fopen(filename,'w');
-            assert(fid~=-1, 'Utils:writejson:CannotOpen', 'Dosya açılamadı: %s', filename);
-            fwrite(fid, txt);
-            fclose(fid);
-        end
-
-        %% Ä°sim Temizleme
-        function s2 = sanitize_name(s)
-            % Dosya veya alan isimlerindeki geÃ§ersiz karakterleri temizler.
-            % Ãrnek kullanÄ±m: s2 = Utils.sanitize_name('Ã¶rnek?*ad');
-            if ~ischar(s) && ~isstring(s)
-                s = char(s);
-            end
-            s2 = regexprep(char(s),'[^a-zA-Z0-9_\- ]','_');
-        end
-
-        %% Zaman Serisi AÅaÄÄ± Ãrnekleme
-        function ts_ds = downsample_ts(ts, ds)
-            % Zaman serisi alanlarÄ±nÄ± verilen faktÃ¶rle seyrekleÅtirir.
-            % Ãrnek kullanÄ±m: ts_ds = Utils.downsample_ts(ts, 5);
-            if nargin < 2 || isempty(ds), ds = 5; end
-            fns = fieldnames(ts);
-            ts_ds = struct();
-            for i = 1:numel(fns)
-                val = ts.(fns{i});
-                if isnumeric(val) && ~isscalar(val)
-                    idx = 1:ds:size(val,1);
-                    ts_ds.(fns{i}) = val(idx,:,:);
-                else
-                    ts_ds.(fns{i}) = val;
-                end
             end
         end
 
