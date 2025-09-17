@@ -1460,9 +1460,9 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     [mu_t, rho_t, beta_t, p_vap_t] = fluid_props(T_o);
 
     % Orifice pressure losses and diagnostics via calc_orifice_force
-    params_cf = struct('Ap', Ap_story.', 'Ao', Ao_story.', 'mu', mu_t, 'rho', rho_t, ...
-        'Lori', Lori, 'orf', augment_orf(orf, softmin_eps), 'Q', Q, 'Qcap', Qcap_story.', ...
-        'use_Qsat', cfg.on.Qsat, 'parallel_count', n_orf_total.', 'active', active_mask.', 'p_up', p1);
+    params_cf = struct('Ap', Ap_story, 'Ao', Ao_story, 'mu', mu_t, 'rho', rho_t, ...
+        'Lori', Lori, 'orf', augment_orf(orf, softmin_eps), 'Q', Q, 'Qcap', Qcap_story, ...
+        'use_Qsat', cfg.on.Qsat, 'parallel_count', n_orf_total, 'active', active_mask, 'p_up', p1);
     [F_orf_raw, dP_eff_mat, Q_sat_mat, P_orf_per_mat, extra_cf] = calc_orifice_force(dvel, params_cf);
     dP_h_mat   = extra_cf.dP_h;
     dP_lam_mat = extra_cf.dP_lam;
@@ -1652,6 +1652,9 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         if ~isfield(orf_local,'p_cav_eff')
             orf_local.p_cav_eff = 0;
         end
+        if ~isfield(orf_local,'n_orf') || ~all(isfinite(orf_local.n_orf(:)))
+            orf_local.n_orf = 1;
+        end
     end
 
     function [mu_loc, rho_loc, beta_loc, p_vap_loc] = fluid_props(T_curr)
@@ -1688,8 +1691,8 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
             Lori_val = Lori;
         end
         Lori_mat = expand_to_size(Lori_val, sz);
-        active_mat = expand_to_size(util_getfield_default(params,'active', ones(1, sz(2))), sz);
-        parallel_mat = expand_to_size(util_getfield_default(params,'parallel_count', orf_loc.n_orf), sz);
+        active_mat = expand_to_size(util_getfield_default(params,'active', ones(sz)), sz);
+        parallel_mat = expand_to_size(util_getfield_default(params,'parallel_count', util_getfield_default(orf_loc,'n_orf',1)), sz);
         parallel_mat = max(parallel_mat, 1);
         p_up_mat = expand_to_size(util_getfield_default(params,'p_up', util_getfield_default(orf_loc,'p_amb',0)), sz);
 
