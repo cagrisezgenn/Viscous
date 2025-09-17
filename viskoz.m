@@ -1278,6 +1278,8 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         return;
     end
     r = ones(n,1);
+    Nvec = 1:Ns;
+    Mvec = 2:n;
 
     t  = double(t(:));
     ag = double(ag(:));
@@ -1299,7 +1301,16 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     % Orifice and piston areas scaled by parallel dampers
     Ap_story = Ap .* multi;
     Ao_story = Ao .* multi_nz;
-    n_orf_total = max(orf.n_orf .* multi_nz, 1);
+    n_orf_story = util_getfield_default(orf, 'n_orf', 1);
+    if isscalar(n_orf_story)
+        n_orf_story = repmat(n_orf_story, Ns, 1);
+    else
+        n_orf_story = reshape(n_orf_story, [], 1);
+        if numel(n_orf_story) ~= Ns
+            n_orf_story = expand_to_size(n_orf_story, [Ns, 1]);
+        end
+    end
+    n_orf_total = max(n_orf_story .* multi_nz, 1);
 
     % Ensure configuration structures exist and populate defaults
     if nargin < 27 || isempty(cfg), cfg = struct(); end
@@ -1442,8 +1453,6 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     T_s = min(max(T_s, Tmin), Tmax);
 
     % Story-level kinematics
-    Nvec = 1:Ns;
-    Mvec = 2:n;
     drift = x(:,Mvec) - x(:,Nvec);
     dvel  = v(:,Mvec) - v(:,Nvec);
 
@@ -1545,8 +1554,8 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         % Fluid properties at current temperature
         [mu_loc, rho_loc, beta_loc, p_vap_loc] = fluid_props(T_o_);
 
-        drift_ = x_(Mvec).' - x_(Nvec).';
-        dvel_  = v_(Mvec).' - v_(Nvec).';
+        drift_ = x_(Mvec) - x_(Nvec);
+        dvel_  = v_(Mvec) - v_(Nvec);
 
         V1 = V0_story + Ap_story .* drift_;
         V2 = V0_story - Ap_story .* drift_;
@@ -1555,7 +1564,7 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
 
         % Hydraulic losses (laminar + kv)
         params_rhs = struct('Ap', Ap_story, 'Ao', Ao_story, 'mu', mu_loc, 'rho', rho_loc, ...
-            'Lori', Lori, 'orf', augment_orf(orf, softmin_eps), 'Q', Q_', 'Qcap', Qcap_story, ...
+            'Lori', Lori, 'orf', augment_orf(orf, softmin_eps), 'Q', Q_, 'Qcap', Qcap_story, ...
             'use_Qsat', cfg.on.Qsat, 'parallel_count', n_orf_total, 'active', active_mask, 'p_up', p1_);
         [~, dP_eff_rhs, Q_sat_rhs, ~, extra_rhs] = calc_orifice_force(dvel_, params_rhs);
         dP_h = extra_rhs.dP_h;
@@ -1588,15 +1597,15 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         end
 
         if cfg.on.pressure_ode
-            dp1 = (beta_loc ./ V1) .* (-Q_' - Q_leak - Ap_story .* dvel_);
-            dp2 = (beta_loc ./ V2) .* (+Q_' + Q_leak + Ap_story .* dvel_);
+            dp1 = (beta_loc ./ V1) .* (-Q_ - Q_leak - Ap_story .* dvel_);
+            dp2 = (beta_loc ./ V2) .* (+Q_ + Q_leak + Ap_story .* dvel_);
         else
             dp1 = zeros(Ns,1);
             dp2 = zeros(Ns,1);
         end
         if cfg.on.cavitation
-            mask1 = (p1_ <= p_vap_loc) & ((-Q_' - Q_leak - Ap_story .* dvel_) < 0);
-            mask2 = (p2_ <= p_vap_loc) & ((+Q_' + Q_leak + Ap_story .* dvel_) < 0);
+            mask1 = (p1_ <= p_vap_loc) & ((-Q_ - Q_leak - Ap_story .* dvel_) < 0);
+            mask2 = (p2_ <= p_vap_loc) & ((+Q_ + Q_leak + Ap_story .* dvel_) < 0);
             dp1(mask1) = 0;
             dp2(mask2) = 0;
         end
@@ -1607,7 +1616,7 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
             sgn_pf_rhs = tanh(20*dvel_);
             dp_pf_rhs = sgn_pf_rhs .* max(0, sgn_pf_rhs .* dp_pf_rhs);
         end
-        F_story_rhs = k_sd * drift_' + (dp_pf_rhs .* Ap_story) * w_pf;
+        F_story_rhs = k_sd * drift_ + (dp_pf_rhs .* Ap_story) * w_pf;
 
         Fdev = zeros(n,1);
         Fdev(Nvec) = Fdev(Nvec) - F_story_rhs;
@@ -1615,8 +1624,8 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         dv = M \ ( -C*v_ - K*x_ - Fdev - M*r*agf(tt) );
 
         if cfg.use_thermal
-            P_lam = dP_lam .* Q_';
-            P_kv  = dP_kv  .* Q_';
+            P_lam = dP_lam .* Q_;
+            P_kv  = dP_kv  .* Q_;
             P_tot = sum(P_lam + P_kv);
             P_tot = max(P_tot, 0);
             dT_o = ( P_tot ...
