@@ -1278,6 +1278,8 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         return;
     end
     r = ones(n,1);
+    Nvec = 1:Ns;
+    Mvec = 2:n;
 
     t  = double(t(:));
     ag = double(ag(:));
@@ -1451,8 +1453,6 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     T_s = min(max(T_s, Tmin), Tmax);
 
     % Story-level kinematics
-    Nvec = 1:Ns;
-    Mvec = 2:n;
     drift = x(:,Mvec) - x(:,Nvec);
     dvel  = v(:,Mvec) - v(:,Nvec);
 
