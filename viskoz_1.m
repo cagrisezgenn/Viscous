@@ -1329,7 +1329,7 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
                    'Rkv',  true; ...
                    'CdRe', true; ...
                    'Qsat', true; ...
-                   'hyd_inertia', false; ...
+                   'hyd_inertia', true; ...
                    'leak', false; ...
                    'pressure_ode', true};
     for k = 1:size(on_defaults,1)
@@ -1350,8 +1350,6 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     Qcap_scale   = util_getfield_default(cfg.num, 'Qcap_scale', 1.0);
     Vmin_fac     = util_getfield_default(cfg.num, 'Vmin_fac', 0.97);
     K_leak       = util_getfield_default(cfg.num, 'K_leak', 0.0);
-    Lh_floor     = util_getfield_default(cfg.num, 'Lh_floor', 5e6);
-    dQ_max       = util_getfield_default(cfg.num, 'dQ_max', 500);
 
     % Thermal properties (aligned with GA_eski/init_damper_params)
     thermal = util_getfield_default(struct('tmp',thermal),'tmp', struct());
@@ -1396,17 +1394,17 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     % Time-step heuristics for stiff ODE solvers
     dt = median(diff(t));
     solver_cfg = util_getfield_default(cfg, 'solver', struct());
-    relTol_default = 5e-3;
+    relTol_default = 1e-2;
     RelTol    = util_getfield_default(solver_cfg, 'RelTol', relTol_default);
     maxStep_default = max(12*dt, 3e-3);
     MaxStep   = util_getfield_default(solver_cfg, 'MaxStep', maxStep_default);
     initStep_default = max(0.25*dt, 1e-3);
     InitialStep = util_getfield_default(solver_cfg, 'InitialStep', initStep_default);
     InitialStep = min(InitialStep, MaxStep);
-    AbsTolScale = util_getfield_default(solver_cfg, 'AbsTolScale', 1);
+    AbsTolScale = util_getfield_default(solver_cfg, 'AbsTolScale', 10);
     AbsX = util_getfield_default(solver_cfg, 'AbsX', 1e-4);
     AbsV = util_getfield_default(solver_cfg, 'AbsV', 1e-3);
-    AbsP = util_getfield_default(solver_cfg, 'AbsP', 5e3);
+    AbsP = util_getfield_default(solver_cfg, 'AbsP', 2e4);
     AbsQ = util_getfield_default(solver_cfg, 'AbsQ', 1e-4);
     AbsT = util_getfield_default(solver_cfg, 'AbsT', 5e-3);
     if isfield(solver_cfg, 'AbsTol') && ~isempty(solver_cfg.AbsTol)
@@ -1434,6 +1432,34 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     if isfield(solver_cfg, 'NonNegative') && ~isempty(solver_cfg.NonNegative)
         opts = odeset(opts, 'NonNegative', solver_cfg.NonNegative);
     end
+    primary_solver_cfg = lower(util_getfield_default(solver_cfg, 'PrimarySolver', 'auto'));
+    secondary_solver_cfg = lower(util_getfield_default(solver_cfg, 'SecondarySolver', 'auto'));
+    prefer_ode23tb = false;
+    if strcmp(primary_solver_cfg, 'ode23tb')
+        prefer_ode23tb = true;
+    elseif strcmp(primary_solver_cfg, 'ode15s')
+        prefer_ode23tb = false;
+    else
+        prefer_ode23tb = cfg.on.hyd_inertia && cfg.on.pressure_ode;
+    end
+    solver_sequence = {};
+    if prefer_ode23tb
+        solver_sequence{end+1} = 'ode23tb';
+        fallback_solver = 'ode15s';
+    else
+        solver_sequence{end+1} = 'ode15s';
+        fallback_solver = 'ode23tb';
+    end
+    if any(strcmp(secondary_solver_cfg, {'ode15s','ode23tb'}))
+        if ~strcmp(secondary_solver_cfg, solver_sequence{1})
+            solver_sequence{end+1} = secondary_solver_cfg;
+        end
+    else
+        if ~strcmp(fallback_solver, solver_sequence{1})
+            solver_sequence{end+1} = fallback_solver;
+        end
+    end
+    solver_sequence = unique(solver_sequence, 'stable');
     % ODE integration with robust fallbacks
     rhs_fcn = @(tt,z) rhs(tt,z);
     tspan = [t(1) t(end)];
@@ -1452,47 +1478,52 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     warning('error', warn_id_tb);
     warn_cleanup_tb = onCleanup(@() warning(warn_state_tb.state, warn_id_tb)); %#ok<NASGU>
 
-    solver_used = 'ode15s';
+    sol = [];
+    solver_used = '';
     solver_rel_tol = RelTol;
-    solver_opts = opts;
-    try
-        sol = ode15s(rhs_fcn, tspan, z0, solver_opts);
-    catch ME1
-        warning('mck_with_damper:ode15sFail', 'ode15s failed (%s); retrying with ode23tb.', ME1.message);
-        solver_used = 'ode23tb';
-        solver_rel_tol = max(RelTol*1.5, 1e-2);
-        solver_opts = odeset(opts, 'RelTol', solver_rel_tol, 'MaxOrder', 2);
+    solver_opts_used = opts;
+    last_error = []; %#ok<NASGU>
+    for solver_idx = 1:numel(solver_sequence)
+        candidate_solver = solver_sequence{solver_idx};
+        [candidate_opts, candidate_rel_tol] = make_solver_opts(candidate_solver, opts, RelTol, solver_cfg);
+        solver_handle = str2func(candidate_solver);
         try
-            sol = ode23tb(rhs_fcn, tspan, z0, solver_opts);
-        catch ME1b
-            if strcmp(ME1b.identifier, warn_id_tb)
-                warning('mck_with_damper:ode23tbFail', 'ode23tb failed (%s).', ME1b.message);
+            sol = solver_handle(rhs_fcn, tspan, z0, candidate_opts);
+            solver_used = candidate_solver;
+            solver_rel_tol = candidate_rel_tol;
+            solver_opts_used = candidate_opts;
+            break;
+        catch ME1
+            warn_id_fail = sprintf('mck_with_damper:%sFail', candidate_solver);
+            warning(warn_id_fail, '%s failed (%s).', candidate_solver, ME1.message);
+            last_error = ME1;
+            if solver_idx == numel(solver_sequence)
+                rethrow(ME1);
             end
-            rethrow(ME1b);
         end
     end
+    if isempty(sol)
+        error('mck_with_damper:noSolverSucceeded', 'No ODE solver succeeded.');
+    end
 
-    if sol.x(end) < t(end) - 1e-9 && strcmp(solver_used, 'ode15s')
+    if sol.x(end) < t(end) - 1e-9 && strcmp(solver_used, 'ode15s') && any(strcmp('ode23tb', solver_sequence))
         warning('mck_with_damper:ode15sEarlyExit', ...
             'ode15s stopped early at t=%.3f s; rerunning with ode23tb.', sol.x(end));
-        solver_used = 'ode23tb';
-        solver_rel_tol = max(RelTol*1.5, 1e-2);
-        solver_opts = odeset(opts, 'RelTol', solver_rel_tol, 'MaxOrder', 2);
+        [tb_opts_retry, tb_rel_tol_retry] = make_solver_opts('ode23tb', opts, RelTol, solver_cfg);
         try
-            sol = ode23tb(rhs_fcn, tspan, z0, solver_opts);
+            sol = ode23tb(rhs_fcn, tspan, z0, tb_opts_retry);
+            solver_used = 'ode23tb';
+            solver_rel_tol = tb_rel_tol_retry;
+            solver_opts_used = tb_opts_retry;
         catch ME1b
-            if strcmp(ME1b.identifier, warn_id_tb)
-                warning('mck_with_damper:ode23tbFail', 'ode23tb failed (%s).', ME1b.message);
-            end
-            rethrow(ME1b);
+            warning('mck_with_damper:ode23tbFail', 'ode23tb failed (%s) during early-exit retry.', ME1b.message);
         end
     end
-
     t_end_sol = sol.x(end);
     if t_end_sol < t(end) - 1e-9
         extend_rel_tol = max(solver_rel_tol*1.2, 1e-2);
         extend_max_step = max(MaxStep*0.5, 1e-3);
-        extend_opts = odeset(solver_opts, 'RelTol', extend_rel_tol, 'MaxStep', extend_max_step);
+        extend_opts = odeset(solver_opts_used, 'RelTol', extend_rel_tol, 'MaxStep', extend_max_step);
         solver_handle = str2func(solver_used);
         try
             sol2 = solver_handle(rhs_fcn, [t_end_sol t(end)], sol.y(:,end), extend_opts);
@@ -1519,6 +1550,14 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     p1 = z(:,2*n + (1:Ns));
     p2 = z(:,2*n + Ns + (1:Ns));
     Q  = z(:,2*n + 2*Ns + (1:Ns));
+
+    % Reset inactive hydraulic states to ambient values
+    inactive_cols = find(~active_mask);
+    if ~isempty(inactive_cols)
+        p1(:,inactive_cols) = p_amb;
+        p2(:,inactive_cols) = p_amb;
+        Q(:,inactive_cols)  = 0;
+    end
     T_o = z(:,end-1);
     T_s = z(:,end);
 
@@ -1549,11 +1588,7 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
 
     % Cavitation-effective downstream pressure
     cav_sf = util_getfield_default(orf, 'cav_sf', 0.9);
-    if cfg.on.cavitation
-        p2_eff = max(p2, cav_sf * p_vap_t);
-    else
-        p2_eff = p2;
-    end
+    p2_eff = max(p2, cav_sf * p_vap_t);
 
     % Pressure force contribution with PF ramp
     w_pf_vec = util_pf_weight(t, cfg) * cfg.PF.gain;
@@ -1590,11 +1625,7 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     end
 
     % Cavitation mask based on downstream pressure limit
-    if cfg.on.cavitation
-        cav_mask = p2 <= cav_sf * p_vap_t;
-    else
-        cav_mask = false(size(p2));
-    end
+    cav_mask = p2 <= cav_sf * p_vap_t;
 
     % Assemble time-series diagnostics
     ts = struct();
@@ -1625,6 +1656,22 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     ts.E_struct    = E_struct;
     ts.P_orf_per   = P_orf_per_mat;
 
+
+    function [opts_out, rel_tol_out] = make_solver_opts(solver_name, base_opts, base_rel_tol, solver_cfg_local)
+        solver_name = lower(solver_name);
+        switch solver_name
+            case 'ode15s'
+                opts_out = base_opts;
+                rel_tol_out = base_rel_tol;
+            case 'ode23tb'
+                rel_factor = util_getfield_default(solver_cfg_local, 'ode23tbRelTolFactor', 1.5);
+                rel_tol_out = max(base_rel_tol * rel_factor, 1e-2);
+                max_order_tb = util_getfield_default(solver_cfg_local, 'ode23tbMaxOrder', 2);
+                opts_out = odeset(base_opts, 'RelTol', rel_tol_out, 'MaxOrder', max_order_tb);
+            otherwise
+                error('mck_with_damper:UnknownSolver', 'Unsupported solver %s', solver_name);
+        end
+    end
 %% Nested helper functions -------------------------------------------------
     function dz = rhs(tt, z)
         x_  = z(1:n);
@@ -1647,6 +1694,8 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         V2 = max(V2, Vmin_story);
 
         % Hydraulic losses (laminar + kv)
+
+
         params_rhs = struct('Ap', Ap_story, 'Ao', Ao_story, 'mu', mu_loc, 'rho', rho_loc, ...
             'Lori', Lori, 'orf', augment_orf(orf, softmin_eps), 'Q', Q_, 'Qcap', Qcap_story, ...
             'use_Qsat', cfg.on.Qsat, 'parallel_count', n_orf_total, 'active', active_mask, 'p_up', p1_, 'flags', cfg.on);
@@ -1657,49 +1706,50 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
 
         % Cavitation clamp and hydraulic dynamics
         cav_sf_loc = util_getfield_default(orf, 'cav_sf', 0.9);
-        if cfg.on.cavitation
-            p2_eff_ = max(p2_, cav_sf_loc * p_vap_loc);
-        else
-            p2_eff_ = p2_;
-        end
+        p2_eff_ = max(p2_, cav_sf_loc * p_vap_loc);
         dP_raw = p1_ - p2_eff_;
         if isfinite(dP_cap)
             dP_drive = dP_cap * tanh(dP_raw ./ max(dP_cap, 1));
         else
             dP_drive = dP_raw;
         end
+        dP_drive = dP_drive .* active_mask;
 
         Lh_story = rho_loc * Lori ./ max(Ao_story.^2, 1e-18);
-        Lh_story = max(Lh_story, Lh_floor);
-        Lh_story(~active_mask) = Inf;
+        Lh_story = Lh_story .* active_mask;
 
+        % Restrict hydraulic inertia to active dampers
+        dQ = zeros(Ns,1);
         if cfg.use_orifice && cfg.on.hyd_inertia
-            dQ = (dP_drive - dP_h) ./ Lh_story;
-            dQ(~isfinite(dQ)) = 0;
-            if isfinite(dQ_max)
-                dQ = min(max(dQ, -dQ_max), dQ_max);
+            idx_active = (active_mask & (Lh_story > 0));
+            if any(idx_active)
+                denom = Lh_story(idx_active);
+                denom(denom < 1e-9) = 1e-9;
+                dQ(idx_active) = (dP_drive(idx_active) - dP_h(idx_active)) ./ denom;
             end
-            dQ(~active_mask) = 0;
-        else
-            dQ = zeros(Ns,1);
         end
 
         if cfg.on.leak
-            Q_leak = K_leak * (p1_ - p2_);
+            Q_leak = K_leak .* (p1_ - p2_);
+            Q_leak = Q_leak .* active_mask;
         else
             Q_leak = zeros(Ns,1);
         end
 
+        dp1 = zeros(Ns,1);
+        dp2 = zeros(Ns,1);
         if cfg.on.pressure_ode
-            dp1 = (beta_loc ./ V1) .* (-Q_ - Q_leak - Ap_story .* dvel_);
-            dp2 = (beta_loc ./ V2) .* (+Q_ + Q_leak + Ap_story .* dvel_);
-        else
-            dp1 = zeros(Ns,1);
-            dp2 = zeros(Ns,1);
+            beta_over_V1 = (beta_loc ./ V1);
+            beta_over_V2 = (beta_loc ./ V2);
+            idx_active = active_mask;
+            if any(idx_active)
+                dp1(idx_active) = beta_over_V1(idx_active) .* (-Q_(idx_active) - Q_leak(idx_active) - Ap_story(idx_active) .* dvel_(idx_active));
+                dp2(idx_active) = beta_over_V2(idx_active) .* (+Q_(idx_active) + Q_leak(idx_active) + Ap_story(idx_active) .* dvel_(idx_active));
+            end
         end
         if cfg.on.cavitation
-            mask1 = (p1_ <= p_vap_loc) & ((-Q_ - Q_leak - Ap_story .* dvel_) < 0);
-            mask2 = (p2_ <= p_vap_loc) & ((+Q_ + Q_leak + Ap_story .* dvel_) < 0);
+            mask1 = active_mask & (p1_ <= p_vap_loc) & ((-Q_ - Q_leak - Ap_story .* dvel_) < 0);
+            mask2 = active_mask & (p2_ <= p_vap_loc) & ((+Q_ + Q_leak + Ap_story .* dvel_) < 0);
             dp1(mask1) = 0;
             dp2(mask2) = 0;
         end
