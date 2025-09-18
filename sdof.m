@@ -211,6 +211,10 @@ function params = default_params()
     params.Lgap = 0.055;
     % Orifis + hazne parametreleri: smooth_eps0 yumuşatma, reservoir ise
     % lineer yay/damper katsayıları ile minimum basıncı temsil eder.
+    % p_cav_eff buhar basıncı tabanını belirler; varsayılan olarak p_amb'e
+    % (veya orf.p_supply_cap ile belirtilen başka bir değere) kadar olan
+    % aralıkta çekiş kuvvetlerini sınırlar ve hazne basıncı ambientteyken
+    % dahi sınırlı bir emiş düşümü sağlar.
     params.orf = struct('Cd0',0.61,'CdInf',0.80,'Rec',3000,'p_exp',1.1, ...
         'p_amb',1.0e5,'p_cav_eff',2.0e3,'cav_sf',0.90,'d_o',3.0e-3,'veps',0.10, ...
         'smooth_eps0',5.0e2,'reservoir',struct('p_min',2.0e3,'k_lin',4.0e8, ...
@@ -261,7 +265,10 @@ function params = build_params_local(params)
     params.dP_max = 0;
     if isfield(params,'orf') && isfield(params.orf,'CdInf') && ...
             isfield(params,'Ao') && isfield(params,'rho') && isfield(params,'Ap')
-        dP_cav = max(params.orf.p_amb - params.orf.p_cav_eff, 0) * params.orf.cav_sf;
+        p_cav_floor = max(params.orf.p_cav_eff, 0);
+        p_supply_cap = getfield_default_local(params.orf,'p_supply_cap', params.orf.p_amb);
+        p_supply_cap = max(p_supply_cap, p_cav_floor);
+        dP_cav = max(p_supply_cap - p_cav_floor, 0) * params.orf.cav_sf;
         stroke_ref = getfield_default_local(params,'stroke_ref',params.Lgap);
         V_ref = max(getfield_default_local(params,'V_oil_per',params.Ap*(2*params.Lgap)), 1e-12);
         dV_struct = max(params.Ap * stroke_ref, 0);
@@ -944,7 +951,12 @@ function [F_orf, dP_total, Q, P_orf_per, Cd] = calc_orifice_force_local(dvel, pa
     p_back = max(p_back, p_min);
 
     dP_supply = max(p_up - p_back, 0);
-    dP_cav = max((params.orf.p_amb - p_back) .* params.orf.cav_sf, 0);
+    p_cav_floor = max(params.orf.p_cav_eff, 0);
+    p_supply_cap = getfield_default_local(params.orf,'p_supply_cap', params.orf.p_amb);
+    p_supply_cap = max(p_supply_cap, p_cav_floor);
+    p_supply_cap = p_supply_cap + zeros(size(p_up));
+    p_up_cav = min(max(p_up, p_cav_floor), p_supply_cap);
+    dP_cav = max((p_up_cav - p_cav_floor) .* params.orf.cav_sf, 0);
     dP_allow = max(min(dP_supply, dP_cav), 0);
     if isfinite(dP_max)
         dP_kv = min(dP_kv, dP_max);
