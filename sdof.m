@@ -23,6 +23,8 @@ cp_oil = params.cp_oil;   cp_steel = params.cp_steel;
 steel_to_oil_mass_ratio = params.steel_to_oil_mass_ratio;
 n_dampers_per_story = params.n_dampers_per_story;
 story_mask = params.story_mask;
+k_hyd_single = params.k_hyd_single;
+k_p_single = params.k_p;
 Kd = params.Kd; Ebody = params.Ebody; Gsh = params.Gsh;
 
 Ap = params.Ap;   Ao = params.Ao;   k_sd = params.k_sd;
@@ -64,6 +66,8 @@ try
     Ap = params_override.Ap;
     Ao = params_override.Ao;
     k_sd = params_override.k_sd;
+    k_hyd_single = params_override.k_hyd_single;
+    k_p_single = params_override.k_p;
     c_lam0 = params_override.c_lam0;
     c_lam_min = params_override.c_lam_min;
     Qcap_big = params_override.Qcap_big;
@@ -82,7 +86,7 @@ win = make_arias_window_local(t, ag); t5 = win.t5; t95 = win.t95;
 %% Damperless and damper responses
 [x0,a_rel0] = solve_linear_mck_local(t, ag, M, C0, K);
 [x_d,a_d,diag_d] = mck_with_damper_local(t, ag, M, C0, K, k_sd, c_lam0, Lori, ...
-    orf, rho, Ap, Ao, mu_ref, thermal, T0_C, T_ref_C, b_mu, ...
+    orf, rho, Ap, Ao, k_hyd_single, k_p_single, mu_ref, thermal, T0_C, T_ref_C, b_mu, ...
     c_lam_min, c_lam_max, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, ...
     story_mask, n_dampers_per_story, V_oil_per, cfg, dP_max);
 
@@ -205,12 +209,16 @@ function params = default_params()
 
     params.Dp   = 0.125;
     params.Lgap = 0.055;
+    % Orifis + hazne parametreleri: smooth_eps0 yumuşatma, reservoir ise
+    % lineer yay/damper katsayıları ile minimum basıncı temsil eder.
     params.orf = struct('Cd0',0.61,'CdInf',0.80,'Rec',3000,'p_exp',1.1, ...
-        'p_amb',1.0e5,'p_cav_eff',2.0e3,'cav_sf',0.90,'d_o',3.0e-3,'veps',0.10);
+        'p_amb',1.0e5,'p_cav_eff',2.0e3,'cav_sf',0.90,'d_o',3.0e-3,'veps',0.10, ...
+        'smooth_eps0',5.0e2,'reservoir',struct('p_min',2.0e3,'k_lin',4.0e8, ...
+        'c_lin',2.0e5,'V_ref',2.5e-4));
     params.Lori = 0.10;
     params.mu_ref = 0.9;
 
-    params.Kd = 1.6e9;
+    params.Kd = 1.5e9;   % Yağın hacimsel modülü [Pa]
     params.Ebody = 2.1e11;
     params.Gsh = 79e9;
     params.d_w = 12e-3;
@@ -224,7 +232,7 @@ function params = default_params()
     params.T_ref_C = 25;
     params.b_mu = -0.013;
     params.thermal = struct('hA_W_perK',450,'T_env_C',25,'max_iter',3, ...
-        'tol_K',0.5,'relax',0.5,'dT_max',80);
+        'tol_K',0.5,'relax',0.5,'T_floor_C',-40,'T_ceil_C',180);
 
     params.steel_to_oil_mass_ratio = 1.5;
     params.n_dampers_per_story = 1;
@@ -235,7 +243,10 @@ function params = default_params()
     params.c_lam_min_frac = 0.05;
 
     cfg = struct();
-    cfg.PF = struct('mode','ramp','tau',0,'gain',1.0,'t_on',0,'auto_t_on',true,'k',0.01);
+    % cfg.PF akümülatör/valf fiziğini tarif eder; pf_weight_local artık yoktur.
+    cfg.PF = struct('mode','accumulator', ...
+        'precharge_Pa',1.05e5,'gas_gamma',1.2,'V_gas_ref',2.5e-4, ...
+        'bleed_coeff',2.0e5,'notes','Fiziksel akümülatör modeli; kuvvet ölçekleme yok');
     cfg.on = struct('pressure_force',true,'mu_floor',false);
     cfg.compat_simple = false;
     cfg.num = struct('mu_min_phys',0.6,'dP_cap',NaN);
@@ -251,7 +262,10 @@ function params = build_params_local(params)
     if isfield(params,'orf') && isfield(params.orf,'CdInf') && ...
             isfield(params,'Ao') && isfield(params,'rho') && isfield(params,'Ap')
         dP_cav = max(params.orf.p_amb - params.orf.p_cav_eff, 0) * params.orf.cav_sf;
-        dP_struct = params.Kd * max(params.Ap, 1e-12);
+        stroke_ref = getfield_default_local(params,'stroke_ref',params.Lgap);
+        V_ref = max(getfield_default_local(params,'V_oil_per',params.Ap*(2*params.Lgap)), 1e-12);
+        dV_struct = max(params.Ap * stroke_ref, 0);
+        dP_struct = params.Kd * dV_struct / V_ref;
         dP_max = min(dP_struct, dP_cav);
         cfg_dP = NaN;
         if isfield(params,'cfg') && isfield(params.cfg,'num')
@@ -335,35 +349,58 @@ function params = recompute_damper_params_local(params)
     Ap_eff = nd * Ap_single;
     Ao_eff = nd * Ao_damper;
 
+    V_oil_geom_single = Ap_single*(2*params.Lgap) + params.n_orf*Ao_single*params.Lori;
+    V_oil_extra = getfield_default_local(params,'V_oil_extra',0);
+    V_oil_single = max(V_oil_geom_single + V_oil_extra, 0);
+
     rho_loc = getfield_default_local(params,'rho',850);
     Lh = rho_loc * params.Lori / max(Ao_eff, 1e-12);
 
-    k_h = params.Kd * Ap_single^2 / params.Lgap;
-    k_s = params.Ebody * Ap_single / params.Lgap;
-    k_hyd = 1 / (1/k_h + 1/k_s);
+    k_bulk_single = params.Kd * Ap_single^2 / max(V_oil_single, 1e-12);
+    k_body_single = params.Ebody * Ap_single / max(params.Lgap, 1e-12);
+    inv_k_bulk = inf;
+    if isfinite(k_bulk_single) && k_bulk_single > 0
+        inv_k_bulk = 1 / k_bulk_single;
+    end
+    inv_k_body = inf;
+    if isfinite(k_body_single) && k_body_single > 0
+        inv_k_body = 1 / k_body_single;
+    end
+    inv_sum = inv_k_bulk + inv_k_body;
+    if inv_sum <= 0
+        k_hyd_single = 0;
+    else
+        k_hyd_single = 1 / inv_sum;
+    end
     k_p = params.Gsh * params.d_w^4 / (8 * params.n_turn * params.D_m^3);
-    k_sd_simple = k_hyd + k_p;
-    k_sd_adv    = nd * (k_hyd + k_p);
+    k_sd_simple = k_hyd_single + k_p;
+    k_sd_adv    = nd * (k_hyd_single + k_p);
 
     c_lam_single = (128/pi) * params.mu_ref * params.Lori * Ap_single^2 / (params.orf.d_o^4);
     c_lam0 = nd * c_lam_single;
 
-    V_oil_geom = Ap_single*(2*params.Lgap) + params.n_orf*Ao_single*params.Lori;
-    V_oil_extra = getfield_default_local(params,'V_oil_extra',0);
-    params.V_oil_per = max(V_oil_geom + V_oil_extra, 0);
+    params.V_oil_per = V_oil_single;
 
     params.Ap = Ap_single;
     params.Ao = Ao_damper;
     params.Ap_eff = Ap_eff;
     params.Ao_eff = Ao_eff;
     params.Lh = Lh;
-    params.V_oil_total = params.V_oil_per * nd;
+    params.V_oil_single = V_oil_single;
+    params.V_oil_total = V_oil_single * nd;
     params.n_parallel = nd;
     params.k_p = k_p;
+    params.k_hyd_single = k_hyd_single;
+    params.k_bulk_single = k_bulk_single;
     params.k_sd_simple = k_sd_simple;
     params.k_sd_adv = k_sd_adv;
     params.k_sd = k_sd_adv;
     params.c_lam0 = c_lam0;
+    if isfinite(k_hyd_single) && k_hyd_single > 0
+        params.hydraulic_compliance_single = 1 ./ k_hyd_single;
+    else
+        params.hydraulic_compliance_single = inf;
+    end
 end
 
 function val = getfield_default_local(S, fname, defaultVal)
@@ -387,43 +424,6 @@ function y = softmin_local(a,b,epsm)
         epsm = 1e5;
     end
     y = 0.5*(a + b - sqrt((a - b).^2 + epsm.^2));
-end
-
-function w = pf_weight_local(t, cfg)
-    if nargin < 2 || ~isstruct(cfg), cfg = struct(); end
-    if ~isfield(cfg,'on') || ~isstruct(cfg.on), cfg.on = struct(); end
-    if ~isfield(cfg.on,'pressure_force'), cfg.on.pressure_force = true; end
-    if ~cfg.on.pressure_force
-        w = zeros(size(t));
-        return;
-    end
-    if ~isfield(cfg,'PF') || ~isstruct(cfg.PF), cfg.PF = struct(); end
-    if ~isfield(cfg.PF,'t_on'), cfg.PF.t_on = 0; end
-    if ~isfield(cfg.PF,'tau'),  cfg.PF.tau  = 0; end
-    if ~isfield(cfg.PF,'gain'), cfg.PF.gain = 1; end
-    if ~isfield(cfg,'compat_simple'), cfg.compat_simple = true; end
-    gain = cfg.PF.gain;
-    tau  = cfg.PF.tau;
-    if (~isfinite(tau) || tau == 0) && (~isfinite(gain) || abs(gain - 1) < eps)
-        w = ones(size(t));
-        return;
-    end
-    k = getfield_default_local(cfg.PF,'k',0.01);
-    tau_floor = 1e-6;
-    t = double(t);
-    if cfg.compat_simple
-        dt  = max(t - cfg.PF.t_on, 0);
-        tau_eff = max(tau, tau_floor);
-        w_local = 1 - exp(-dt ./ tau_eff);
-    else
-        k = max(k, tau_floor);
-        sp_dt = (log1p(exp(-abs((t - cfg.PF.t_on)./k))) + max((t - cfg.PF.t_on)./k, 0));
-        dt  = sp_dt .* k;
-        sp_tau = (log1p(exp(-abs((tau - tau_floor)./k))) + max((tau - tau_floor)./k, 0));
-        tau_eff = sp_tau .* k + tau_floor;
-        w_local = 1 - exp(-dt ./ tau_eff);
-    end
-    w = gain .* w_local;
 end
 
 function win = make_arias_window_local(t, ag, varargin)
@@ -632,7 +632,7 @@ function [x,a_rel] = solve_linear_mck_local(t, ag, M, C, K)
     a_rel = (-(M \ (C*z(:,nloc+1:end).' + K*z(:,1:nloc).')).' - ag.*r.');
 end
 
-function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap,Ao, mu_ref, ...
+function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap,Ao, k_hyd_single,k_p_single, mu_ref, ...
     thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_max,Lgap, cp_oil,cp_steel, ...
     steel_to_oil_mass_ratio, story_mask, n_dampers_per_story, V_oil_per, cfg, dP_max)
 
@@ -670,6 +670,25 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
             V_oil_vec = V_oil_vec(1) * ones(nStories,1);
         end
     end
+    if isscalar(k_hyd_single)
+        k_hyd_single_vec = k_hyd_single * ones(1,nStories);
+    else
+        k_hyd_single_vec = k_hyd_single(:).';
+        if numel(k_hyd_single_vec)~=nStories
+            k_hyd_single_vec = k_hyd_single_vec(1) * ones(1,nStories);
+        end
+    end
+    if isscalar(k_p_single)
+        k_p_single_vec = k_p_single * ones(1,nStories);
+    else
+        k_p_single_vec = k_p_single(:).';
+        if numel(k_p_single_vec)~=nStories
+            k_p_single_vec = k_p_single_vec(1) * ones(1,nStories);
+        end
+    end
+    active_mask = multi.' > 0;
+    k_hyd_single_vec(~active_mask) = 0;
+    k_p_single_vec(~active_mask) = 0;
 
     idx_To_start = 2*nloc + 1;
     idx_Ts_start = 2*nloc + nStories + 1;
@@ -700,9 +719,8 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
     hA_o_env = getfield_default_local(thermal,'hA_o_env', thermal.hA_W_perK);
     hA_s_env = getfield_default_local(thermal,'hA_s_env', thermal.hA_W_perK);
     T_env    = getfield_default_local(thermal,'T_env_C', T0_C);
-    dT_max   = getfield_default_local(thermal,'dT_max', Inf);
-
-    pf_hist = pf_weight_local(t(:), cfg);
+    T_floor  = getfield_default_local(thermal,'T_floor_C', -Inf);
+    T_ceil   = getfield_default_local(thermal,'T_ceil_C',  Inf);
 
     function dzdt = damper_ode(tt,z)
         x_loc = z(1:nloc);
@@ -752,13 +770,16 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
     E_struct = cumtrapz(t, P_struct);
 
     F_lin_hist = drift .* k_sd_vec;
+    F_hyd_hist = drift .* (k_hyd_single_vec .* multi.');
+    F_shear_hist = drift .* (k_p_single_vec .* multi.');
     ts = struct('dvel', dvel, 'story_force', F_story, ...
-        'F_components', struct('F_orf', F_orf_tot, 'F_lam', F_lam_tot, 'F_lin', F_lin_hist), ...
+        'F_components', struct('F_orf', F_orf_tot, 'F_lam', F_lam_tot, 'F_lin', F_lin_hist, ...
+            'F_hyd', F_hyd_hist, 'F_shear', F_shear_hist), ...
         'Q', Q_per, 'dP_total', dP_tot, 'Cd', Cd_hist, ...
         'mu_inst', mu_hist, 'c_lam_inst', c_lam_hist, ...
         'T_o', T_o, 'T_s', T_s, ...
         'P_visc', P_visc_per, 'P_orf', P_orf_per, ...
-        'E_orf', E_orf, 'E_struct', E_struct, 'pf_weight', pf_hist);
+        'E_orf', E_orf, 'E_struct', E_struct);
 
     function [F_story_out, F_orf_tot_out, F_lam_tot_out, dP_tot_out, Cd_out, mu_out, c_lam_out, Q_per_out, P_visc_per_out, P_orf_per_out] = ...
             damper_response(drift_loc, dvel_loc, T_o_loc, T_s_loc, time_loc)
@@ -768,13 +789,6 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         dvel_vec  = reshape(dvel_loc,  [], nStories);
         To_vec    = reshape(T_o_loc,   [], nStories);
         Ts_vec    = reshape(T_s_loc,   [], nStories); %#ok<NASGU>
-        if isscalar(time_loc)
-            pf_val = pf_weight_local(time_loc, cfg);
-            pf_vec = pf_val * ones(size(drift_vec,1),1);
-        else
-            pf_vec = pf_weight_local(time_loc(:), cfg);
-        end
-        pf_vec = pf_vec(:);
 
         mu_temp = mu_ref * exp(b_mu * (To_vec - T_ref_C));
         mu_temp = max(mu_temp, mu_floor);
@@ -797,19 +811,26 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         F_lam_single = c_lam_single_inst .* dvel_vec;
         F_lam_tot = F_lam_single .* multi.';
 
-        F_lin_tot = drift_vec .* k_sd_vec;
+        F_hyd_single = drift_vec .* k_hyd_single_vec;
+        F_shear_single = drift_vec .* k_p_single_vec;
+        F_hyd_tot = F_hyd_single .* multi.';
+        F_shear_tot = F_shear_single .* multi.';
+        F_lin_tot = F_hyd_tot + F_shear_tot;
         F_lin_per = zeros(size(F_lin_tot));
         mask_multi = multi.' > 0;
         F_lin_per(:,mask_multi) = F_lin_tot(:,mask_multi) ./ multi(mask_multi).';
 
-        params_orf = struct('Ap',Ap,'Ao',Ao,'orf',orf,'rho',rho,'F_lin',F_lin_per);
+        params_orf = struct('Ap',Ap,'Ao',Ao,'orf',orf,'rho',rho, ...
+            'F_hyd_single',F_hyd_single,'F_visc_single',F_lam_single, ...
+            'drift',drift_vec, ...
+            'cfgPF',getfield_default_local(cfg,'PF',struct()), ...
+            'k_hyd_single',k_hyd_single_vec,'multi',multi.');
         [F_orf_single, dP_tot, Q_per_val, P_orf_single_val, Cd_val] = ...
             calc_orifice_force_local(dvel_vec, params_orf, mu_temp, dP_max);
         F_orf_tot = F_orf_single .* multi.';
 
-        pf_apply = repmat(pf_vec, 1, nStories);
         F_resist = F_orf_tot + F_lam_tot;
-        F_story_val = F_lin_tot + (pf_apply .* F_resist);
+        F_story_val = F_lin_tot + F_resist;
 
         P_visc_single = c_lam_single_inst .* (dvel_vec.^2);
         P_orf_single = P_orf_single_val;
@@ -827,14 +848,15 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
     end
 
     function [dTo_dt, dTs_dt] = temperature_rates(T_o_loc, T_s_loc, P_visc_per_loc, P_orf_per_loc)
+        % Newton tipi ısı transferi: yağ/çelik kütleleri ortam sıcaklığına doğru
+        % hA katsayılarıyla soğur; sadece T_floor/T_ceil sayısal güvenlik için
+        % kullanılır, fiziksel olarak ortam sıcaklığının altına soğuma mümkündür.
         T_o_loc = T_o_loc(:); T_s_loc = T_s_loc(:);
         P_visc_per_loc = P_visc_per_loc(:);
         P_orf_per_loc = P_orf_per_loc(:);
         dTo_dt = zeros(nStories,1);
         dTs_dt = zeros(nStories,1);
         V_story = V_oil_vec .* multi;
-        T_min = T0_C;
-        T_max = T0_C + dT_max;
         for jj = 1:nStories
             if multi(jj) <= 0 || V_story(jj) <= 0
                 continue;
@@ -844,10 +866,10 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
             power_in = (P_visc_per_loc(jj) + P_orf_per_loc(jj)) * multi(jj);
             dT_o = ( power_in - hA_os*(T_o_loc(jj) - T_s_loc(jj)) - hA_o_env*(T_o_loc(jj) - T_env) ) / C_oil_story;
             dT_s = ( +hA_os*(T_o_loc(jj) - T_s_loc(jj)) - hA_s_env*(T_s_loc(jj) - T_env) ) / C_steel_story;
-            if T_o_loc(jj) <= T_min && dT_o < 0, dT_o = 0; end
-            if T_o_loc(jj) >= T_max && dT_o > 0, dT_o = 0; end
-            if T_s_loc(jj) <= T_min && dT_s < 0, dT_s = 0; end
-            if T_s_loc(jj) >= T_max && dT_s > 0, dT_s = 0; end
+            if T_o_loc(jj) <= T_floor && dT_o < 0, dT_o = 0; end
+            if T_o_loc(jj) >= T_ceil  && dT_o > 0, dT_o = 0; end
+            if T_s_loc(jj) <= T_floor && dT_s < 0, dT_s = 0; end
+            if T_s_loc(jj) >= T_ceil  && dT_s > 0, dT_s = 0; end
             dTo_dt(jj) = dT_o;
             dTs_dt(jj) = dT_s;
         end
@@ -855,13 +877,23 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 end
 
 function [F_orf, dP_total, Q, P_orf_per, Cd] = calc_orifice_force_local(dvel, params, mu, dP_max)
+    % Fiziksel hazne modeli: piston akışı Q, lineer hidrolik yay, viskoz sürtünme
+    % ve gazlı akümülatör (cfg.PF) ile tanımlanan arka basınç kombinasyonu.
+    % Kavite basıncı, gövde yay/damper katsayıları ve gaz precharge değeri ile
+    % belirlenen minimum değere doğru yumuşatılmış soft-min ile sınırlandırılır.
     if nargin < 3 || isempty(mu)
         mu = params.mu;
     end
     if nargin < 4
         dP_max = NaN;
     end
-    Q = params.Ap .* dvel;
+    multi_raw = getfield_default_local(params,'multi',ones(1,size(dvel,2)));
+    active_mask_row = multi_raw > 0;
+    if size(active_mask_row,1) > 1
+        active_mask_row = active_mask_row(1,:);
+    end
+    multi_mask = repmat(active_mask_row, size(dvel,1), 1);
+    Q = params.Ap .* dvel .* multi_mask;
     Ao_eff = max(params.Ao, 1e-12);
     Re = (params.rho .* abs(Q) .* params.orf.d_o) ./ max(Ao_eff .* mu, 1e-12);
     Cd0   = params.orf.Cd0;
@@ -872,14 +904,45 @@ function [F_orf, dP_total, Q, P_orf_per, Cd] = calc_orifice_force_local(dvel, pa
     Cd    = max(min(Cd, 1.2), 0.2);
 
     dP_kv = 0.5 * params.rho .* (Q ./ max(Cd .* Ao_eff, 1e-12)).^2;
-    p_up  = params.orf.p_amb + abs(params.F_lin) ./ max(params.Ap, 1e-12);
-    dP_cav = max((p_up - params.orf.p_cav_eff) .* params.orf.cav_sf, 0);
+
+    F_hyd = getfield_default_local(params,'F_hyd_single',zeros(size(Q)));
+    F_visc = getfield_default_local(params,'F_visc_single',zeros(size(Q)));
+    p_up = params.orf.p_amb + (F_hyd + F_visc) ./ max(params.Ap, 1e-12);
+
+    drift = getfield_default_local(params,'drift',zeros(size(Q)));
+    cfgPF = getfield_default_local(params,'cfgPF',struct());
+    resv = getfield_default_local(params.orf,'reservoir',struct());
+    V_ref = getfield_default_local(resv,'V_ref', getfield_default_local(cfgPF,'V_gas_ref',1e-3));
+    p_min = getfield_default_local(resv,'p_min', params.orf.p_cav_eff);
+    k_lin = getfield_default_local(resv,'k_lin', 0);
+    c_lin = getfield_default_local(resv,'c_lin', 0);
+    gamma = getfield_default_local(cfgPF,'gas_gamma',1.2);
+    V_gas0 = getfield_default_local(cfgPF,'V_gas_ref', max(V_ref,1e-6));
+    p_pre = getfield_default_local(cfgPF,'precharge_Pa', params.orf.p_amb);
+    bleed_coeff = getfield_default_local(cfgPF,'bleed_coeff',0);
+
+    deltaV = drift .* params.Ap .* multi_mask;
+    V_gas = max(V_gas0 + deltaV, 1e-6);
+    p_gas = p_pre .* (max(V_gas0,1e-6) ./ V_gas) .^ gamma;
+    p_res_lin = p_min + k_lin .* (deltaV ./ max(V_ref, 1e-6)) + c_lin .* (Q ./ max(params.Ap, 1e-12));
+    p_bleed = p_min + bleed_coeff .* (Q ./ max(params.Ao, 1e-12));
+    p_back = max(p_min, min(p_gas, params.orf.p_amb));
+    p_back = max(p_back, min(p_res_lin, params.orf.p_amb));
+    p_back = max(p_back, min(p_bleed, params.orf.p_amb));
+
+    dP_supply = max(p_up - p_back, 0);
+    dP_cav = max((params.orf.p_amb - p_back) .* params.orf.cav_sf, 0);
+    dP_allow = max(min(dP_supply, dP_cav), 0);
     if isfinite(dP_max)
         dP_kv = min(dP_kv, dP_max);
-        dP_cav = min(dP_cav, dP_max);
+        dP_allow = min(dP_allow, dP_max);
     end
-    epsm = max(0.01 * dP_cav, 1e3);
-    dP_total = softmin_local(dP_kv, dP_cav, epsm);
+    eps_spring = abs(k_lin .* (deltaV ./ max(V_ref, 1e-6)));
+    eps_damp = abs(c_lin .* (Q ./ max(params.Ap, 1e-12)));
+    eps_bleed = abs(bleed_coeff .* (Q ./ max(params.Ao, 1e-12)));
+    eps_base = getfield_default_local(params.orf,'smooth_eps0',1e3);
+    epsm = max(eps_base, 0.05 * dP_allow + eps_spring + eps_damp + eps_bleed);
+    dP_total = softmin_local(dP_kv, dP_allow, epsm);
     sgn = sign(Q);
     F_orf = dP_total .* params.Ap .* sgn;
     P_orf_per = dP_total .* Q;
