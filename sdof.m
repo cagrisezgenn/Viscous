@@ -338,8 +338,8 @@ function params = recompute_damper_params_local(params)
     rho_loc = getfield_default_local(params,'rho',850);
     Lh = rho_loc * params.Lori / max(Ao_eff, 1e-12);
 
-    k_h = params.Kd * Ap^2 / params.Lgap;
-    k_s = params.Ebody * Ap / params.Lgap;
+    k_h = params.Kd * Ap_single^2 / params.Lgap;
+    k_s = params.Ebody * Ap_single / params.Lgap;
     k_hyd = 1 / (1/k_h + 1/k_s);
     k_p = params.Gsh * params.d_w^4 / (8 * params.n_turn * params.D_m^3);
     k_sd_simple = k_hyd + k_p;
