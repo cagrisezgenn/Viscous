@@ -940,15 +940,15 @@ function [F_orf, dP_total, Q, P_orf_per, Cd] = calc_orifice_force_local(dvel, pa
     p_res_lin = p_min + k_lin .* (deltaV ./ max(V_ref, 1e-6)) + c_lin .* (Q ./ max(params.Ap, 1e-12));
     p_bleed = p_min + bleed_coeff .* (Q ./ max(params.Ao, 1e-12));
 
-    kappa_gas = gamma .* p_gas ./ max(V_gas, 1e-9);
-    kappa_lin = max(k_lin ./ max(V_ref, 1e-9), 0) + max(abs(c_lin) ./ max(params.Ap, 1e-12), 0);
-    bleed_scale = max(abs(bleed_coeff), 1e-12);
-    w_bleed = max(params.Ao, 1e-12) ./ bleed_scale;
-    w_bleed(bleed_coeff == 0) = 0;
-    w_base = 1e-9;
-    w_sum = kappa_gas + kappa_lin + w_bleed + w_base;
-    p_back = (kappa_gas .* p_gas + kappa_lin .* p_res_lin + w_bleed .* p_bleed + w_base .* p_min) ./ w_sum;
-    p_back = max(p_back, p_min);
+    % Downstream hazne basıncını fiziksel olarak anlamlı aralıkta tut:
+    % - p_min ile (buhar/atmosfer) alt sınırı uygula,
+    % - yukarı akış basıncı `p_up` değeri buhar hattından büyükse ambiente
+    %   göre daha yüksek seviyeler izin ver, ancak hazne basıncı hiçbir zaman
+    %   piston tarafının üzerine çıkamaz; aksi halde akış tersine dönerdi.
+    p_cap = max(p_up, params.orf.p_amb);
+    p_back = max(p_min, min(p_gas, p_cap));
+    p_back = max(p_back, min(p_res_lin, p_cap));
+    p_back = max(p_back, min(p_bleed, p_cap));
 
     dP_supply = max(p_up - p_back, 0);
     p_cav_floor = max(params.orf.p_cav_eff, 0);
