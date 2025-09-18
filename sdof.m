@@ -949,6 +949,9 @@ function [F_orf, dP_total, Q, P_orf_per, Cd] = calc_orifice_force_local(dvel, pa
     w_sum = kappa_gas + kappa_lin + w_bleed + w_base;
     p_back = (kappa_gas .* p_gas + kappa_lin .* p_res_lin + w_bleed .* p_bleed + w_base .* p_min) ./ w_sum;
     p_back = max(p_back, p_min);
+    % Gaz/rezervuar kombinasyonu ortamın üstüne çıkabilir ancak piston tarafı
+    % basıncını aşamaz; aksi halde model ters akışı çözmek zorunda kalır.
+    p_back = min(p_back, p_up);
 
     dP_supply = max(p_up - p_back, 0);
     p_cav_floor = max(params.orf.p_cav_eff, 0);
