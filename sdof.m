@@ -879,8 +879,9 @@ end
 function [F_orf, dP_total, Q, P_orf_per, Cd] = calc_orifice_force_local(dvel, params, mu, dP_max)
     % Fiziksel hazne modeli: piston akışı Q, lineer hidrolik yay, viskoz sürtünme
     % ve gazlı akümülatör (cfg.PF) ile tanımlanan arka basınç kombinasyonu.
-    % Kavite basıncı, gövde yay/damper katsayıları ve gaz precharge değeri ile
-    % belirlenen minimum değere doğru yumuşatılmış soft-min ile sınırlandırılır.
+    % Gaz basıncı, lineer rezervuar katsayıları ve bleed yolundaki direnç
+    % paralel bağlanmış elemanlar olarak çözülür; böylece gaz precharge ve
+    % rezervuar sertlikleri arka basıncı (p_back) ambient üzerine taşıyabilir.
     if nargin < 3 || isempty(mu)
         mu = params.mu;
     end
@@ -923,12 +924,24 @@ function [F_orf, dP_total, Q, P_orf_per, Cd] = calc_orifice_force_local(dvel, pa
 
     deltaV = drift .* params.Ap .* multi_mask;
     V_gas = max(V_gas0 + deltaV, 1e-6);
+    % Gaz akümülatörü precharge (cfg.PF.precharge_Pa) artarken p_gas büyür ve
+    % hacimsel sertlik kappa_gas üzerinden p_back'i yukarı çeker. Rezervuarın
+    % lineer yay/damper katsayıları (k_lin, c_lin) aynı şekilde p_res_lin'i ve
+    % onun ağırlığını belirler. Bleed hattı ise bleed_coeff azaldıkça ambiente
+    % daha güçlü bağlanarak p_back'i p_min'e doğru çeker.
     p_gas = p_pre .* (max(V_gas0,1e-6) ./ V_gas) .^ gamma;
     p_res_lin = p_min + k_lin .* (deltaV ./ max(V_ref, 1e-6)) + c_lin .* (Q ./ max(params.Ap, 1e-12));
     p_bleed = p_min + bleed_coeff .* (Q ./ max(params.Ao, 1e-12));
-    p_back = max(p_min, min(p_gas, params.orf.p_amb));
-    p_back = max(p_back, min(p_res_lin, params.orf.p_amb));
-    p_back = max(p_back, min(p_bleed, params.orf.p_amb));
+
+    kappa_gas = gamma .* p_gas ./ max(V_gas, 1e-9);
+    kappa_lin = max(k_lin ./ max(V_ref, 1e-9), 0) + max(abs(c_lin) ./ max(params.Ap, 1e-12), 0);
+    bleed_scale = max(abs(bleed_coeff), 1e-12);
+    w_bleed = max(params.Ao, 1e-12) ./ bleed_scale;
+    w_bleed(bleed_coeff == 0) = 0;
+    w_base = 1e-9;
+    w_sum = kappa_gas + kappa_lin + w_bleed + w_base;
+    p_back = (kappa_gas .* p_gas + kappa_lin .* p_res_lin + w_bleed .* p_bleed + w_base .* p_min) ./ w_sum;
+    p_back = max(p_back, p_min);
 
     dP_supply = max(p_up - p_back, 0);
     dP_cav = max((params.orf.p_amb - p_back) .* params.orf.cav_sf, 0);
