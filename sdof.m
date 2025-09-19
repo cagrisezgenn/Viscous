@@ -253,22 +253,22 @@ function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story
     metrics.cav_pct = cav_mean(ws);
     E_orf_end    = isfield(diag_d,'E_orf')    && ~isempty(diag_d.E_orf);
     E_struct_end = isfield(diag_d,'E_struct') && ~isempty(diag_d.E_struct);
-    if E_orf_end
+    if isfield(diag_d,'E_orifice_sum') && ~isempty(diag_d.E_orifice_sum)
+        metrics.E_orifice_sum = diag_d.E_orifice_sum;
+    elseif E_orf_end
         metrics.E_orifice_sum = diag_d.E_orf(end);
     else
         metrics.E_orifice_sum = 0;
     end
-    if E_struct_end
+    if isfield(diag_d,'E_struct_sum') && ~isempty(diag_d.E_struct_sum)
+        metrics.E_struct_sum = diag_d.E_struct_sum;
+    elseif E_struct_end
         metrics.E_struct_sum = diag_d.E_struct(end);
     else
         metrics.E_struct_sum = 0;
     end
     metrics.energy_tot_sum = metrics.E_orifice_sum + metrics.E_struct_sum;
-    if metrics.E_struct_sum > 0
-        metrics.E_ratio = metrics.E_orifice_sum / max(metrics.E_struct_sum, eps);
-    else
-        metrics.E_ratio = 0;
-    end
+    metrics.E_ratio = metrics.E_orifice_sum / max(metrics.E_orifice_sum + abs(metrics.E_struct_sum), eps);
     if isfield(diag_d,'P_sum') && ~isempty(diag_d.P_sum)
         P_mech_win = diag_d.P_sum(idx);
         P_mech_win = P_mech_win(isfinite(P_mech_win));
@@ -804,16 +804,23 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         F_story_series = F_lin_series + PF_force_series;
 
-        % --- ORIFICE LOSS: tek kanal ---
-        P_loss_series = orf_series.dP_eff .* abs(orf_series.Q);
-        P_sum = (P_loss_series) * ctx.multi';
+        % --- Enerji/ güç muhasebesi (tek kanal) ---
+        P_visc_per    = zeros(size(dvel));  %#ok<NASGU> ikinci kanal yok
+        P_loss_series = orf_series.dP_eff .* abs(orf_series.Q);   % ≥ 0
 
-        % --- STRUCTURAL POWER: kapalı (k_sd=0) ---
-        P_struct_tot = zeros(Nt_loc,1);
+        % Damper kuvveti*Hiz (yapi isi); F_story_series zaten (PF+lineer) iceriyor
+        P_struct_series = sum(F_story_series .* dvel, 2);
 
-        % --- Enerji ---
-        E_orf    = cumtrapz(t, P_loss_series * ctx.multi');
-        E_struct = cumtrapz(t, P_struct_tot);
+        % Zaman entegralleri
+        P_loss_weighted = bsxfun(@times, P_loss_series, ctx.multi);
+        E_orf           = cumtrapz(t, sum(P_loss_weighted, 2));   % ≥ 0 olmalı
+        E_struct        = cumtrapz(t, P_struct_series);           % işaret serbest
+
+        % Rapor/sagduyu kontrolu
+        E_orifice_sum = E_orf(end);
+        E_struct_sum  = E_struct(end);
+        E_balance     = E_orifice_sum + E_struct_sum;             % ≈ 0 olmalı
+        P_sum = sum(P_loss_weighted, 2);
 
         % Passive safety check (optional logging)
         passivity_viol = any((PF_force_series .* dvel) > 1e-9, 'all');
@@ -828,7 +835,8 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         out = struct('dvel', dvel, 'story_force', F_story_series, 'Q', orf_series.Q, ...
             'dP_eff', orf_series.dP_eff, 'PF', PF_force_series, 'cav_mask', cav_mask, 'P_sum', P_sum, ...
-            'E_orf', E_orf, 'E_struct', E_struct, 'passivity_viol', passivity_viol, 'T_oil', T_o, 'T_steel', T_s, ...
+            'E_orf', E_orf, 'E_struct', E_struct, 'E_orifice_sum', E_orifice_sum, 'E_struct_sum', E_struct_sum, ...
+            'E_balance', E_balance, 'passivity_viol', passivity_viol, 'T_oil', T_o, 'T_steel', T_s, ...
             'mu', mu_series, 'rho', rho_series, 'beta', beta_series, 'p_vap', p_vap_series, ...
             'c_lam', ctx.c_lam, 'dP_kv', orf_series.dP_kv, 'dP_cav', orf_series.dP_cav, ...
             'F_lin', F_lin_series, 'Re', orf_series.Re, 'orf_series', orf_series_diag);
