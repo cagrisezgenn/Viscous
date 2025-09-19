@@ -658,12 +658,13 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         F_lin_loc = ctx.k_sd * drift;
         orf_loc = compute_orifice_terms_local(dvel, F_lin_loc, mu_loc, rho_loc, ctx);
 
-        dp_pf_loc = orf_loc.dP_eff ./ ctx.Ap_story_col;
+        sgn_loc = sign(orf_loc.Q + 0);
+        p_pf_loc = orf_loc.dP_eff .* sgn_loc;
         if ctx.pf_res_only
             s_loc = tanh(ctx.gate_k*dvel);
-            dp_pf_loc = s_loc .* max(0, s_loc .* dp_pf_loc);
+            p_pf_loc = s_loc .* max(0, s_loc .* p_pf_loc);
         end
-        PF_term = dp_pf_loc;
+        PF_term = p_pf_loc;
         F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;
         F_loc = zeros(ctx.n,1);
         for ii = 1:ctx.Ns
@@ -718,16 +719,17 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         % Energy bookkeeping and cavitation mask
         Ap_mat = repmat(ctx.Ap_story, Nt_loc,1);
-        dp_pf_series = orf_series.dP_eff ./ Ap_mat;
+        sgn_series = sign(orf_series.Q + 0);
+        p_pf_series = orf_series.dP_eff .* sgn_series;
         if ctx.pf_res_only
             s_series = tanh(ctx.gate_k*dvel);
-            dp_pf_series = s_series .* max(0, s_series .* dp_pf_series);
+            p_pf_series = s_series .* max(0, s_series .* p_pf_series);
         end
-        PF_term_series = dp_pf_series;
+        PF_term_series = p_pf_series;
         PF_force_series = Ap_mat .* PF_term_series;
         F_story_series = F_lin_series + PF_force_series;
 
-        P_visc_per = ctx.c_lam * (dvel.^2);
+        P_visc_per = zeros(size(dvel));
         P_loss_series = orf_series.dP_eff .* abs(orf_series.Q);
         P_sum = (P_visc_per + P_loss_series) * ctx.multi';
          P_orf_per = orf_series.dP_kv .* abs(orf_series.Q);
@@ -784,7 +786,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         dP_kv = 0.5 * rho_mat .* (abs(Q) ./ max(Cd .* Ao_mat, 1e-12)).^2;
         R_lam = (128 * mu_mat .* ctx.Lori) ./ max(pi * ctx.d_o_single^4, 1e-24) ./ max(n_orf_mat,1);
-        dP_lam = R_lam .* Q;
+        dP_lam = R_lam .* abs(Q);
         dP_h = dP_kv + dP_lam;
 
         p_up = ctx.orf.p_amb * ones(size(dP_h));
