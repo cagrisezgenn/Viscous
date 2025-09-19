@@ -833,13 +833,9 @@ function mat = expand_to_matrix_local(val, nR, nC)
     end
 end
 function p_v = p_vap_Antoine_local(T_C, thermal, orf)
-    if nargin < 3 || isempty(orf), orf = struct(); end
-    A = getfield_default_local(thermal,'antoine_A',5.0);
-    B = getfield_default_local(thermal,'antoine_B',1700);
-    C = getfield_default_local(thermal,'antoine_C',-80);
-    T_C = double(T_C);
-    p_v = 10.^(A - B./(C + T_C));
-    p_v = min(max(p_v, 5), 5e2);
+    %#ok<INUSD>
+    p_v_const = getfield_default_local(thermal,'p_vap_const_Pa', 150);
+    p_v = max(1, p_v_const);
 end
 function params = default_params()
 
