@@ -1136,10 +1136,12 @@ function params = recompute_damper_params_local(params)
     params.Ap_eff = Ap_eff;
     params.Ao_eff = Ao_eff;
     params.Lh = Lh;
-    params.k_p = k_p;
     params.k_sd_simple = k_sd_simple;
     params.k_sd_adv = k_sd_adv;
-    params.k_sd = k_sd_adv;
+
+    % Disable hydraulic and parallel spring stiffness contributions
+    params.k_p = 0;
+    params.k_sd = 0;
     params.c_lam0 = c_lam0;
 end
 
