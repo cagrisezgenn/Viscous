@@ -91,24 +91,29 @@ a10_0 = a_rel0(:,10) + ag;
 a10_d = a_d(:,10) + ag;
 
 %% Assemble equivalent damping/stiffness matrices for modal check
-nStories = n - 1;
-mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
-ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
-multi = (mask .* ndps);
-Kadd = zeros(n); C_add = zeros(n);
-for i = 1:nStories
-    idx = [i,i+1];
-    k_eq = k_sd * multi(i);
-    c_eq = diag_d.c_lam * multi(i);
-    kM  = k_eq * [1 -1; -1 1];
-    cM  = c_eq * [1 -1; -1 1];
-    Kadd(idx,idx) = Kadd(idx,idx) + kM;
-    C_add(idx,idx)= C_add(idx,idx) + cM;
-end
-K_tot = K + Kadd;
-C_d = C0 + C_add;
-[V,D] = eig(K_tot,M); [w2,ord] = sort(diag(D),'ascend');
-phi1 = V(:,ord(1)); w1 = sqrt(w2(1));
+% nStories = n - 1;
+% mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
+% ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
+% multi = (mask .* ndps);
+% Kadd = zeros(n); C_add = zeros(n);
+% for i = 1:nStories
+%     idx = [i,i+1];
+%     k_eq = k_sd * multi(i);
+%     c_eq = diag_d.c_lam * multi(i);
+%     kM  = k_eq * [1 -1; -1 1];
+%     cM  = c_eq * [1 -1; -1 1];
+%     Kadd(idx,idx) = Kadd(idx,idx) + kM;
+%     C_add(idx,idx)= C_add(idx,idx) + cM;
+% end
+% K_tot = K + Kadd;
+% C_d = C0 + C_add;
+% [V,D] = eig(K_tot,M); [w2,ord] = sort(diag(D),'ascend');
+% phi1 = V(:,ord(1)); w1 = sqrt(w2(1));
+% normM = phi1.' * M * phi1;
+
+[V_base,D_base] = eig(K,M); [w2_base,ord_base] = sort(diag(D_base),'ascend');
+phi1 = V_base(:,ord_base(1));
+w1 = sqrt(w2_base(1));
 normM = phi1.' * M * phi1;
 
 %% Plots: 10th floor displacement and acceleration, plus IDR
@@ -143,7 +148,6 @@ legend('Dampersiz','Damperli','Location','best');
 
 %% Summary printout
 zeta0 = (phi1.' * C0 * phi1) / (2*w1*normM);
-zeta_d = (phi1.' * C_d * phi1) / (2*w1*normM);
 
 idx = win.idx;
 x10_max_0 = max(abs(x10_0(idx)));
@@ -153,11 +157,11 @@ a10abs_max_damperli = max(abs(a10_d(idx)));
 IDR_max_0 = max(IDR0);
 IDR_max_damperli = max(IDR_d);
 
-fprintf(['Self-check zeta1: %.3f%% (dampersiz) vs %.3f%% (damperli); ' ...
+fprintf(['Self-check zeta1 (yapısal baz): %.3f%%; ' ...
          'x10_{max}0=%.4g m; x10_{max}d=%.4g m; ' ...
          'a10abs_{max}0=%.4g m/s^2; a10abs_{max}d=%.4g m/s^2; ' ...
          'IDR_{max}0=%.4g; IDR_{max}d=%.4g\n'], ...
-        100*zeta0, 100*zeta_d, x10_max_0, x10_max_damperli, ...
+        100*zeta0, x10_max_0, x10_max_damperli, ...
         a10abs_max_0, a10abs_max_damperli, IDR_max_0, IDR_max_damperli);
 
 %% Metric aggregation and CSV export
@@ -826,15 +830,15 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         F_story_series = F_lin_series + PF_force_series;
 
-        % --- ORIFICE LOSS: unchanged bookkeeping ---
+        % --- ORIFICE LOSS: tek kanal ---
         P_loss_series = orf_series.dP_eff .* abs(orf_series.Q);
         P_sum = (P_loss_series) * ctx.multi';
 
-        % --- STRUCTURAL POWER: elastic contribution only (k_sd * drift) ---
-        P_struct_tot = (F_lin_series .* dvel) * ones(Ns_loc,1);
+        % --- STRUCTURAL POWER: kapalı (k_sd=0) ---
+        P_struct_tot = zeros(Nt_loc,1);
 
-        % --- Energy integration (damper loss + elastic work) ---
-        E_orf = cumtrapz(t, P_loss_series * ctx.multi');
+        % --- Enerji ---
+        E_orf    = cumtrapz(t, P_loss_series * ctx.multi');
         E_struct = cumtrapz(t, P_struct_tot);
 
         % Passive safety check (optional logging)
@@ -1063,6 +1067,7 @@ function params = default_params()
     params.c_lam_min_abs = 1e5;
 
     cfg = struct();
+    % PF yalnız dP_eff temellidir; gain/tau/t_on parametreleri dinamikte kullanılmaz.
     cfg.PF = struct('mode','ramp','tau',1.0,'gain',0.85,'t_on',0,'auto_t_on',true,'k',0.01,'tau_floor',1e-6);
     cfg.on = struct('pressure_force',true,'mu_floor',false, ...
         'pf_resistive_only',false,'Rlam',true,'Rkv',true, ...
@@ -1119,34 +1124,14 @@ function params = recompute_damper_params_local(params)
     end
     if ~isfield(params,'n_orf'), params.n_orf = 1; end
 
-    nd = 1;
-    if isfield(params,'nd') && isfinite(params.nd)
-        nd = params.nd;
-    elseif isfield(params,'n_parallel') && isfinite(params.n_parallel)
-        nd = params.n_parallel;
-    elseif isfield(params,'n_dampers_per_story')
-        nds = params.n_dampers_per_story;
-        if isnumeric(nds)
-            if isscalar(nds), nd = nds; else, nd = max(1, round(max(nds(:)))); end
-        end
-    end
-    nd = max(1, round(nd));
-
     Ap = pi * params.Dp^2 / 4;
     Ao_single = pi * params.orf.d_o^2 / 4;
     Ao = params.n_orf * Ao_single;
-    Ap_eff = nd * Ap;
-    Ao_eff = nd * Ao;
-
-    rho_loc = getfield_default_local(params,'rho',850);
-    Lh = rho_loc * params.Lori / max(Ao^2, 1e-18);
 
     k_h = params.Kd * Ap^2 / params.Lgap;
     k_s = params.Ebody * Ap / params.Lgap;
     k_hyd = 1 / (1/k_h + 1/k_s);
     k_p = params.Gsh * params.d_w^4 / (8 * params.n_turn * params.D_m^3);
-    k_sd_simple = k_hyd + k_p;
-    k_sd_adv    = nd * (k_hyd + k_p);
 
     % --- Laminer eşdeğer c: R_lam * A_p^2 ile TUTARLI ---
     R_lam_single = (128 * params.mu_ref * params.Lori) / (pi * params.orf.d_o^4);
@@ -1155,11 +1140,6 @@ function params = recompute_damper_params_local(params)
 
     params.Ap = Ap;
     params.Ao = Ao;
-    params.Ap_eff = Ap_eff;
-    params.Ao_eff = Ao_eff;
-    params.Lh = Lh;
-    params.k_sd_simple = k_sd_simple;
-    params.k_sd_adv = k_sd_adv;
 
     % Disable hydraulic and parallel spring stiffness contributions
     params.k_p = 0;
