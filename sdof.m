@@ -634,24 +634,84 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
     t_clip = min(t, t_end_num);
     Z = deval(sol, t_clip).';
 
-    x = Z(:,1:n);
-    v = Z(:,n+1:2*n);
+    x_eff = Z(:,1:n);
+    v_eff = Z(:,n+1:2*n);
     T_o = Z(:,2*n+1);
     T_s = Z(:,2*n+2);
 
-    diag = postprocess_state_local(ctx, t_clip, x, v, T_o, T_s);
+    diag_eff = postprocess_state_local(ctx, t_clip, x_eff, v_eff, T_o, T_s);
 
-    F_story = diag.story_force;
-    F = zeros(Nt, n);
+    Nt_eff = numel(t_clip);
+    ag_clip = agf(t_clip);
+
+    F_story = diag_eff.story_force;
+    F = zeros(Nt_eff, n);
     for k = 1:Ns
         idxN = Nvec(k);
         idxM = Mvec(k);
         F(:,idxN) = F(:,idxN) - F_story(:,k);
         F(:,idxM) = F(:,idxM) + F_story(:,k);
     end
-    a_rel = ( -(M\(C*v.' + K*x.' + F.' )).' - ag(:).*r.' );
+    a_rel_eff = ( -(M\(C*v_eff.' + K*x_eff.' + F.' )).' - ag_clip(:).*r.' );
+
+    x = x_eff;
+    a_rel = a_rel_eff;
+    diag = diag_eff;
+
+    if Nt_eff < Nt
+        x = pad_timeseries_local(x, Nt_eff, Nt);
+        a_rel = pad_timeseries_local(a_rel, Nt_eff, Nt);
+        diag = pad_diag_struct_local(diag, Nt_eff, Nt);
+    end
 
     ts = diag;
+
+    function val_pad = pad_timeseries_local(val, Nt_eff_loc, Nt_loc)
+        if Nt_eff_loc >= Nt_loc || Nt_loc <= 0
+            val_pad = val;
+            return;
+        end
+
+        pad_len = Nt_loc - Nt_eff_loc;
+        if pad_len <= 0 || isempty(val)
+            val_pad = val;
+            return;
+        end
+
+        sz = size(val);
+        if sz(1) ~= Nt_eff_loc
+            val_pad = val;
+            return;
+        end
+
+        nd = ndims(val);
+        rep_dims = ones(1, max(nd, 1));
+        rep_dims(1) = pad_len;
+
+        idx = repmat({':'}, 1, max(nd,1));
+        idx{1} = Nt_eff_loc;
+        last_slice = val(idx{:});
+        pad_block = repmat(last_slice, rep_dims);
+        val_pad = cat(1, val, pad_block);
+    end
+
+    function out_struct = pad_diag_struct_local(in_struct, Nt_eff_loc, Nt_loc)
+        out_struct = in_struct;
+        if Nt_eff_loc >= Nt_loc
+            return;
+        end
+        fns = fieldnames(in_struct);
+        for jj = 1:numel(fns)
+            name = fns{jj};
+            val = in_struct.(name);
+            if isnumeric(val) || islogical(val)
+                sz = size(val);
+                if ~isempty(val) && sz(1) == Nt_eff_loc
+                    out_struct.(name) = pad_timeseries_local(val, Nt_eff_loc, Nt_loc);
+                end
+            end
+        end
+    end
 
     function dz = damper_rhs_local(tt,z,ctx)
         x_loc = z(1:ctx.n);
@@ -677,15 +737,14 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         orf_loc = compute_orifice_terms_local(dvel, F_lin_loc, mu_loc, rho_loc, ctx);
 
         % gate_k zaten ctx içine ekli (default 20); hız ile ölçekli kapı:
-s_loc    = tanh( ctx.gate_k * dvel );       % [-1,1], C^∞ pürüzsüz
-p_pf_loc = - orf_loc.dP_eff .* s_loc;       % dissipatif, süreklilik var
+        s_loc = tanh(ctx.gate_k * dvel);                     % [-1,1], C^∞ pürüzsüz
+        p_pf_loc = - orf_loc.dP_eff .* s_loc;                % dissipatif, süreklilik var
 
-if ctx.pf_res_only
-    s_loc    = tanh(ctx.gate_k*dvel);
-    p_pf_loc = s_loc .* max(0, s_loc .* p_pf_loc);
-end
-PF_term     = p_pf_loc;
-F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;  % N
+        if ctx.pf_res_only
+            p_pf_loc = s_loc .* max(0, s_loc .* p_pf_loc);
+        end
+        PF_term     = p_pf_loc;
+        F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;  % N
 
         F_loc = zeros(ctx.n,1);
         for ii = 1:ctx.Ns
@@ -740,14 +799,13 @@ F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;  % N
 
         % Energy bookkeeping and cavitation mask
         Ap_mat = repmat(ctx.Ap_story, Nt_loc,1);
-        sgn_series  = sign(orf_series.Q + 0);
-p_pf_series = - orf_series.dP_eff .* sgn_series; % ← dissipatif
-if ctx.pf_res_only
-    s_series    = tanh( ctx.gate_k * dvel );
-p_pf_series = - orf_series.dP_eff .* s_series;
-end
-PF_term_series  = p_pf_series;
-PF_force_series = Ap_mat .* PF_term_series;
+        s_series = tanh(ctx.gate_k * dvel);
+        p_pf_series = - orf_series.dP_eff .* s_series;
+        if ctx.pf_res_only
+            p_pf_series = s_series .* max(0, s_series .* p_pf_series);
+        end
+        PF_term_series  = p_pf_series;
+        PF_force_series = Ap_mat .* PF_term_series;
 
         F_story_series = F_lin_series + PF_force_series;
 
