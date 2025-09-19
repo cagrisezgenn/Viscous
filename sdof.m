@@ -219,7 +219,7 @@ function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story
     if ~isfinite(metrics.IDR)
         metrics.IDR = 0;
     end
-    abs_dP = abs(diag_d.dP_orf(idx,:));
+    abs_dP = abs(diag_d.dP_eff(idx,:));
     abs_Q = abs(diag_d.Q(idx,:));
     Qcap_ratio = abs_Q ./ max(Qcap_big, eps);
     abs_story_force = abs(diag_d.story_force(idx,:));
@@ -742,14 +742,14 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
          E_orf = cumtrapz(t, P_orf_full_tot);
          E_struct = cumtrapz(t, P_struct_tot);
 
-        p_up_series = ctx.orf.p_amb + abs(F_lin_series) ./ max(Ap_mat, 1e-12);
+        p_up_series = ctx.orf.p_amb * ones(size(F_lin_series));
         p_vap_mat = repmat(p_vap_series, 1, Ns_loc);
-        p2_est_series = p_up_series - orf_series.dP_orf;
+        p2_est_series = p_up_series - orf_series.dP_eff;
         cav_thresh = ctx.orf.cav_sf * p_vap_mat;
         cav_mask = p2_est_series <= cav_thresh;
 
         out = struct('dvel', dvel, 'story_force', F_story_series, 'Q', orf_series.Q, ...
-            'dP_orf', orf_series.dP_orf, 'PF', PF_force_series, 'cav_mask', cav_mask, 'P_sum', P_sum, ...
+            'dP_eff', orf_series.dP_eff, 'PF', PF_force_series, 'cav_mask', cav_mask, 'P_sum', P_sum, ...
             'E_orf', E_orf, 'E_struct', E_struct, 'T_oil', T_o, 'T_steel', T_s, ...
             'mu', mu_series, 'rho', rho_series, 'beta', beta_series, 'p_vap', p_vap_series, ...
             'c_lam', ctx.c_lam, 'dP_kv', orf_series.dP_kv, 'dP_cav', orf_series.dP_cav, ...
@@ -779,8 +779,6 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         Ao_mat    = repmat(ctx.Ao_story,   nRows, 1);
         n_orf_mat = repmat(ctx.n_orf_total, nRows, 1);
 
-        veps = getfield_default_local(ctx.orf,'veps',0.10);
-        sgn  = dvel_mat ./ sqrt(dvel_mat.^2 + veps^2);
         Q = Ap_mat .* dvel_mat;                   % (1) Kinematic continuity
 
         Re = (rho_mat .* abs(Q)) .* ctx.d_o_single ./ max(Ao_mat .* mu_mat, 1e-9);
@@ -792,10 +790,19 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         dP_lam = R_lam .* Q;
         dP_h = dP_kv + dP_lam;
 
-        p_up = ctx.orf.p_amb + abs(F_lin_mat) ./ max(Ap_mat, 1e-12);
-        dP_cav = max((p_up - ctx.orf.p_cav_eff) .* ctx.orf.cav_sf, 0);
-        dP_orf = softmin_local(dP_kv, dP_cav, ctx.soft_eps);
-        F_orf = dP_orf .* Ap_mat .* sgn;
+        p_up = ctx.orf.p_amb * ones(size(dP_h));
+        p_vap = getfield_default_local(ctx.orf,'p_vap_eff', 150);
+        p_vap_mat = expand_to_matrix_local(p_vap, size(dP_h,1), size(dP_h,2));
+        gamma_c = getfield_default_local(ctx.orf,'cav_sf', 1.0);
+        dP_cav = max(p_up - gamma_c * p_vap_mat, 0);
+
+        dP_full = dP_h;
+        epsm = getfield_default_local(ctx,'soft_eps',1e5);
+        epsm = max(epsm, 0.05*median(dP_full(:) + 1));
+        dP_eff = 0.5*(dP_full + dP_cav - sqrt((dP_full - dP_cav).^2 + epsm.^2));
+
+        sgn  = sign(Q + 0);
+        F_orf = dP_eff .* Ap_mat .* sgn;
 
         if isColumn
             F_orf = F_orf.';
@@ -804,13 +811,13 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
             dP_lam = dP_lam.';
             dP_h = dP_h.';
             dP_cav = dP_cav.';
-            dP_orf = dP_orf.';
+            dP_eff = dP_eff.';
             Re = Re.';
             Cd = Cd.';
         end
 
         out = struct('F_orf',F_orf,'Q',Q,'dP_kv',dP_kv,'dP_lam',dP_lam,'dP_h',dP_h, ...
-            'dP_cav',dP_cav,'dP_orf',dP_orf,'Re',Re,'Cd',Cd);
+            'dP_cav',dP_cav,'dP_eff',dP_eff,'Re',Re,'Cd',Cd);
     end
 
 end
