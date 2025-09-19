@@ -38,9 +38,6 @@ try
 
     d_o = xb.d_o_mm/1000;      % [m]
     n_orf = xb.n_orf;
-    cfg.PF.tau  = xb.PF_tau;
-    cfg.PF.gain = xb.PF_gain;
-    cfg.PF.t_on = xb.PF_t_on;
     orf.Cd0  = xb.Cd0;
     orf.CdInf= xb.CdInf;
     orf.p_exp= xb.p_exp;
@@ -301,34 +298,6 @@ function y = softmin_local(a,b,epsm)
         epsm = 1e5;
     end
     y = 0.5*(a + b - sqrt((a - b).^2 + epsm.^2));
-end
-
-function w = pf_weight_local(t, cfg)
-    if nargin < 2 || ~isstruct(cfg), cfg = struct(); end
-    cfg.on = struct('pressure_force',true,'mu_floor',false, ...
-        'pf_resistive_only',false,'Rlam',true,'Rkv',true, ...
-        'hyd_inertia',true,'cavitation',true);
-    if ~isfield(cfg.on,'pressure_force'), cfg.on.pressure_force = true; end
-    cfg.PF = struct('mode','ramp','tau',1.0,'gain',0.85,'t_on',0,'auto_t_on',true,'k',0.01,'tau_floor',1e-6);
-    if ~isfield(cfg.PF,'t_on'), cfg.PF.t_on = 0; end
-    if ~isfield(cfg.PF,'tau'),  cfg.PF.tau  = 1.0; end
-    if ~isfield(cfg,'compat_simple'), cfg.compat_simple = true; end
-    k = getfield_default_local(cfg.PF,'k',0.01);
-    tau_floor = getfield_default_local(cfg.PF,'tau_floor',1e-6);
-    t = double(t);
-    if cfg.compat_simple
-        dt  = max(t - cfg.PF.t_on, 0);
-        tau = max(cfg.PF.tau, tau_floor);
-        w_local = 1 - exp(-dt ./ tau);
-    else
-        k = max(k, tau_floor);
-        sp_dt = (log1p(exp(-abs((t - cfg.PF.t_on)./k))) + max((t - cfg.PF.t_on)./k, 0));
-        dt  = sp_dt .* k;
-        sp_tau = (log1p(exp(-abs((cfg.PF.tau - tau_floor)./k))) + max((cfg.PF.tau - tau_floor)./k, 0));
-        tau = sp_tau .* k + tau_floor;
-        w_local = 1 - exp(-dt ./ tau);
-    end
-    w = cfg.on.pressure_force .* w_local;
 end
 
 function win = make_arias_window_local(t, ag, varargin)
@@ -931,7 +900,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         dP_kv = 0.5 * rho_mat .* (abs(Q) ./ max(Cd .* Ao_mat, 1e-12)).^2;
         R_lam = (128 * mu_mat .* ctx.Lori) ./ max(pi * ctx.d_o_single^4, 1e-24) ./ max(n_orf_mat,1);
-        dP_lam = R_lam .* Q .* sign(Q);
+        dP_lam = R_lam .* abs(Q);
         dP_h = dP_kv + dP_lam;
         if isfield(ctx,'hyd_inertia') && ctx.hyd_inertia
             Lori_mat = expand_to_matrix_local(ctx.Lori, size(Q,1), size(Q,2));
@@ -1067,8 +1036,6 @@ function params = default_params()
     params.c_lam_min_abs = 1e5;
 
     cfg = struct();
-    % PF yalnız dP_eff temellidir; gain/tau/t_on parametreleri dinamikte kullanılmaz.
-    cfg.PF = struct('mode','ramp','tau',1.0,'gain',0.85,'t_on',0,'auto_t_on',true,'k',0.01,'tau_floor',1e-6);
     cfg.on = struct('pressure_force',true,'mu_floor',false, ...
         'pf_resistive_only',false,'Rlam',true,'Rkv',true, ...
         'hyd_inertia',false,'cavitation',true);
