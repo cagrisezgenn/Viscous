@@ -167,7 +167,8 @@ metrics.PFA_mean = metrics.PFA;
 metrics.IDR_mean = metrics.IDR;
 metrics = compute_penalties_local(metrics);
 
-orf_series = diag_d.orf_series;
+dp_series = abs(diag_d.dP_eff);   % dP95/dP50 için
+Q_series  = diag_d.Q;             % gerekirse Q metrikleri
 if isfield(metrics,'ws')
     ws = metrics.ws;
 elseif isfield(diag_d,'story_force_q95')
@@ -918,7 +919,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         dP_kv = 0.5 * rho_mat .* (abs(Q) ./ max(Cd .* Ao_mat, 1e-12)).^2;
         R_lam = (128 * mu_mat .* ctx.Lori) ./ max(pi * ctx.d_o_single^4, 1e-24) ./ max(n_orf_mat,1);
-        dP_lam = R_lam .* abs(Q);
+dP_lam = R_lam .* Q;    % ← işaretli laminer düşüm
         dP_h = dP_kv + dP_lam;
         if isfield(ctx,'hyd_inertia') && ctx.hyd_inertia
             Lori_mat = expand_to_matrix_local(ctx.Lori, size(Q,1), size(Q,2));
