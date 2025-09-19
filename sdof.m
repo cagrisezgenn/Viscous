@@ -599,7 +599,15 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
     z0(2*n + 1) = T0_C;
     z0(2*n + 2) = T0_C;
 
-    opts = odeset('RelTol',1e-3,'AbsTol',1e-6);
+    if numel(t) > 1
+        dt_nom = median(diff(t));
+    else
+        dt_nom = 1;
+    end
+    dt_nom = max(dt_nom, eps);
+
+    opts = odeset('RelTol',1e-3,'AbsTol',1e-6, ...
+                  'MaxStep', 0.05);
 
     ctx = struct('n',n,'Ns',Ns,'M',M,'C',C,'K',K,'r',r,'agf',agf, ...
                  'Nvec',Nvec,'Mvec',Mvec,'multi',multi_row,'multi_col',multi_col,'k_sd',k_sd,'c_lam',c_lam, ...
@@ -611,29 +619,43 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
                  'beta0',beta0,'b_beta',b_beta,'T_ref',T_ref,'T_env',T_env, ...
                  'C_oil',C_oil,'C_steel',C_steel,'hA_os',hA_os,'hA_o_env',hA_o_env,'hA_s_env',hA_s_env, ...
                  'T_min',T0_C,'T_max',T0_C + dT_max,'orf',orf,'Qcap_eff',Qcap_eff, ...
-                 'thermal',thermal, 'rho_min', getfield_default_local(thermal,'rho_min',600), 'gate_k', getfield_default_local(cfg,'gate_k',20));
+                 'thermal',thermal, 'rho_min', getfield_default_local(thermal,'rho_min',600), 'gate_k', getfield_default_local(cfg,'gate_k',20), ...
+                 'hyd_inertia', logical(getfield_default_local(cfg.on,'hyd_inertia', false)), 'dt', dt_nom, ...
+                 'cache_token', randi([0 2^31-1]));
 
-    sol = ode15s(@(tt,z) damper_rhs_local(tt,z,ctx), [t(1) t(end)], z0, opts);
-    Z = deval(sol, t).';
+    try
+        sol = ode15s(@(tt,z) damper_rhs_local(tt,z,ctx), [t(1) t(end)], z0, opts);
+    catch
+        opts2 = odeset(opts,'RelTol',5e-3,'AbsTol',2e-6);
+        sol = ode23tb(@(tt,z) damper_rhs_local(tt,z,ctx), [t(1) t(end)], z0, opts2);
+    end
+
+    t_end_num = sol.x(end);
+    t_clip = min(t, t_end_num);
+    Z = deval(sol, t_clip).';
+    ag_clip = agf(t_clip);
 
     x = Z(:,1:n);
     v = Z(:,n+1:2*n);
     T_o = Z(:,2*n+1);
     T_s = Z(:,2*n+2);
 
-    diag = postprocess_state_local(ctx, t, x, v, T_o, T_s);
+    diag = postprocess_state_local(ctx, t_clip, x, v, T_o, T_s);
 
     F_story = diag.story_force;
-    F = zeros(Nt, n);
+    Nt_eff = numel(t_clip);
+    F = zeros(Nt_eff, n);
     for k = 1:Ns
         idxN = Nvec(k);
         idxM = Mvec(k);
         F(:,idxN) = F(:,idxN) - F_story(:,k);
         F(:,idxM) = F(:,idxM) + F_story(:,k);
     end
-    a_rel = ( -(M\(C*v.' + K*x.' + F.' )).' - ag(:).*r.' );
+    a_rel = ( -(M\(C*v.' + K*x.' + F.' )).' - ag_clip(:).*r.' );
 
     ts = diag;
+    ts.t_eval = t_clip;
+    ts.t_end_num = t_end_num;
 
     function dz = damper_rhs_local(tt,z,ctx)
         x_loc = z(1:ctx.n);
@@ -659,15 +681,14 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         orf_loc = compute_orifice_terms_local(dvel, F_lin_loc, mu_loc, rho_loc, ctx);
 
         % gate_k zaten ctx içine ekli (default 20); hız ile ölçekli kapı:
-s_loc    = tanh( ctx.gate_k * dvel );       % [-1,1], C^∞ pürüzsüz
-p_pf_loc = - orf_loc.dP_eff .* s_loc;       % dissipatif, süreklilik var
-
-if ctx.pf_res_only
-    s_loc    = tanh(ctx.gate_k*dvel);
-    p_pf_loc = s_loc .* max(0, s_loc .* p_pf_loc);
-end
-PF_term     = p_pf_loc;
-F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;  % N
+        s_loc = tanh(ctx.gate_k * dvel);                % [-1,1], C^∞ pürüzsüz
+        p_pf_loc = -orf_loc.dP_eff .* s_loc;            % basınç, dissipatif
+        if ctx.pf_res_only
+            % zaten dissipatif; ek kuvvet açısı uygulanmaz
+            p_pf_loc = -abs(orf_loc.dP_eff) .* s_loc;
+        end
+        PF_term = p_pf_loc;
+        F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;  % N = Ap*Δp
 
         F_loc = zeros(ctx.n,1);
         for ii = 1:ctx.Ns
@@ -722,14 +743,13 @@ F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;  % N
 
         % Energy bookkeeping and cavitation mask
         Ap_mat = repmat(ctx.Ap_story, Nt_loc,1);
-        sgn_series  = sign(orf_series.Q + 0);
-p_pf_series = - orf_series.dP_eff .* sgn_series; % ← dissipatif
-if ctx.pf_res_only
-    s_series    = tanh( ctx.gate_k * dvel );
-p_pf_series = - orf_series.dP_eff .* s_series;
-end
-PF_term_series  = p_pf_series;
-PF_force_series = Ap_mat .* PF_term_series;
+        s_series = tanh(ctx.gate_k * dvel);
+        p_pf_series = -orf_series.dP_eff .* s_series;
+        if ctx.pf_res_only
+            p_pf_series = -abs(orf_series.dP_eff) .* s_series;
+        end
+        PF_term_series  = p_pf_series;
+        PF_force_series = Ap_mat .* PF_term_series;
 
         F_story_series = F_lin_series + PF_force_series;
 
@@ -782,7 +802,49 @@ PF_force_series = Ap_mat .* PF_term_series;
         Ao_mat    = repmat(ctx.Ao_story,   nRows, 1);
         n_orf_mat = repmat(ctx.n_orf_total, nRows, 1);
 
+        persistent cache_tokens cache_lastQ
+        if isempty(cache_tokens)
+            cache_tokens = zeros(0,1);
+            cache_lastQ = {};
+        end
+
+        cache_token = NaN;
+        if isfield(ctx,'cache_token')
+            cache_token = double(ctx.cache_token);
+        end
+
         Q = Ap_mat .* dvel_mat;                   % (1) Kinematic continuity
+
+        dt_loc = getfield_default_local(ctx,'dt',0);
+        if size(Q,1) > 1 && dt_loc > 0
+            dQdt = gradient(Q, dt_loc);
+            if ~isnan(cache_token)
+                idx_tok = find(cache_tokens == cache_token, 1);
+                if isempty(idx_tok)
+                    cache_tokens(end+1,1) = cache_token; %#ok<AGROW>
+                    cache_lastQ{end+1} = Q(end,:);
+                else
+                    cache_lastQ{idx_tok} = Q(end,:);
+                end
+            end
+        elseif dt_loc > 0 && ~isnan(cache_token)
+            idx_tok = find(cache_tokens == cache_token, 1);
+            if isempty(idx_tok)
+                cache_tokens(end+1,1) = cache_token; %#ok<AGROW>
+                cache_lastQ{end+1} = Q;
+                dQdt = zeros(size(Q));
+            else
+                prev_Q = cache_lastQ{idx_tok};
+                if isempty(prev_Q)
+                    dQdt = zeros(size(Q));
+                else
+                    dQdt = (Q - prev_Q) ./ dt_loc;
+                end
+                cache_lastQ{idx_tok} = Q;
+            end
+        else
+            dQdt = zeros(size(Q));
+        end
 
         Re = (rho_mat .* abs(Q)) .* ctx.d_o_single ./ max(Ao_mat .* mu_mat, 1e-9);
         Cd = ctx.orf.CdInf - (ctx.orf.CdInf - ctx.orf.Cd0) ./ (1 + Re.^ctx.orf.p_exp);
@@ -792,6 +854,12 @@ PF_force_series = Ap_mat .* PF_term_series;
         R_lam = (128 * mu_mat .* ctx.Lori) ./ max(pi * ctx.d_o_single^4, 1e-24) ./ max(n_orf_mat,1);
         dP_lam = R_lam .* abs(Q);
         dP_h = dP_kv + dP_lam;
+        if isfield(ctx,'hyd_inertia') && ctx.hyd_inertia
+            Lori_mat = expand_to_matrix_local(ctx.Lori, size(Q,1), size(Q,2));
+            Lh1 = rho_mat .* Lori_mat ./ max(Ao_mat, 1e-12);
+            Lh = Lh1 ./ max(n_orf_mat, 1);
+            dP_h = dP_h + Lh .* abs(dQdt);
+        end
 
         p_up = ctx.orf.p_amb * ones(size(dP_h));
         p_vap = getfield_default_local(ctx.orf,'p_vap_eff', 150);
@@ -800,8 +868,8 @@ PF_force_series = Ap_mat .* PF_term_series;
         dP_cav = max(p_up - gamma_c * p_vap_mat, 0);
 
         dP_full = dP_h;
-        epsm = getfield_default_local(ctx,'soft_eps',1e5);
-        epsm = max(epsm, 0.05*median(dP_full(:) + 1));
+        epsm = max(getfield_default_local(ctx,'soft_eps',1e5), ...
+                   0.05*median(dP_full(:) + 1));
         dP_eff = 0.5*(dP_full + dP_cav - sqrt((dP_full - dP_cav).^2 + epsm.^2));
 
         sgn   = sign(Q + 0);
