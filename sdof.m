@@ -22,16 +22,14 @@ T0_C = params.T0_C;  T_ref_C = params.T_ref_C;  b_mu = params.b_mu;
 cp_oil = params.cp_oil;   cp_steel = params.cp_steel;
 steel_to_oil_mass_ratio = params.steel_to_oil_mass_ratio;
 n_dampers_per_story = params.n_dampers_per_story;
-story_mask = params.story_mask;
-k_hyd_single = params.k_hyd_single;
-k_p_single = params.k_p;
+story_mask = params.story_mask;  resFactor = params.resFactor;
 Kd = params.Kd; Ebody = params.Ebody; Gsh = params.Gsh;
 
 Ap = params.Ap;   Ao = params.Ao;   k_sd = params.k_sd;
-c_lam0 = params.c_lam0;  c_lam_min_frac = params.c_lam_min_frac;
-c_lam_min = params.c_lam_min; c_lam_max = params.c_lam_max;
-Qcap_big = params.Qcap_big; dP_max = params.dP_max;
-V_oil_per = params.V_oil_per;
+c_lam0 = params.c_lam0;  c_lam_cap = params.c_lam_cap;
+c_lam_min_abs = params.c_lam_min_abs;  c_lam_min_frac = params.c_lam_min_frac;
+c_lam_min = params.c_lam_min;
+Qcap_big = params.Qcap_big;
 
 %% Override with GA best parameters from GA output
 try
@@ -59,20 +57,17 @@ try
     params_override = struct('Dp',Dp,'d_w',d_w,'D_m',D_m,'n_turn',n_turn, ...
         'mu_ref',mu_ref,'Lori',Lori,'Lgap',Lgap,'Kd',Kd,'Ebody',Ebody, ...
         'Gsh',Gsh,'orf',orf,'n_orf',n_orf,'rho',rho, ...
-        'c_lam_min_frac',c_lam_min_frac);
+        'c_lam_min_abs',c_lam_min_abs,'c_lam_min_frac',c_lam_min_frac);
 
+    params_override.cfg = cfg;
     params_override = build_params_local(params_override);
 
     Ap = params_override.Ap;
     Ao = params_override.Ao;
     k_sd = params_override.k_sd;
-    k_hyd_single = params_override.k_hyd_single;
-    k_p_single = params_override.k_p;
     c_lam0 = params_override.c_lam0;
     c_lam_min = params_override.c_lam_min;
     Qcap_big = params_override.Qcap_big;
-    dP_max = params_override.dP_max;
-    V_oil_per = params_override.V_oil_per;
     orf = params_override.orf;
 catch ME
     warning('Unable to apply GA parameters: %s', ME.message);
@@ -86,9 +81,9 @@ win = make_arias_window_local(t, ag); t5 = win.t5; t95 = win.t95;
 %% Damperless and damper responses
 [x0,a_rel0] = solve_linear_mck_local(t, ag, M, C0, K);
 [x_d,a_d,diag_d] = mck_with_damper_local(t, ag, M, C0, K, k_sd, c_lam0, Lori, ...
-    orf, rho, Ap, Ao, k_hyd_single, k_p_single, mu_ref, thermal, T0_C, T_ref_C, b_mu, ...
-    c_lam_min, c_lam_max, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, ...
-    story_mask, n_dampers_per_story, V_oil_per, cfg, dP_max);
+    orf, rho, Ap, Ao, Qcap_big, mu_ref, thermal, T0_C, T_ref_C, b_mu, ...
+    c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, ...
+    story_mask, n_dampers_per_story, resFactor, cfg);
 
 x10_0 = x0(:,10);
 x10_d = x_d(:,10);
@@ -101,14 +96,10 @@ mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
 ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
 multi = (mask .* ndps);
 Kadd = zeros(n); C_add = zeros(n);
-c_diag = diag_d.c_lam_inst(end,:);
-if numel(c_diag)==1
-    c_diag = repmat(c_diag, 1, nStories);
-end
 for i = 1:nStories
     idx = [i,i+1];
     k_eq = k_sd * multi(i);
-    c_eq = c_diag(i);
+    c_eq = diag_d.c_lam * multi(i);
     kM  = k_eq * [1 -1; -1 1];
     cM  = c_eq * [1 -1; -1 1];
     Kadd(idx,idx) = Kadd(idx,idx) + kM;
@@ -121,7 +112,7 @@ phi1 = V(:,ord(1)); w1 = sqrt(w2(1));
 normM = phi1.' * M * phi1;
 
 %% Plots: 10th floor displacement and acceleration, plus IDR
-figure('Name','10. Kat yer değiştirme — ham ivme (ODE-only)','Color','w');
+figure('Name','10. Kat yer de??i??tirme ??? ham ivme (ODE-only)','Color','w');
 plot(t, x10_0,'k','LineWidth',1.4); hold on;
 plot(t, x10_d,'r','LineWidth',1.0);
 yl = ylim; plot([t5 t5],yl,'k--','HandleVisibility','off');
@@ -169,268 +160,154 @@ fprintf(['Self-check zeta1: %.3f%% (dampersiz) vs %.3f%% (damperli); ' ...
         100*zeta0, 100*zeta_d, x10_max_0, x10_max_damperli, ...
         a10abs_max_0, a10abs_max_damperli, IDR_max_0, IDR_max_damperli);
 
+%% Metric aggregation and CSV export
+metrics = compute_sdof_metrics_local(t, x_d, a_d, ag, diag_d, story_height, win, Qcap_big);
+metrics.PFA_mean = metrics.PFA;
+metrics.IDR_mean = metrics.IDR;
+metrics = compute_penalties_local(metrics);
+
+row = struct( ...
+    'PFA_mean', metrics.PFA_mean, ...
+    'IDR_mean', metrics.IDR_mean, ...
+    'pen', metrics.pen, ...
+    'pen_dP', metrics.pen_dP, ...
+    'pen_Qcap', metrics.pen_Qcap, ...
+    'pen_cav', metrics.pen_cav, ...
+    'pen_T', metrics.pen_T, ...
+    'pen_mu', metrics.pen_mu, ...
+    'x10_max_damperli', metrics.x10_max_damperli, ...
+    'a10abs_max_damperli', metrics.a10abs_max_damperli, ...
+    'dP95', metrics.dP95, ...
+    'Qcap95', metrics.Qcap95, ...
+    'cav_pct', metrics.cav_pct, ...
+    'T_end', metrics.T_end, ...
+    'mu_end', metrics.mu_end, ...
+    'PF_p95', metrics.PF_p95, ...
+    'Q_q50', metrics.Q_q50, ...
+    'Q_q95', metrics.Q_q95, ...
+    'dP50', metrics.dP50, ...
+    'energy_tot_sum', metrics.energy_tot_sum, ...
+    'E_orifice_sum', metrics.E_orifice_sum, ...
+    'E_struct_sum', metrics.E_struct_sum, ...
+    'E_ratio', metrics.E_ratio, ...
+    'P_mech_sum', metrics.P_mech_sum);
+
+T_metrics = struct2table(row);
+if ~exist('out','dir')
+    mkdir('out');
+end
+tstamp = datestr(now,'yyyymmdd_HHMMSS');
+outfile = fullfile('out', ['sdof_' tstamp '.csv']);
+writetable(T_metrics, outfile);
+fprintf('SDOF metrics written to %s\n', outfile);
 %% Local helpers
-function params = default_params()
-    % Inline version of parametreler.m providing baseline structural and
-    % damper parameters together with derived quantities.
-    n  = 10;
-    m  = 360e3 * ones(n,1);
-    k  = 6.5e8 * ones(n,1);
-    c  = 6.2e6 * ones(n,1);
-    story_height = 3.0;
-
-    M  = diag(m);
-    K  = zeros(n); C0 = zeros(n);
-    for ii = 1:n
-        kL = k(ii); cL = c(ii);
-        if ii < n
-            kU = k(ii+1); cU = c(ii+1);
+function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story_height, win, Qcap_big)
+    if nargin < 8 || ~isfinite(Qcap_big) || Qcap_big <= 0
+        Qcap_big = eps;
+    end
+    idx = win.idx(:);
+    if isempty(idx) || all(~idx)
+        idx = true(size(t));
+    end
+    a_top_abs = a_rel_d(:,end) + ag(:);
+    metrics = struct();
+    metrics.PFA = max(abs(a_top_abs(idx)));
+    metrics.x10_max_damperli = max(abs(x_d(idx,end)));
+    metrics.a10abs_max_damperli = metrics.PFA;
+    drift = (x_d(:,2:end) - x_d(:,1:end-1)) / story_height;
+    metrics.IDR = max(max(abs(drift(idx,:))));
+    if ~isfinite(metrics.IDR)
+        metrics.IDR = 0;
+    end
+    abs_dP = abs(diag_d.dP_orf(idx,:));
+    abs_Q = abs(diag_d.Q(idx,:));
+    Qcap_ratio = abs_Q ./ max(Qcap_big, eps);
+    abs_story_force = abs(diag_d.story_force(idx,:));
+    dP_q50 = quantile(abs_dP, 0.50);
+    dP_q95 = quantile(abs_dP, 0.95);
+    Q_q50 = quantile(abs_Q, 0.50);
+    Q_q95 = quantile(abs_Q, 0.95);
+    Qcap95_vec = quantile(Qcap_ratio, 0.95);
+    story_force_q95 = quantile(abs_story_force, 0.95);
+    [~, ws] = max(story_force_q95);
+    if isempty(ws) || ~isfinite(ws)
+        ws = 1;
+    end
+    metrics.dP95 = dP_q95(ws);
+    metrics.dP50 = dP_q50(ws);
+    metrics.Q_q95 = Q_q95(ws);
+    metrics.Q_q50 = Q_q50(ws);
+    metrics.Qcap95 = Qcap95_vec(ws);
+    cav_mean = mean(diag_d.cav_mask(idx,:), 1);
+    metrics.cav_pct = cav_mean(ws);
+    metrics.E_orifice_sum = diag_d.E_orf(end);
+    metrics.E_struct_sum = diag_d.E_struct(end);
+    metrics.energy_tot_sum = metrics.E_orifice_sum + metrics.E_struct_sum;
+    if metrics.E_struct_sum > 0
+        metrics.E_ratio = metrics.E_orifice_sum / max(metrics.E_struct_sum, eps);
+    else
+        metrics.E_ratio = 0;
+    end
+    if isfield(diag_d,'P_sum') && ~isempty(diag_d.P_sum)
+        metrics.P_mech_sum = mean(diag_d.P_sum(idx));
+    else
+        metrics.P_mech_sum = NaN;
+    end
+    if isfield(diag_d,'PF') && ~isempty(diag_d.PF)
+        PF_abs = abs(diag_d.PF(idx,:));
+        if size(PF_abs,2) >= ws
+            metrics.PF_p95 = quantile(PF_abs(:,ws), 0.95);
         else
-            kU = 0; cU = 0;
-        end
-        K(ii,ii) = kL + kU; C0(ii,ii) = cL + cU;
-        if ii > 1
-            K(ii,ii-1) = -kL; C0(ii,ii-1) = -cL;
-        end
-        if ii < n
-            K(ii,ii+1) = -kU; C0(ii,ii+1) = -cU;
-        end
-    end
-
-    [~,D] = eig(K,M);
-    w  = sqrt(sort(diag(D),'ascend'));
-    T1 = 2*pi/w(1);
-
-    params = struct();
-    params.n = n;
-    params.M = M; params.C0 = C0; params.K = K;
-    params.story_height = story_height;
-    params.T1 = T1;
-
-    params.Dp   = 0.125;
-    params.Lgap = 0.055;
-    % Orifis + hazne parametreleri: smooth_eps0 yumuşatma, reservoir ise
-    % lineer yay/damper katsayıları ile minimum basıncı temsil eder.
-    % p_cav_eff buhar basıncı tabanını belirler; varsayılan olarak p_amb'e
-    % (veya orf.p_supply_cap ile belirtilen başka bir değere) kadar olan
-    % aralıkta çekiş kuvvetlerini sınırlar ve hazne basıncı ambientteyken
-    % dahi sınırlı bir emiş düşümü sağlar.
-    params.orf = struct('Cd0',0.61,'CdInf',0.80,'Rec',3000,'p_exp',1.1, ...
-        'p_amb',1.0e5,'p_cav_eff',2.0e3,'cav_sf',0.90,'d_o',3.0e-3,'veps',0.10, ...
-        'smooth_eps0',5.0e2,'reservoir',struct('p_min',2.0e3,'k_lin',4.0e8, ...
-        'c_lin',2.0e5,'V_ref',2.5e-4));
-    params.Lori = 0.10;
-    params.mu_ref = 0.9;
-
-    params.Kd = 1.5e9;   % Yağın hacimsel modülü [Pa]
-    params.Ebody = 2.1e11;
-    params.Gsh = 79e9;
-    params.d_w = 12e-3;
-    params.D_m = 80e-3;
-    params.n_turn = 8;
-
-    params.rho = 850;
-    params.n_orf = 6;
-
-    params.T0_C = 25;
-    params.T_ref_C = 25;
-    params.b_mu = -0.013;
-    params.thermal = struct('hA_W_perK',450,'T_env_C',25,'max_iter',3, ...
-        'tol_K',0.5,'relax',0.5,'T_floor_C',-40,'T_ceil_C',180);
-
-    params.steel_to_oil_mass_ratio = 1.5;
-    params.n_dampers_per_story = 1;
-    params.story_mask = ones(n-1,1);
-    params.cp_oil = 1800;
-    params.cp_steel = 500;
-
-    params.c_lam_min_frac = 0.05;
-
-    cfg = struct();
-    % cfg.PF akümülatör/valf fiziğini tarif eder; pf_weight_local artık yoktur.
-    cfg.PF = struct('mode','accumulator', ...
-        'precharge_Pa',1.05e5,'gas_gamma',1.2,'V_gas_ref',2.5e-4, ...
-        'bleed_coeff',2.0e5,'notes','Fiziksel akümülatör modeli; kuvvet ölçekleme yok');
-    cfg.on = struct('pressure_force',true,'mu_floor',false);
-    cfg.compat_simple = false;
-    cfg.num = struct('mu_min_phys',0.6,'dP_cap',NaN);
-    params.cfg = cfg;
-
-    params = build_params_local(params);
-end
-
-function params = build_params_local(params)
-    params = recompute_damper_params_local(params);
-    params.Qcap_big = 0;
-    params.dP_max = 0;
-    if isfield(params,'orf') && isfield(params.orf,'CdInf') && ...
-            isfield(params,'Ao') && isfield(params,'rho') && isfield(params,'Ap')
-        p_cav_floor = max(params.orf.p_cav_eff, 0);
-        p_supply_cap = getfield_default_local(params.orf,'p_supply_cap', params.orf.p_amb);
-        p_supply_cap = max(p_supply_cap, p_cav_floor);
-        dP_cav = max(p_supply_cap - p_cav_floor, 0) * params.orf.cav_sf;
-        stroke_ref = getfield_default_local(params,'stroke_ref',params.Lgap);
-        V_ref = max(getfield_default_local(params,'V_oil_per',params.Ap*(2*params.Lgap)), 1e-12);
-        dV_struct = max(params.Ap * stroke_ref, 0);
-        dP_struct = params.Kd * dV_struct / V_ref;
-        dP_max = min(dP_struct, dP_cav);
-        cfg_dP = NaN;
-        if isfield(params,'cfg') && isfield(params.cfg,'num')
-            cfg_dP = getfield_default_local(params.cfg.num,'dP_cap',NaN);
-        end
-        if isfinite(cfg_dP)
-            dP_max = min(dP_max, cfg_dP);
-        end
-        params.dP_max = max(dP_max, 0);
-        if params.dP_max > 0
-            params.Qcap_big = max(params.orf.CdInf * params.Ao, 1e-12) * ...
-                sqrt(2*params.dP_max / params.rho);
-        end
-    end
-
-    if isfield(params,'c_lam0') && isfield(params,'orf') && ...
-            isfield(params.orf,'d_o') && isfield(params,'Lori') && ...
-            isfield(params,'Ap')
-        mu_ref = getfield_default_local(params,'mu_ref',1);
-        mu_min_ratio = NaN;
-        mu_max_ratio = NaN;
-        if isfield(params,'cfg') && isfield(params.cfg,'num')
-            mu_min_ratio = getfield_default_local(params.cfg.num,'mu_min_phys',NaN);
-            mu_max_ratio = getfield_default_local(params.cfg.num,'mu_max_phys',NaN);
-        end
-        nd = getfield_default_local(params,'n_parallel',1);
-        mu_min = mu_ref;
-        if isfinite(mu_min_ratio)
-            mu_min = max(mu_ref * mu_min_ratio, 1e-6);
-        end
-        mu_max = mu_ref;
-        if isfinite(mu_max_ratio)
-            mu_max = max(mu_ref * mu_max_ratio, mu_min);
-        end
-        c_from_mu = @(mu) nd * (128/pi) * mu * params.Lori * (params.Ap.^2) / (params.orf.d_o.^4);
-        c_lam_min_phys = c_from_mu(mu_min);
-        c_lam_max_phys = c_from_mu(mu_max);
-        frac_floor = getfield_default_local(params,'c_lam_min_frac',0);
-        params.c_lam_min = max(c_lam_min_phys, frac_floor * params.c_lam0);
-        params.c_lam_max = max(c_lam_max_phys, params.c_lam0);
-    end
-end
-
-function params = recompute_damper_params_local(params)
-    if ~isstruct(params), return; end
-
-    if isfield(params,'Dp_mm'),    params.Dp   = params.Dp_mm/1000; end
-    if isfield(params,'d_w_mm'),   params.d_w  = params.d_w_mm/1000; end
-    if isfield(params,'D_m_mm'),   params.D_m  = params.D_m_mm/1000; end
-    if isfield(params,'Lori_mm'),  params.Lori = params.Lori_mm/1000; end
-    if isfield(params,'orf') && isfield(params.orf,'d_o_mm')
-        params.orf.d_o = params.orf.d_o_mm/1000;
-    end
-
-    req = {'Dp','d_w','D_m','n_turn','mu_ref','Lori','Lgap','Kd','Ebody','Gsh'};
-    if ~all(isfield(params,req)) || ~isfield(params,'orf') || ~isfield(params.orf,'d_o')
-        return;
-    end
-
-    if ~isfield(params,'n_orf') && isfield(params,'orf') && isfield(params.orf,'n_orf')
-        params.n_orf = params.orf.n_orf;
-    end
-    if ~isfield(params,'n_orf'), params.n_orf = 1; end
-
-    nd = 1;
-    if isfield(params,'nd') && isfinite(params.nd)
-        nd = params.nd;
-    elseif isfield(params,'n_parallel') && isfinite(params.n_parallel)
-        nd = params.n_parallel;
-    elseif isfield(params,'n_dampers_per_story')
-        nds = params.n_dampers_per_story;
-        if isnumeric(nds)
-            if isscalar(nds), nd = nds; else, nd = max(1, round(max(nds(:)))); end
-        end
-    end
-    nd = max(1, round(nd));
-
-    Ap_single = pi * params.Dp^2 / 4;
-    Ao_single = pi * params.orf.d_o^2 / 4;
-    Ao_damper = params.n_orf * Ao_single;
-    Ap_eff = nd * Ap_single;
-    Ao_eff = nd * Ao_damper;
-
-    V_oil_geom_single = Ap_single*(2*params.Lgap) + params.n_orf*Ao_single*params.Lori;
-    V_oil_extra = getfield_default_local(params,'V_oil_extra',0);
-    V_oil_single = max(V_oil_geom_single + V_oil_extra, 0);
-
-    rho_loc = getfield_default_local(params,'rho',850);
-    Lh = rho_loc * params.Lori / max(Ao_eff, 1e-12);
-
-    k_bulk_single = params.Kd * Ap_single^2 / max(V_oil_single, 1e-12);
-    k_body_single = params.Ebody * Ap_single / max(params.Lgap, 1e-12);
-    inv_k_bulk = inf;
-    if isfinite(k_bulk_single) && k_bulk_single > 0
-        inv_k_bulk = 1 / k_bulk_single;
-    end
-    inv_k_body = inf;
-    if isfinite(k_body_single) && k_body_single > 0
-        inv_k_body = 1 / k_body_single;
-    end
-    inv_sum = inv_k_bulk + inv_k_body;
-    if inv_sum <= 0
-        k_hyd_single = 0;
-    else
-        k_hyd_single = 1 / inv_sum;
-    end
-    k_p = params.Gsh * params.d_w^4 / (8 * params.n_turn * params.D_m^3);
-    k_sd_simple = k_hyd_single + k_p;
-    k_sd_adv    = nd * (k_hyd_single + k_p);
-
-    c_lam_single = (128/pi) * params.mu_ref * params.Lori * Ap_single^2 / (params.orf.d_o^4);
-    c_lam0 = nd * c_lam_single;
-
-    params.V_oil_per = V_oil_single;
-
-    params.Ap = Ap_single;
-    params.Ao = Ao_damper;
-    params.Ap_eff = Ap_eff;
-    params.Ao_eff = Ao_eff;
-    params.Lh = Lh;
-    params.V_oil_single = V_oil_single;
-    params.V_oil_total = V_oil_single * nd;
-    params.n_parallel = nd;
-    params.k_p = k_p;
-    params.k_hyd_single = k_hyd_single;
-    params.k_bulk_single = k_bulk_single;
-    params.k_sd_simple = k_sd_simple;
-    params.k_sd_adv = k_sd_adv;
-    params.k_sd = k_sd_adv;
-    params.c_lam0 = c_lam0;
-    if isfinite(k_hyd_single) && k_hyd_single > 0
-        params.hydraulic_compliance_single = 1 ./ k_hyd_single;
-    else
-        params.hydraulic_compliance_single = inf;
-    end
-end
-
-function val = getfield_default_local(S, fname, defaultVal)
-    if ~isstruct(S) || ~isfield(S,fname) || isempty(S.(fname))
-        val = defaultVal; return;
-    end
-    valRaw = S.(fname);
-    if isnumeric(valRaw)
-        if isempty(valRaw) || any(~isfinite(valRaw(:)))
-            val = defaultVal;
-        else
-            val = valRaw;
+            metrics.PF_p95 = NaN;
         end
     else
-        val = valRaw;
+        metrics.PF_p95 = NaN;
     end
-end
+    if isfield(diag_d,'T_oil') && ~isempty(diag_d.T_oil)
+        metrics.T_end = diag_d.T_oil(end);
+    else
+        metrics.T_end = NaN;
+    end
+    if isfield(diag_d,'mu') && ~isempty(diag_d.mu)
+        metrics.mu_end = diag_d.mu(end);
+    else
+        metrics.mu_end = NaN;
+    end
 
+end
 function y = softmin_local(a,b,epsm)
     if nargin < 3 || isempty(epsm)
         epsm = 1e5;
     end
     y = 0.5*(a + b - sqrt((a - b).^2 + epsm.^2));
+end
+
+function w = pf_weight_local(t, cfg)
+    if nargin < 2 || ~isstruct(cfg), cfg = struct(); end
+    cfg.on = struct('pressure_force',true,'mu_floor',false, ...
+        'pf_resistive_only',false,'Rlam',true,'Rkv',true, ...
+        'hyd_inertia',true,'cavitation',true);
+    if ~isfield(cfg.on,'pressure_force'), cfg.on.pressure_force = true; end
+    cfg.PF = struct('mode','ramp','tau',1.0,'gain',0.85,'t_on',0,'auto_t_on',true,'k',0.01,'tau_floor',1e-6);
+    if ~isfield(cfg.PF,'t_on'), cfg.PF.t_on = 0; end
+    if ~isfield(cfg.PF,'tau'),  cfg.PF.tau  = 1.0; end
+    if ~isfield(cfg,'compat_simple'), cfg.compat_simple = true; end
+    k = getfield_default_local(cfg.PF,'k',0.01);
+    tau_floor = getfield_default_local(cfg.PF,'tau_floor',1e-6);
+    t = double(t);
+    if cfg.compat_simple
+        dt  = max(t - cfg.PF.t_on, 0);
+        tau = max(cfg.PF.tau, tau_floor);
+        w_local = 1 - exp(-dt ./ tau);
+    else
+        k = max(k, tau_floor);
+        sp_dt = (log1p(exp(-abs((t - cfg.PF.t_on)./k))) + max((t - cfg.PF.t_on)./k, 0));
+        dt  = sp_dt .* k;
+        sp_tau = (log1p(exp(-abs((cfg.PF.tau - tau_floor)./k))) + max((cfg.PF.tau - tau_floor)./k, 0));
+        tau = sp_tau .* k + tau_floor;
+        w_local = 1 - exp(-dt ./ tau);
+    end
+    w = cfg.on.pressure_force .* w_local;
 end
 
 function win = make_arias_window_local(t, ag, varargin)
@@ -482,7 +359,7 @@ function [records, scaled, meta] = load_ground_motions_local(T1, opts)
         raw = load('acc_matrix.mat');
     else
         warning('load_ground_motions_local:synthetic', ...
-            'acc_matrix.mat bulunamadı; sentetik tek kayıt kullanılacak.');
+            'acc_matrix.mat bulunamad??; sentetik tek kay??t kullan??lacak.');
         t_syn = (0:0.01:40)';
         ag_syn = 0.35 * sin(2*pi*1.2*t_syn) .* exp(-0.05*t_syn);
         raw = struct('synthetic',[t_syn ag_syn]);
@@ -495,10 +372,10 @@ function [records, scaled, meta] = load_ground_motions_local(T1, opts)
         t  = A(:,1);   ag = A(:,2);
         [t,iu] = unique(t,'stable'); ag = ag(iu);
         dt = median(diff(t));
-        assert(max(abs(diff(t) - dt)) < 1e-6, 'Zaman örnekleme aralığı düzensiz');
+        assert(max(abs(diff(t) - dt)) < 1e-6, 'Zaman ??rnekleme aral?????? d??zensiz');
         t  = (t(1):dt:t(end)).';
         ag = interp1(A(:,1), A(:,2), t, 'linear');
-        assert(max(abs(ag)) < 100, 'İvme büyüklüğü birim hatasına işaret ediyor');
+        assert(max(abs(ag)) < 100, '??vme b??y??kl?????? birim hatas??na i??aret ediyor');
         ag = detrend(ag,0);
         ag = detrend(ag,1);
         try
@@ -518,7 +395,7 @@ function [records, scaled, meta] = load_ground_motions_local(T1, opts)
     end
 
     if getfield_default_local(opts,'verbose',true)
-        fprintf('Toplam %d zemin hareketi kaydı yüklendi:\n', numel(records));
+        fprintf('Toplam %d zemin hareketi kayd?? y??klendi:\n', numel(records));
         for kk = 1:numel(records)
             r = records(kk);
             fprintf('%2d) %-12s dt=%6.4f s dur=%6.2f s PGA=%7.3f PGV=%7.3f\n', ...
@@ -552,7 +429,7 @@ function [records, scaled, meta] = load_ground_motions_local(T1, opts)
             IM(idx) = [];
         end
         if ~isempty(dropped) && getfield_default_local(opts,'verbose',true)
-            fprintf('TRIM: ayıklanan uç değerler = %s\n', strjoin(dropped,', '));
+            fprintf('TRIM: ay??klanan u?? de??erler = %s\n', strjoin(dropped,', '));
         end
         IM_low  = max(s_bounds(1)*IM);
         IM_high = min(s_bounds(2)*IM);
@@ -584,7 +461,7 @@ function [records, scaled, meta] = load_ground_motions_local(T1, opts)
         modeStr = tern_local(strcmpi(IM_mode,'band'),'band','PSA@T1');
         clipCount = n_clipped * doClip;
         if getfield_default_local(opts,'verbose',true)
-            fprintf('Hedef IM = %.3f (%s). Maks hata = %.2f%% | uygun aralık=[%.3f, %.3f] | s_min=%.2f s_max=%.2f | KIRPILAN=%d\n', ...
+            fprintf('Hedef IM = %.3f (%s). Maks hata = %.2f%% | uygun aral??k=[%.3f, %.3f] | s_min=%.2f s_max=%.2f | KIRPILAN=%d\n', ...
                 targetIM, modeStr, max(err), IM_low, IM_high, min(s_all), max(s_all), clipCount);
         end
         meta = struct('IM_mode', IM_mode, 'band_fac', band_fac, 's_bounds', s_bounds);
@@ -639,339 +516,586 @@ function [x,a_rel] = solve_linear_mck_local(t, ag, M, C, K)
     a_rel = (-(M \ (C*z(:,nloc+1:end).' + K*z(:,1:nloc).')).' - ag.*r.');
 end
 
-function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap,Ao, k_hyd_single,k_p_single, mu_ref, ...
-    thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_max,Lgap, cp_oil,cp_steel, ...
-    steel_to_oil_mass_ratio, story_mask, n_dampers_per_story, V_oil_per, cfg, dP_max)
+function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap,Ao,Qcap, mu_ref, ...
+    thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
+    cp_oil,cp_steel, steel_to_oil_mass_ratio, story_mask, ...
+    n_dampers_per_story, resFactor, cfg)
 
-    if nargin < 18 || isempty(c_lam_min), c_lam_min = 0; end
-    if nargin < 19 || isempty(c_lam_max), c_lam_max = inf; end
-    if nargin < 27 || isempty(V_oil_per), V_oil_per = Ap*(2*Lgap); end
-    if nargin < 28 || ~isstruct(cfg), cfg = struct(); end
-    if nargin < 29 || isempty(dP_max), dP_max = NaN; end
-
-    nloc = size(M,1); r = ones(nloc,1);
-    agf = griddedInterpolant(t,ag,'linear','nearest');
-
-    nStories = nloc-1;
-    mask = story_mask(:);  if numel(mask)==1,  mask  = mask *ones(nStories,1); end
-    ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
-    multi = mask .* ndps;
-    multi = multi(:);
-    Nvec = (1:nStories).'; Mvec = (2:nloc).';
-
-    if isscalar(k_sd)
-        k_sd_vec = k_sd * ones(1,nStories);
-    else
-        k_sd_vec = k_sd(:).';
-        if numel(k_sd_vec)~=nStories
-            k_sd_vec = k_sd_vec(1) * ones(1,nStories);
-        end
+    Nt = numel(t);
+    n = size(M,1);
+    if n < 2
+        x = zeros(Nt,n);
+        a_rel = zeros(Nt,n);
+        ts = struct();
+        return;
     end
-    k_sd_vec(~multi.') = 0;
 
-    if numel(V_oil_per)==1
-        V_oil_vec = V_oil_per * ones(nStories,1);
-    else
-        V_oil_vec = V_oil_per(:);
-        if numel(V_oil_vec)~=nStories
-            V_oil_vec = V_oil_vec(1) * ones(nStories,1);
-        end
-    end
-    if isscalar(k_hyd_single)
-        k_hyd_single_vec = k_hyd_single * ones(1,nStories);
-    else
-        k_hyd_single_vec = k_hyd_single(:).';
-        if numel(k_hyd_single_vec)~=nStories
-            k_hyd_single_vec = k_hyd_single_vec(1) * ones(1,nStories);
-        end
-    end
-    if isscalar(k_p_single)
-        k_p_single_vec = k_p_single * ones(1,nStories);
-    else
-        k_p_single_vec = k_p_single(:).';
-        if numel(k_p_single_vec)~=nStories
-            k_p_single_vec = k_p_single_vec(1) * ones(1,nStories);
-        end
-    end
-    active_mask = multi.' > 0;
-    k_hyd_single_vec(~active_mask) = 0;
-    k_p_single_vec(~active_mask) = 0;
+    Ns = n - 1;
+    r = ones(n,1);
+    agf = griddedInterpolant(t, ag, 'linear', 'nearest');
 
-    idx_To_start = 2*nloc + 1;
-    idx_Ts_start = 2*nloc + nStories + 1;
-    z0 = zeros(2*nloc + 2*nStories,1);
-    z0(idx_To_start:idx_To_start+nStories-1) = T0_C;
-    z0(idx_Ts_start:idx_Ts_start+nStories-1) = T0_C;
+    mask = story_mask(:);
+    if numel(mask)==1, mask = mask * ones(Ns,1); end
+    ndps = n_dampers_per_story(:);
+    if numel(ndps)==1, ndps = ndps * ones(Ns,1); end
+    multi_col = max(mask .* ndps, 0);
+    multi_row = multi_col.';
+    Nvec = 1:Ns;
+    Mvec = 2:n;
+
+    cfg_on = getfield_default_local(cfg,'on', struct());
+    mu_floor_flag = getfield_default_local(cfg_on,'mu_floor', false);
+    pf_res_only = getfield_default_local(cfg_on,'pf_resistive_only', false);
+
+    numStruct = getfield_default_local(cfg,'num', struct());
+    mu_min_phys = getfield_default_local(numStruct,'mu_min_phys', mu_ref);
+    mu_max_phys = getfield_default_local(numStruct,'mu_max_phys', NaN);
+    soft_eps = getfield_default_local(numStruct,'softmin_eps', 1e5);
+    Qcap_scale = getfield_default_local(numStruct,'Qcap_scale', 1);
+
+    c_lam = min(max(c_lam0, c_lam_min), c_lam_cap);
+
+    PF_cfg = getfield_default_local(cfg,'PF', struct());
+    gain_pf = getfield_default_local(PF_cfg,'gain',1);
+
+    rho_base = getfield_default_local(thermal,'rho_ref', rho);
+    alpha_rho = getfield_default_local(thermal,'alpha_rho', 0);
+    beta0 = getfield_default_local(thermal,'beta0', 1.6e9);
+    b_beta = getfield_default_local(thermal,'b_beta', 0);
+    T_ref = getfield_default_local(thermal,'T_ref_C', T_ref_C);
+    T_env = getfield_default_local(thermal,'T_env_C', T0_C);
+    dT_max = getfield_default_local(thermal,'dT_max', 80);
+
+    Ap_single = Ap;
+    Ao_single = Ao;
+    Ap_story_col = Ap_single * multi_col;
+    Ao_story_col = Ao_single * multi_col;
+    Ap_story_row = Ap_story_col.';
+    Ao_story_row = Ao_story_col.';
+    n_orf_single = getfield_default_local(orf,'n_orf',1);
+    n_orf_total_col = max(1, n_orf_single) * multi_col;
+    n_orf_total_row = n_orf_total_col.';
+    d_o_single = getfield_default_local(orf,'d_o',3.0e-3);
+
+    Qcap_eff = max(1e-9, Qcap * Qcap_scale);
+    Qcap_story = Qcap_eff * ones(1,Ns);
+
+    resFactor_loc = getfield_default_local(thermal,'resFactor', resFactor);
+    cp_oil_loc = getfield_default_local(thermal,'cp_oil', cp_oil);
+    cp_steel_loc = getfield_default_local(thermal,'cp_steel', cp_steel);
+    hA_base = getfield_default_local(thermal,'hA_W_perK', thermal.hA_W_perK);
+    hA_os = getfield_default_local(thermal,'hA_os', hA_base);
+    hA_o_env = getfield_default_local(thermal,'hA_o_env', hA_base);
+    hA_s_env = getfield_default_local(thermal,'hA_s_env', hA_base);
+
+    V_oil_per = resFactor_loc * (Ap_single * (2*Lgap));
+    n_tot = sum(multi_col);
+    m_oil_tot = n_tot * (rho_base * V_oil_per);
+    m_steel_tot = steel_to_oil_mass_ratio * m_oil_tot;
+    C_oil = max(m_oil_tot * cp_oil_loc, eps);
+    C_steel = max(m_steel_tot * cp_steel_loc, eps);
+
+    z0 = zeros(2*n + 2,1);
+    z0(2*n + 1) = T0_C;
+    z0(2*n + 2) = T0_C;
 
     opts = odeset('RelTol',1e-3,'AbsTol',1e-6);
 
-    c_lam0 = min(max(c_lam0, c_lam_min), c_lam_max);
-    c_lam_factor = (128/pi) * Lori * (Ap.^2) / (orf.d_o.^4);
+    ctx = struct('n',n,'Ns',Ns,'M',M,'C',C,'K',K,'r',r,'agf',agf, ...
+                 'Nvec',Nvec,'Mvec',Mvec,'multi',multi_row,'multi_col',multi_col,'k_sd',k_sd,'c_lam',c_lam, ...
+                 'Ap_story',Ap_story_row,'Ap_story_col',Ap_story_col,'Ao_story',Ao_story_row,'Ao_story_col',Ao_story_col,'Ap_single',Ap_single, ...
+                 'Qcap_story',Qcap_story,'Qcap_story_col',Qcap_story.','n_orf_total',n_orf_total_row,'n_orf_total_col',n_orf_total_col,'d_o_single',d_o_single, ...
+                 'Lori',Lori,'mu_ref',mu_ref,'b_mu',b_mu,'mu_floor_flag',logical(mu_floor_flag), ...
+                 'mu_min_phys',mu_min_phys,'mu_max_phys',mu_max_phys,'gain_pf',gain_pf,'pf_res_only',logical(pf_res_only), ...
+                 'cfg',cfg,'soft_eps',soft_eps,'rho_base',rho_base,'alpha_rho',alpha_rho, ...
+                 'beta0',beta0,'b_beta',b_beta,'T_ref',T_ref,'T_env',T_env, ...
+                 'C_oil',C_oil,'C_steel',C_steel,'hA_os',hA_os,'hA_o_env',hA_o_env,'hA_s_env',hA_s_env, ...
+                 'T_min',T0_C,'T_max',T0_C + dT_max,'orf',orf,'Qcap_eff',Qcap_eff, ...
+                 'thermal',thermal, 'rho_min', getfield_default_local(thermal,'rho_min',600), 'gate_k', getfield_default_local(cfg,'gate_k',20));
 
-    mu_min_ratio = NaN; mu_max_ratio = NaN;
-    if isfield(cfg,'num')
-        mu_min_ratio = getfield_default_local(cfg.num,'mu_min_phys',NaN);
-        mu_max_ratio = getfield_default_local(cfg.num,'mu_max_phys',NaN);
+    sol = ode15s(@(tt,z) damper_rhs_local(tt,z,ctx), [t(1) t(end)], z0, opts);
+    Z = deval(sol, t).';
+
+    x = Z(:,1:n);
+    v = Z(:,n+1:2*n);
+    T_o = Z(:,2*n+1);
+    T_s = Z(:,2*n+2);
+
+    diag = postprocess_state_local(ctx, t, x, v, T_o, T_s);
+
+    F_story = diag.story_force;
+    F = zeros(Nt, n);
+    for k = 1:Ns
+        idxN = Nvec(k);
+        idxM = Mvec(k);
+        F(:,idxN) = F(:,idxN) - F_story(:,k);
+        F(:,idxM) = F(:,idxM) + F_story(:,k);
     end
-    mu_floor = mu_ref;
-    if isfinite(mu_min_ratio)
-        mu_floor = max(mu_ref * mu_min_ratio, 1e-6);
-    end
-    mu_cap = Inf;
-    if isfinite(mu_max_ratio)
-        mu_cap = max(mu_ref * mu_max_ratio, mu_floor);
-    end
+    a_rel = ( -(M\(C*v.' + K*x.' + F.' )).' - ag(:).*r.' );
 
-    hA_os    = getfield_default_local(thermal,'hA_os',    thermal.hA_W_perK);
-    hA_o_env = getfield_default_local(thermal,'hA_o_env', thermal.hA_W_perK);
-    hA_s_env = getfield_default_local(thermal,'hA_s_env', thermal.hA_W_perK);
-    T_env    = getfield_default_local(thermal,'T_env_C', T0_C);
-    T_floor  = getfield_default_local(thermal,'T_floor_C', -Inf);
-    T_ceil   = getfield_default_local(thermal,'T_ceil_C',  Inf);
+    ts = diag;
 
-    function dzdt = damper_ode(tt,z)
-        x_loc = z(1:nloc);
-        v_loc = z(nloc+1:2*nloc);
-        T_o_loc = z(idx_To_start:idx_To_start+nStories-1);
-        T_s_loc = z(idx_Ts_start:idx_Ts_start+nStories-1);
+    function dz = damper_rhs_local(tt,z,ctx)
+        x_loc = z(1:ctx.n);
+        v_loc = z(ctx.n+1:2*ctx.n);
+        T_o_loc = z(2*ctx.n+1);
+        T_s_loc = z(2*ctx.n+2);
 
-        drift_loc = x_loc(Mvec) - x_loc(Nvec);
-        dvel_loc  = v_loc(Mvec) - v_loc(Nvec);
+        drift = x_loc(ctx.Mvec) - x_loc(ctx.Nvec);
+        dvel = v_loc(ctx.Mvec) - v_loc(ctx.Nvec);
 
-        [F_story_loc, F_orf_tot, F_lam_tot, dP_tot_loc, Cd_loc, mu_loc, c_lam_loc, Q_per_loc, P_visc_per_loc, P_orf_per_loc] = ...
-            damper_response(drift_loc, dvel_loc, T_o_loc, T_s_loc, tt);
-
-        Fd = zeros(nloc,1);
-        Fd(Nvec) = Fd(Nvec) - F_story_loc;
-        Fd(Mvec) = Fd(Mvec) + F_story_loc;
-
-        acc = M \ (-C*v_loc - K*x_loc - Fd - M*r*agf(tt));
-
-        [dT_o_dt, dT_s_dt] = temperature_rates(T_o_loc, T_s_loc, P_visc_per_loc, P_orf_per_loc);
-
-        dzdt = [v_loc; acc; dT_o_dt; dT_s_dt];
-    end
-
-    sol  = ode15s(@damper_ode,[t(1) t(end)],z0,opts);
-    z    = deval(sol,t).';
-    x    = z(:,1:nloc);
-    v    = z(:,nloc+1:2*nloc);
-    T_o  = z(:,idx_To_start:idx_To_start+nStories-1);
-    T_s  = z(:,idx_Ts_start:idx_Ts_start+nStories-1);
-
-    drift = x(:,Mvec) - x(:,Nvec);
-    dvel  = v(:,Mvec) - v(:,Nvec);
-
-    [F_story, F_orf_tot, F_lam_tot, dP_tot, Cd_hist, mu_hist, c_lam_hist, Q_per, P_visc_per, P_orf_per] = ...
-        damper_response(drift, dvel, T_o, T_s, t);
-
-    F = zeros(numel(t),nloc);
-    F(:,Nvec) = F(:,Nvec) - F_story;
-    F(:,Mvec) = F(:,Mvec) + F_story;
-    a_rel = ( -(M\(C*v.' + K*x.' + F.')).' - ag.*r.' );
-
-    P_total = (P_visc_per + P_orf_per) .* multi.';
-    P_orf_tot = P_orf_per .* multi.';
-    P_struct = sum(F_story .* dvel, 2);
-    E_orf = cumtrapz(t, sum(P_orf_tot,2));
-    E_struct = cumtrapz(t, P_struct);
-
-    F_lin_hist = drift .* k_sd_vec;
-    F_hyd_hist = drift .* (k_hyd_single_vec .* multi.');
-    F_shear_hist = drift .* (k_p_single_vec .* multi.');
-    ts = struct('dvel', dvel, 'story_force', F_story, ...
-        'F_components', struct('F_orf', F_orf_tot, 'F_lam', F_lam_tot, 'F_lin', F_lin_hist, ...
-            'F_hyd', F_hyd_hist, 'F_shear', F_shear_hist), ...
-        'Q', Q_per, 'dP_total', dP_tot, 'Cd', Cd_hist, ...
-        'mu_inst', mu_hist, 'c_lam_inst', c_lam_hist, ...
-        'T_o', T_o, 'T_s', T_s, ...
-        'P_visc', P_visc_per, 'P_orf', P_orf_per, ...
-        'E_orf', E_orf, 'E_struct', E_struct);
-
-    function [F_story_out, F_orf_tot_out, F_lam_tot_out, dP_tot_out, Cd_out, mu_out, c_lam_out, Q_per_out, P_visc_per_out, P_orf_per_out] = ...
-            damper_response(drift_loc, dvel_loc, T_o_loc, T_s_loc, time_loc)
-
-        sz = size(drift_loc);
-        drift_vec = reshape(drift_loc, [], nStories);
-        dvel_vec  = reshape(dvel_loc,  [], nStories);
-        To_vec    = reshape(T_o_loc,   [], nStories);
-        Ts_vec    = reshape(T_s_loc,   [], nStories); %#ok<NASGU>
-
-        mu_temp = mu_ref * exp(b_mu * (To_vec - T_ref_C));
-        mu_temp = max(mu_temp, mu_floor);
-        if isfinite(mu_cap)
-            mu_temp = min(mu_temp, mu_cap);
+        mu_loc = ctx.mu_ref * exp(ctx.b_mu * (T_o_loc - ctx.T_ref));
+        if ctx.mu_floor_flag
+            mu_loc = max(ctx.mu_min_phys, mu_loc);
         end
-        mu_out = mu_temp;
-
-        c_lam_single_inst = c_lam_factor * mu_temp;
-        c_lam_total_inst = c_lam_single_inst .* multi.';
-        damper_mask = multi.' > 0;
-        if any(damper_mask)
-            c_lam_total_inst(:,damper_mask) = min(max(c_lam_total_inst(:,damper_mask), c_lam_min), c_lam_max);
+        if isfinite(ctx.mu_max_phys)
+            mu_loc = min(ctx.mu_max_phys, mu_loc);
         end
-        c_lam_total_inst(:,~damper_mask) = 0;
-        c_lam_out = c_lam_total_inst;
+        rho_loc = max(ctx.rho_min, ctx.rho_base / (1 + ctx.alpha_rho * (T_o_loc - ctx.T_ref)));
+        beta_loc = max(1e8, ctx.beta0 * exp(ctx.b_beta * (T_o_loc - ctx.T_ref))); %#ok<NASGU>
+        p_vap_loc = p_vap_Antoine_local(T_o_loc, ctx.thermal, ctx.orf); %#ok<NASGU>
 
-        c_lam_single_inst = c_lam_total_inst ./ max(multi.', 1e-12);
-        c_lam_single_inst(multi.'==0) = 0;
-        F_lam_single = c_lam_single_inst .* dvel_vec;
-        F_lam_tot = F_lam_single .* multi.';
+        F_lin_loc = ctx.k_sd * drift;
+        orf_loc = compute_orifice_terms_local(dvel, F_lin_loc, mu_loc, rho_loc, ctx);
 
-        F_hyd_single = drift_vec .* k_hyd_single_vec;
-        F_shear_single = drift_vec .* k_p_single_vec;
-        F_hyd_tot = F_hyd_single .* multi.';
-        F_shear_tot = F_shear_single .* multi.';
-        F_lin_tot = F_hyd_tot + F_shear_tot;
-        F_lin_per = zeros(size(F_lin_tot));
-        mask_multi = multi.' > 0;
-        F_lin_per(:,mask_multi) = F_lin_tot(:,mask_multi) ./ multi(mask_multi).';
+        dp_pf_loc = (ctx.c_lam * dvel + orf_loc.F_orf) ./ ctx.Ap_story_col;
+        if ctx.pf_res_only
+            s_loc = tanh(ctx.gate_k*dvel);
+            dp_pf_loc = s_loc .* max(0, s_loc .* dp_pf_loc);
+        end
+        w_pf = pf_weight_local(tt, ctx.cfg);
+        PF_term = (ctx.gain_pf * w_pf) * dp_pf_loc;
+        F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;
+        F_loc = zeros(ctx.n,1);
+        for ii = 1:ctx.Ns
+            F_loc(ctx.Nvec(ii)) = F_loc(ctx.Nvec(ii)) - F_story_loc(ii);
+            F_loc(ctx.Mvec(ii)) = F_loc(ctx.Mvec(ii)) + F_story_loc(ii);
+        end
 
-        params_orf = struct('Ap',Ap,'Ao',Ao,'orf',orf,'rho',rho, ...
-            'F_hyd_single',F_hyd_single,'F_visc_single',F_lam_single, ...
-            'drift',drift_vec, ...
-            'cfgPF',getfield_default_local(cfg,'PF',struct()), ...
-            'k_hyd_single',k_hyd_single_vec,'multi',multi.');
-        [F_orf_single, dP_tot, Q_per_val, P_orf_single_val, Cd_val] = ...
-            calc_orifice_force_local(dvel_vec, params_orf, mu_temp, dP_max);
-        F_orf_tot = F_orf_single .* multi.';
+        dv_loc = ctx.M \ ( -ctx.C*v_loc - ctx.K*x_loc - F_loc - ctx.M*ctx.r*ctx.agf(tt) );
 
-        F_resist = F_orf_tot + F_lam_tot;
-        F_story_val = F_lin_tot + F_resist;
+        qmag_loc = abs(orf_loc.Q);
+        P_heat_loc = sum( (orf_loc.dP_h .* qmag_loc) .* ctx.multi_col );
+        P_heat_loc = max(P_heat_loc, 0);
 
-        P_visc_single = c_lam_single_inst .* (dvel_vec.^2);
-        P_orf_single = P_orf_single_val;
+        dT_o_loc = ( P_heat_loc - ctx.hA_os * (T_o_loc - T_s_loc) ...
+                     - ctx.hA_o_env * (T_o_loc - ctx.T_env) ) / ctx.C_oil;
+        dT_s_loc = ( ctx.hA_os * (T_o_loc - T_s_loc) ...
+                     - ctx.hA_s_env * (T_s_loc - ctx.T_env) ) / ctx.C_steel;
 
-        F_story_out = reshape(F_story_val, sz);
-        F_orf_tot_out = reshape(F_orf_tot, sz);
-        F_lam_tot_out = reshape(F_lam_tot, sz);
-        dP_tot_out = reshape(dP_tot, sz);
-        Cd_out = reshape(Cd_val, sz);
-        mu_out = reshape(mu_temp, sz);
-        c_lam_out = reshape(c_lam_total_inst, sz);
-        Q_per_out = reshape(Q_per_val, sz);
-        P_visc_per_out = reshape(P_visc_single, sz);
-        P_orf_per_out = reshape(P_orf_single, sz);
+        if T_o_loc <= ctx.T_min
+            dT_o_loc = max(dT_o_loc, 0);
+        elseif T_o_loc >= ctx.T_max
+            dT_o_loc = min(dT_o_loc, 0);
+        end
+        if T_s_loc <= ctx.T_min
+            dT_s_loc = max(dT_s_loc, 0);
+        elseif T_s_loc >= ctx.T_max
+            dT_s_loc = min(dT_s_loc, 0);
+        end
+
+        dz = [ v_loc; dv_loc; dT_o_loc; dT_s_loc ];
     end
 
-    function [dTo_dt, dTs_dt] = temperature_rates(T_o_loc, T_s_loc, P_visc_per_loc, P_orf_per_loc)
-        % Newton tipi ısı transferi: yağ/çelik kütleleri ortam sıcaklığına doğru
-        % hA katsayılarıyla soğur; sadece T_floor/T_ceil sayısal güvenlik için
-        % kullanılır, fiziksel olarak ortam sıcaklığının altına soğuma mümkündür.
-        T_o_loc = T_o_loc(:); T_s_loc = T_s_loc(:);
-        P_visc_per_loc = P_visc_per_loc(:);
-        P_orf_per_loc = P_orf_per_loc(:);
-        dTo_dt = zeros(nStories,1);
-        dTs_dt = zeros(nStories,1);
-        V_story = V_oil_vec .* multi;
-        for jj = 1:nStories
-            if multi(jj) <= 0 || V_story(jj) <= 0
-                continue;
+    function out = postprocess_state_local(ctx, t, x, v, T_o, T_s)
+        Nt_loc = numel(t);
+        Ns_loc = ctx.Ns;
+        drift = x(:,ctx.Mvec) - x(:,ctx.Nvec);
+        dvel = v(:,ctx.Mvec) - v(:,ctx.Nvec);
+
+        mu_series = ctx.mu_ref * exp(ctx.b_mu * (T_o - ctx.T_ref));
+        if ctx.mu_floor_flag
+            mu_series = max(ctx.mu_min_phys, mu_series);
+        end
+        if isfinite(ctx.mu_max_phys)
+            mu_series = min(ctx.mu_max_phys, mu_series);
+        end
+        rho_series = max(ctx.rho_min, ctx.rho_base ./ (1 + ctx.alpha_rho * (T_o - ctx.T_ref)));
+        beta_series = max(1e8, ctx.beta0 * exp(ctx.b_beta * (T_o - ctx.T_ref)));
+        p_vap_series = p_vap_Antoine_local(T_o, ctx.thermal, ctx.orf);
+
+        F_lin_series = ctx.k_sd * drift;
+        orf_series = compute_orifice_terms_local(dvel, F_lin_series, mu_series, rho_series, ctx);
+
+        % Energy bookkeeping and cavitation mask
+        Ap_mat = repmat(ctx.Ap_story, Nt_loc,1);
+        dp_pf_series = (ctx.c_lam * dvel + orf_series.F_orf) ./ Ap_mat;
+        if ctx.pf_res_only
+            s_series = tanh(ctx.gate_k*dvel);
+            dp_pf_series = s_series .* max(0, s_series .* dp_pf_series);
+        end
+        w_pf_vec = pf_weight_local(t(:), ctx.cfg);
+        w_pf_mat = repmat(w_pf_vec, 1, Ns_loc);
+        PF_term_series = (ctx.gain_pf * w_pf_mat) .* dp_pf_series;
+        PF_force_series = Ap_mat .* PF_term_series;
+        F_story_series = F_lin_series + PF_force_series;
+
+        P_visc_per = ctx.c_lam * (dvel.^2);
+        P_loss_series = orf_series.dP_h .* abs(orf_series.Q);
+        P_sum = (P_visc_per + P_loss_series) * ctx.multi';
+         P_orf_per = orf_series.dP_kv .* abs(orf_series.Q);
+         P_orf_tot = P_orf_per * ctx.multi';
+         P_struct_tot = (F_story_series .* dvel) * ones(Ns_loc,1);
+
+         % Integrate full orifice losses (kv + laminar) for energy
+         P_orf_full_tot = P_loss_series * ctx.multi';
+         E_orf = cumtrapz(t, P_orf_full_tot);
+         E_struct = cumtrapz(t, P_struct_tot);
+
+        p_up_series = ctx.orf.p_amb + abs(F_lin_series) ./ max(Ap_mat, 1e-12);
+        p_vap_mat = repmat(p_vap_series, 1, Ns_loc);
+        p2_est_series = p_up_series - orf_series.dP_orf;
+        cav_thresh = ctx.orf.cav_sf * p_vap_mat;
+        cav_mask = p2_est_series <= cav_thresh;
+
+        out = struct('dvel', dvel, 'story_force', F_story_series, 'Q', orf_series.Q, ...
+            'dP_orf', orf_series.dP_orf, 'PF', PF_force_series, 'cav_mask', cav_mask, 'P_sum', P_sum, ...
+            'E_orf', E_orf, 'E_struct', E_struct, 'T_oil', T_o, 'T_steel', T_s, ...
+            'mu', mu_series, 'rho', rho_series, 'beta', beta_series, 'p_vap', p_vap_series, ...
+            'c_lam', ctx.c_lam, 'dP_kv', orf_series.dP_kv, 'dP_cav', orf_series.dP_cav, ...
+            'F_lin', F_lin_series, 'Re', orf_series.Re);
+
+    end
+    function out = compute_orifice_terms_local(dvel, F_lin, mu_val, rho_val, ctx)
+        Ns_loc = ctx.Ns;
+        isColumn = isvector(dvel);
+        if isColumn
+            dvel_mat = reshape(dvel(:), 1, Ns_loc);
+            F_lin_mat = reshape(F_lin(:), 1, Ns_loc);
+            mu_mat = expand_to_matrix_local(mu_val, 1, Ns_loc);
+            rho_mat = expand_to_matrix_local(rho_val, 1, Ns_loc);
+        else
+            dvel_mat = dvel;
+            if size(dvel_mat,2) ~= Ns_loc
+                error('compute_orifice_terms_local:bad_dvel','dvel column count mismatch');
             end
-            C_oil_story = max(rho * V_story(jj) * cp_oil, eps);
-            C_steel_story = max(steel_to_oil_mass_ratio * rho * V_story(jj) * cp_steel, eps);
-            power_in = (P_visc_per_loc(jj) + P_orf_per_loc(jj)) * multi(jj);
-            dT_o = ( power_in - hA_os*(T_o_loc(jj) - T_s_loc(jj)) - hA_o_env*(T_o_loc(jj) - T_env) ) / C_oil_story;
-            dT_s = ( +hA_os*(T_o_loc(jj) - T_s_loc(jj)) - hA_s_env*(T_s_loc(jj) - T_env) ) / C_steel_story;
-            if T_o_loc(jj) <= T_floor && dT_o < 0, dT_o = 0; end
-            if T_o_loc(jj) >= T_ceil  && dT_o > 0, dT_o = 0; end
-            if T_s_loc(jj) <= T_floor && dT_s < 0, dT_s = 0; end
-            if T_s_loc(jj) >= T_ceil  && dT_s > 0, dT_s = 0; end
-            dTo_dt(jj) = dT_o;
-            dTs_dt(jj) = dT_s;
+            F_lin_mat = F_lin;
+            mu_mat = expand_to_matrix_local(mu_val, size(dvel_mat,1), Ns_loc);
+            rho_mat = expand_to_matrix_local(rho_val, size(dvel_mat,1), Ns_loc);
+        end
+
+        nRows = size(dvel_mat,1);
+        Qcap_mat = repmat(ctx.Qcap_story, nRows, 1);
+        Ap_mat   = repmat(ctx.Ap_story,   nRows, 1);
+        Ao_mat   = repmat(ctx.Ao_story,   nRows, 1);
+        n_orf_mat = repmat(ctx.n_orf_total, nRows, 1);
+
+        veps = getfield_default_local(ctx.orf,'veps',0.10);
+        qmag = Qcap_mat .* tanh((Ap_mat ./ Qcap_mat) .* sqrt(dvel_mat.^2 + veps^2));
+        sgn  = dvel_mat ./ sqrt(dvel_mat.^2 + veps^2);
+        Q = qmag .* sgn;
+
+        Re = (rho_mat .* abs(Q)) .* ctx.d_o_single ./ max(Ao_mat .* mu_mat, 1e-9);
+        Cd = ctx.orf.CdInf - (ctx.orf.CdInf - ctx.orf.Cd0) ./ (1 + Re.^ctx.orf.p_exp);
+        Cd_min = getfield_default_local(ctx.orf,'Cd_min',0.5); Cd_max = getfield_default_local(ctx.orf,'Cd_max',0.9); Cd = min(max(Cd, Cd_min), Cd_max);
+
+        dP_kv = 0.5 * rho_mat .* (abs(Q) ./ max(Cd .* Ao_mat, 1e-12)).^2;
+        R_lam = (128 * mu_mat .* ctx.Lori) ./ max(pi * ctx.d_o_single^4, 1e-24) ./ max(n_orf_mat,1);
+        dP_lam = R_lam .* Q;
+        dP_h = dP_kv + dP_lam;
+
+        p_up = ctx.orf.p_amb + abs(F_lin_mat) ./ max(Ap_mat, 1e-12);
+        dP_cav = max((p_up - ctx.orf.p_cav_eff) .* ctx.orf.cav_sf, 0);
+        dP_orf = softmin_local(dP_kv, dP_cav, ctx.soft_eps);
+        F_orf = dP_orf .* Ap_mat .* sgn;
+
+        if isColumn
+            F_orf = F_orf.';
+            Q = Q.';
+            dP_kv = dP_kv.';
+            dP_lam = dP_lam.';
+            dP_h = dP_h.';
+            dP_cav = dP_cav.';
+            dP_orf = dP_orf.';
+            Re = Re.';
+            Cd = Cd.';
+        end
+
+        out = struct('F_orf',F_orf,'Q',Q,'dP_kv',dP_kv,'dP_lam',dP_lam,'dP_h',dP_h, ...
+            'dP_cav',dP_cav,'dP_orf',dP_orf,'Re',Re,'Cd',Cd);
+    end
+
+end
+function mat = expand_to_matrix_local(val, nR, nC)
+    if isscalar(val)
+        mat = val * ones(nR, nC);
+    else
+        sz = size(val);
+        if isequal(sz, [nR, nC])
+            mat = val;
+        elseif isvector(val) && numel(val) == nC
+            mat = repmat(val(:).', nR, 1);
+        elseif isvector(val) && numel(val) == nR
+            mat = repmat(val(:), 1, nC);
+        else
+            error('expand_to_matrix_local:bad_size','Unsupported input dimensions');
         end
     end
 end
-
-function [F_orf, dP_total, Q, P_orf_per, Cd] = calc_orifice_force_local(dvel, params, mu, dP_max)
-    % Fiziksel hazne modeli: piston akışı Q, lineer hidrolik yay, viskoz sürtünme
-    % ve gazlı akümülatör (cfg.PF) ile tanımlanan arka basınç kombinasyonu.
-    % Gaz basıncı, lineer rezervuar katsayıları ve bleed yolundaki direnç
-    % paralel bağlanmış elemanlar olarak çözülür; böylece gaz precharge ve
-    % rezervuar sertlikleri arka basıncı (p_back) ambient üzerine taşıyabilir.
-    if nargin < 3 || isempty(mu)
-        mu = params.mu;
-    end
-    if nargin < 4
-        dP_max = NaN;
-    end
-    multi_raw = getfield_default_local(params,'multi',ones(1,size(dvel,2)));
-    active_mask_row = multi_raw > 0;
-    if size(active_mask_row,1) > 1
-        active_mask_row = active_mask_row(1,:);
-    end
-    multi_mask = repmat(active_mask_row, size(dvel,1), 1);
-    Q = params.Ap .* dvel .* multi_mask;
-    Ao_eff = max(params.Ao, 1e-12);
-    Re = (params.rho .* abs(Q) .* params.orf.d_o) ./ max(Ao_eff .* mu, 1e-12);
-    Cd0   = params.orf.Cd0;
-    CdInf = params.orf.CdInf;
-    p_exp = params.orf.p_exp;
-    Rec   = params.orf.Rec;
-    Cd    = CdInf - (CdInf - Cd0) ./ (1 + (Re./max(Rec,1)).^p_exp);
-    Cd    = max(min(Cd, 1.2), 0.2);
-
-    dP_kv = 0.5 * params.rho .* (Q ./ max(Cd .* Ao_eff, 1e-12)).^2;
-
-    F_hyd = getfield_default_local(params,'F_hyd_single',zeros(size(Q)));
-    F_visc = getfield_default_local(params,'F_visc_single',zeros(size(Q)));
-    p_up = params.orf.p_amb + (F_hyd + F_visc) ./ max(params.Ap, 1e-12);
-
-    drift = getfield_default_local(params,'drift',zeros(size(Q)));
-    cfgPF = getfield_default_local(params,'cfgPF',struct());
-    resv = getfield_default_local(params.orf,'reservoir',struct());
-    V_ref = getfield_default_local(resv,'V_ref', getfield_default_local(cfgPF,'V_gas_ref',1e-3));
-    p_min = getfield_default_local(resv,'p_min', params.orf.p_cav_eff);
-    k_lin = getfield_default_local(resv,'k_lin', 0);
-    c_lin = getfield_default_local(resv,'c_lin', 0);
-    gamma = getfield_default_local(cfgPF,'gas_gamma',1.2);
-    V_gas0 = getfield_default_local(cfgPF,'V_gas_ref', max(V_ref,1e-6));
-    p_pre = getfield_default_local(cfgPF,'precharge_Pa', params.orf.p_amb);
-    bleed_coeff = getfield_default_local(cfgPF,'bleed_coeff',0);
-
-    deltaV = drift .* params.Ap .* multi_mask;
-    V_gas = max(V_gas0 + deltaV, 1e-6);
-    % Gaz akümülatörü precharge (cfg.PF.precharge_Pa) artarken p_gas büyür ve
-    % hacimsel sertlik kappa_gas üzerinden p_back'i yukarı çeker. Rezervuarın
-    % lineer yay/damper katsayıları (k_lin, c_lin) aynı şekilde p_res_lin'i ve
-    % onun ağırlığını belirler. Bleed hattı ise bleed_coeff azaldıkça ambiente
-    % daha güçlü bağlanarak p_back'i p_min'e doğru çeker.
-    p_gas = p_pre .* (max(V_gas0,1e-6) ./ V_gas) .^ gamma;
-    p_res_lin = p_min + k_lin .* (deltaV ./ max(V_ref, 1e-6)) + c_lin .* (Q ./ max(params.Ap, 1e-12));
-    p_bleed = p_min + bleed_coeff .* (Q ./ max(params.Ao, 1e-12));
-
-    kappa_gas = gamma .* p_gas ./ max(V_gas, 1e-9);
-    kappa_lin = max(k_lin ./ max(V_ref, 1e-9), 0) + max(abs(c_lin) ./ max(params.Ap, 1e-12), 0);
-    bleed_scale = max(abs(bleed_coeff), 1e-12);
-    w_bleed = max(params.Ao, 1e-12) ./ bleed_scale;
-    w_bleed(bleed_coeff == 0) = 0;
-    w_base = 1e-9;
-    w_sum = kappa_gas + kappa_lin + w_bleed + w_base;
-    p_back = (kappa_gas .* p_gas + kappa_lin .* p_res_lin + w_bleed .* p_bleed + w_base .* p_min) ./ w_sum;
-    p_back = max(p_back, p_min);
-    % Gaz/rezervuar kombinasyonu ortamın üstüne çıkabilir ancak piston tarafı
-    % basıncını aşamaz; aksi halde model ters akışı çözmek zorunda kalır.
-    p_back = min(p_back, p_up);
-
-    dP_supply = max(p_up - p_back, 0);
-    p_cav_floor = max(params.orf.p_cav_eff, 0);
-    p_supply_cap = getfield_default_local(params.orf,'p_supply_cap', params.orf.p_amb);
-    p_supply_cap = max(p_supply_cap, p_cav_floor);
-    p_supply_cap = p_supply_cap + zeros(size(p_up));
-    p_up_cav = min(max(p_up, p_cav_floor), p_supply_cap);
-    dP_cav = max((p_up_cav - p_cav_floor) .* params.orf.cav_sf, 0);
-    dP_allow = max(min(dP_supply, dP_cav), 0);
-    if isfinite(dP_max)
-        dP_kv = min(dP_kv, dP_max);
-        dP_allow = min(dP_allow, dP_max);
-    end
-    eps_spring = abs(k_lin .* (deltaV ./ max(V_ref, 1e-6)));
-    eps_damp = abs(c_lin .* (Q ./ max(params.Ap, 1e-12)));
-    eps_bleed = abs(bleed_coeff .* (Q ./ max(params.Ao, 1e-12)));
-    eps_base = getfield_default_local(params.orf,'smooth_eps0',1e3);
-    epsm = max(eps_base, 0.05 * dP_allow + eps_spring + eps_damp + eps_bleed);
-    dP_total = softmin_local(dP_kv, dP_allow, epsm);
-    sgn = sign(Q);
-    F_orf = dP_total .* params.Ap .* sgn;
-    P_orf_per = dP_total .* Q;
+function p_v = p_vap_Antoine_local(T_C, thermal, orf)
+    if nargin < 3 || isempty(orf), orf = struct(); end
+    A = getfield_default_local(thermal,'antoine_A',5.0);
+    B = getfield_default_local(thermal,'antoine_B',1700);
+    C = getfield_default_local(thermal,'antoine_C',-80);
+    T_C = double(T_C);
+    p_v = 10.^(A - B./(C + T_C));
+    p_v = min(max(p_v, 5), 5e2);
 end
+function params = default_params()
+
+    n  = 10;
+    m  = 360e3 * ones(n,1);
+    k  = 6.5e8 * ones(n,1);
+    c  = 6.2e6 * ones(n,1);
+    story_height = 3.0;
+
+    M  = diag(m);
+    K  = zeros(n); C0 = zeros(n);
+    for ii = 1:n
+        kL = k(ii); cL = c(ii);
+        if ii < n
+            kU = k(ii+1); cU = c(ii+1);
+        else
+            kU = 0; cU = 0;
+        end
+        K(ii,ii) = kL + kU; C0(ii,ii) = cL + cU;
+        if ii > 1
+            K(ii,ii-1) = -kL; C0(ii,ii-1) = -cL;
+        end
+        if ii < n
+            K(ii,ii+1) = -kU; C0(ii,ii+1) = -cU;
+        end
+    end
+
+    [~,D] = eig(K,M);
+    w  = sqrt(sort(diag(D),'ascend'));
+    T1 = 2*pi/w(1);
+
+    params = struct();
+    params.n = n;
+    params.M = M; params.C0 = C0; params.K = K;
+    params.story_height = story_height;
+    params.T1 = T1;
+
+    params.Dp   = 0.125;
+    params.Lgap = 0.055;
+    params.orf = struct('Cd0',0.61,'CdInf',0.80,'Rec',3000,'p_exp',1.1, ...
+        'p_amb',1.0e5,'p_cav_eff',2.0e3,'cav_sf',1.0,'d_o',3.0e-3,'veps',0.10);
+    params.Lori = 0.10;
+    params.mu_ref = 0.9;
+
+    params.Kd = 1.6e9;
+    params.Ebody = 2.1e11;
+    params.Gsh = 79e9;
+    params.d_w = 12e-3;
+    params.D_m = 80e-3;
+    params.n_turn = 8;
+
+    params.rho = 850;
+    params.n_orf = 6;
+
+    params.T0_C = 25;
+    params.T_ref_C = 25;
+    params.b_mu = -0.013;
+    params.thermal = struct('hA_W_perK',450,'hA_os',450,'hA_o_env',450,'hA_s_env',300, ...
+        'T_env_C',25,'max_iter',3,'tol_K',0.5,'relax',0.5,'dT_max',80,'Vmin_fac',0.97, ...
+        'rho_ref',850,'alpha_rho',7e-4,'beta0',1.6e9,'b_beta',-0.0035, ...
+        'antoine_A',5.0,'antoine_B',1700,'antoine_C',-80);
+
+
+    params.steel_to_oil_mass_ratio = 1.5;
+    params.n_dampers_per_story = 1;
+    params.story_mask = ones(n-1,1);
+    params.cp_oil = 1800;
+    params.cp_steel = 500;
+    params.resFactor = 12;
+
+    params.c_lam_cap = 2e7;
+    params.c_lam_min_frac = 0.05;
+    params.c_lam_min_abs = 1e5;
+
+    cfg = struct();
+    cfg.PF = struct('mode','ramp','tau',1.0,'gain',0.85,'t_on',0,'auto_t_on',true,'k',0.01,'tau_floor',1e-6);
+    cfg.on = struct('pressure_force',true,'mu_floor',false, ...
+        'pf_resistive_only',false,'Rlam',true,'Rkv',true, ...
+        'hyd_inertia',true,'cavitation',true);
+    cfg.use_orifice = true;
+    cfg.use_thermal = true;
+    cfg.K_leak = 0;
+    cfg.compat_simple = false;
+    cfg.num = struct('softmin_eps',1e5,'mu_min_phys',0.6, ...
+        'dP_cap',30e6,'Qcap_scale',1);
+
+    params.cfg = cfg;
+
+    params = build_params_local(params);
+end
+
+function params = build_params_local(params)
+    params = recompute_damper_params_local(params);
+    if isfield(params,'orf') && isfield(params.orf,'CdInf') && ...
+            isfield(params,'Ao') && isfield(params,'rho')
+        dP_cap = NaN; if isfield(params,'cfg') && isfield(params.cfg,'num'), dP_cap = getfield_default_local(params.cfg.num,'dP_cap',NaN); end; if isfinite(dP_cap)
+        params.Qcap_big = max(params.orf.CdInf * params.Ao, 1e-9) * sqrt(2*dP_cap / params.rho);
+    else
+        params.Qcap_big = 0;
+    end;
+    else
+        params.Qcap_big = 0;
+    end
+    if isfield(params,'c_lam_min_abs') && isfield(params,'c_lam_min_frac') && ...
+            isfield(params,'c_lam0')
+        params.c_lam_min = max(params.c_lam_min_abs, ...
+            params.c_lam_min_frac * params.c_lam0);
+    end
+end
+
+function params = recompute_damper_params_local(params)
+    if ~isstruct(params), return; end
+
+    if isfield(params,'Dp_mm'),    params.Dp   = params.Dp_mm/1000; end
+    if isfield(params,'d_w_mm'),   params.d_w  = params.d_w_mm/1000; end
+    if isfield(params,'D_m_mm'),   params.D_m  = params.D_m_mm/1000; end
+    if isfield(params,'Lori_mm'),  params.Lori = params.Lori_mm/1000; end
+    if isfield(params,'orf') && isfield(params.orf,'d_o_mm')
+        params.orf.d_o = params.orf.d_o_mm/1000;
+    end
+
+    req = {'Dp','d_w','D_m','n_turn','mu_ref','Lori','Lgap','Kd','Ebody','Gsh'};
+    if ~all(isfield(params,req)) || ~isfield(params,'orf') || ~isfield(params.orf,'d_o')
+        return;
+    end
+
+    if ~isfield(params,'n_orf') && isfield(params,'orf') && isfield(params.orf,'n_orf')
+        params.n_orf = params.orf.n_orf;
+    end
+    if ~isfield(params,'n_orf'), params.n_orf = 1; end
+
+    nd = 1;
+    if isfield(params,'nd') && isfinite(params.nd)
+        nd = params.nd;
+    elseif isfield(params,'n_parallel') && isfinite(params.n_parallel)
+        nd = params.n_parallel;
+    elseif isfield(params,'n_dampers_per_story')
+        nds = params.n_dampers_per_story;
+        if isnumeric(nds)
+            if isscalar(nds), nd = nds; else, nd = max(1, round(max(nds(:)))); end
+        end
+    end
+    nd = max(1, round(nd));
+
+    Ap = pi * params.Dp^2 / 4;
+    Ao_single = pi * params.orf.d_o^2 / 4;
+    Ao = params.n_orf * Ao_single;
+    Ap_eff = nd * Ap;
+    Ao_eff = nd * Ao;
+
+    rho_loc = getfield_default_local(params,'rho',850);
+    Lh = rho_loc * params.Lori / max(Ao^2, 1e-18);
+
+    k_h = params.Kd * Ap^2 / params.Lgap;
+    k_s = params.Ebody * Ap / params.Lgap;
+    k_hyd = 1 / (1/k_h + 1/k_s);
+    k_p = params.Gsh * params.d_w^4 / (8 * params.n_turn * params.D_m^3);
+    k_sd_simple = k_hyd + k_p;
+    k_sd_adv    = nd * (k_hyd + k_p);
+
+    c_lam0 = 12 * params.mu_ref * params.Lori * Ap^2 / (params.orf.d_o^4);
+
+    params.Ap = Ap;
+    params.Ao = Ao;
+    params.Ap_eff = Ap_eff;
+    params.Ao_eff = Ao_eff;
+    params.Lh = Lh;
+    params.k_p = k_p;
+    params.k_sd_simple = k_sd_simple;
+    params.k_sd_adv = k_sd_adv;
+    params.k_sd = k_sd_adv;
+    params.c_lam0 = c_lam0;
+end
+
+function val = getfield_default_local(S, fname, defaultVal)
+    if ~isstruct(S) || ~isfield(S,fname) || isempty(S.(fname))
+        val = defaultVal; return;
+    end
+    valRaw = S.(fname);
+    if isnumeric(valRaw)
+        if isempty(valRaw) || any(~isfinite(valRaw(:)))
+            val = defaultVal;
+        else
+            val = valRaw;
+        end
+    else
+        val = valRaw;
+    end
+end
+function metrics = compute_penalties_local(metrics)
+    lambda = 5;
+    pwr = 1.0;
+    W = struct('dP',1,'Qcap',1,'cav',1.5,'T',0.5,'mu',0.5);
+    thr = default_qc_thresholds_local(struct());
+
+    metrics.pen_dP = penalty_rel_local(metrics.dP95, thr.dP95_max, pwr);
+    metrics.pen_Qcap = penalty_rel_local(metrics.Qcap95, thr.Qcap95_max, pwr);
+
+    cav_val = metrics.cav_pct;
+    if ~isfinite(cav_val)
+        cav_val = 0;
+    end
+    if thr.cav_pct_max <= 0
+        metrics.pen_cav = max(0, cav_val)^pwr;
+    else
+        metrics.pen_cav = penalty_rel_local(cav_val, thr.cav_pct_max, pwr);
+    end
+
+    metrics.pen_T = penalty_rel_local(metrics.T_end, thr.T_end_max, pwr);
+    metrics.pen_mu = penalty_rev_local(metrics.mu_end, thr.mu_end_min, pwr);
+
+    metrics.pen = lambda * (W.dP*metrics.pen_dP + W.Qcap*metrics.pen_Qcap + ...
+                            W.cav*metrics.pen_cav + W.T*metrics.pen_T + W.mu*metrics.pen_mu);
+end
+
+function val = penalty_rel_local(v, lim, pwr)
+    if ~isfinite(v) || ~isfinite(lim)
+        val = 0;
+        return;
+    end
+    denom = max(lim, eps);
+    val = max(0, (v - lim) / denom)^pwr;
+end
+
+function val = penalty_rev_local(v, lim, pwr)
+    if ~isfinite(v) || ~isfinite(lim)
+        val = 0;
+        return;
+    end
+    denom = max(lim, eps);
+    val = max(0, (lim - v) / denom)^pwr;
+end
+
+function thr = default_qc_thresholds_local(optsThr)
+    if nargin < 1 || isempty(optsThr)
+        optsThr = struct();
+    end
+    thr = struct();
+    thr.dP95_max   = getfield_default_local(optsThr,'dP95_max',50e6);
+    thr.Qcap95_max = getfield_default_local(optsThr,'Qcap95_max',0.5);
+    thr.cav_pct_max= getfield_default_local(optsThr,'cav_pct_max',0);
+    thr.T_end_max  = getfield_default_local(optsThr,'T_end_max',75);
+    thr.mu_end_min = getfield_default_local(optsThr,'mu_end_min',0.5);
+    extra = setdiff(fieldnames(optsThr), fieldnames(thr));
+    for ii = 1:numel(extra)
+        thr.(extra{ii}) = optsThr.(extra{ii});
+    end
+end
+
+
+
+
+
+
+
+
+
+
+
