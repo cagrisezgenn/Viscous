@@ -166,6 +166,22 @@ metrics = compute_sdof_metrics_local(t, x_d, a_d, ag, diag_d, story_height, win,
 metrics.PFA_mean = metrics.PFA;
 metrics.IDR_mean = metrics.IDR;
 metrics = compute_penalties_local(metrics);
+% -- dP95/dP50'yi dP_eff'ten üret (rapor METRİK tarafı) --
+orf_series = diag_d.orf_series;       % <- diag'dan al
+% 'ws' (worst story) metrikte veya diag'da yoksa, kuvvete göre seç:
+if isfield(metrics,'ws')
+    ws = metrics.ws;
+elseif isfield(diag_d,'story_force_q95')
+    [~, ws] = max(diag_d.story_force_q95);   % en kötü kat
+else
+    % emniyet: en yüksek dP_eff'e göre seç
+    [~, ws] = max(quantile(abs(orf_series.dP_eff), 0.95));
+end
+
+dp_series = abs(orf_series.dP_eff);   % <-- HAM dP_h DEĞİL!
+dP95 = quantile(dp_series(:, ws), 0.95);
+dP50 = quantile(dp_series(:, ws), 0.50);
+
 
 row = struct( ...
     'PFA_mean', metrics.PFA_mean, ...
@@ -186,6 +202,8 @@ row = struct( ...
     'PF_p95', metrics.PF_p95, ...
     'Q_q50', metrics.Q_q50, ...
     'Q_q95', metrics.Q_q95, ...
+    'dP95', dP95, ...
+    'dP50', dP50, ...
     'dP50', metrics.dP50, ...
     'energy_tot_sum', metrics.energy_tot_sum, ...
     'E_orifice_sum', metrics.E_orifice_sum, ...
@@ -1025,7 +1043,7 @@ function params = default_params()
 
 
     params.steel_to_oil_mass_ratio = 1.5;
-    params.n_dampers_per_story = 1;
+    params.n_dampers_per_story = 2;
     params.story_mask = ones(n-1,1);
     params.cp_oil = 1800;
     params.cp_steel = 500;
