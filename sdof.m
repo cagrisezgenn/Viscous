@@ -775,15 +775,13 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         end
 
         nRows = size(dvel_mat,1);
-        Qcap_mat = repmat(ctx.Qcap_story, nRows, 1);
-        Ap_mat   = repmat(ctx.Ap_story,   nRows, 1);
-        Ao_mat   = repmat(ctx.Ao_story,   nRows, 1);
+        Ap_mat    = repmat(ctx.Ap_story,   nRows, 1);
+        Ao_mat    = repmat(ctx.Ao_story,   nRows, 1);
         n_orf_mat = repmat(ctx.n_orf_total, nRows, 1);
 
         veps = getfield_default_local(ctx.orf,'veps',0.10);
-        qmag = Qcap_mat .* tanh((Ap_mat ./ Qcap_mat) .* sqrt(dvel_mat.^2 + veps^2));
         sgn  = dvel_mat ./ sqrt(dvel_mat.^2 + veps^2);
-        Q = qmag .* sgn;
+        Q = Ap_mat .* dvel_mat;                   % (1) Kinematic continuity
 
         Re = (rho_mat .* abs(Q)) .* ctx.d_o_single ./ max(Ao_mat .* mu_mat, 1e-9);
         Cd = ctx.orf.CdInf - (ctx.orf.CdInf - ctx.orf.Cd0) ./ (1 + Re.^ctx.orf.p_exp);
