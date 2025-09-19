@@ -1129,7 +1129,10 @@ function params = recompute_damper_params_local(params)
     k_sd_simple = k_hyd + k_p;
     k_sd_adv    = nd * (k_hyd + k_p);
 
-    c_lam0 = 12 * params.mu_ref * params.Lori * Ap^2 / (params.orf.d_o^4);
+    % --- Laminer eşdeğer c: R_lam * A_p^2 ile TUTARLI ---
+    R_lam_single = (128 * params.mu_ref * params.Lori) / (pi * params.orf.d_o^4);
+    R_lam_total  = R_lam_single / max(params.n_orf,1);
+    c_lam0 = R_lam_total * ((pi * params.Dp^2 / 4)^2);
 
     params.Ap = Ap;
     params.Ao = Ao;
