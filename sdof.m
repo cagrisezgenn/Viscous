@@ -658,14 +658,17 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         F_lin_loc = ctx.k_sd * drift;
         orf_loc = compute_orifice_terms_local(dvel, F_lin_loc, mu_loc, rho_loc, ctx);
 
-        sgn_loc = sign(orf_loc.Q + 0);
-        p_pf_loc = orf_loc.dP_eff .* sgn_loc;
-        if ctx.pf_res_only
-            s_loc = tanh(ctx.gate_k*dvel);
-            p_pf_loc = s_loc .* max(0, s_loc .* p_pf_loc);
-        end
-        PF_term = p_pf_loc;
-        F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;
+        % gate_k zaten ctx içine ekli (default 20); hız ile ölçekli kapı:
+s_loc    = tanh( ctx.gate_k * dvel );       % [-1,1], C^∞ pürüzsüz
+p_pf_loc = - orf_loc.dP_eff .* s_loc;       % dissipatif, süreklilik var
+
+if ctx.pf_res_only
+    s_loc    = tanh(ctx.gate_k*dvel);
+    p_pf_loc = s_loc .* max(0, s_loc .* p_pf_loc);
+end
+PF_term     = p_pf_loc;
+F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;  % N
+
         F_loc = zeros(ctx.n,1);
         for ii = 1:ctx.Ns
             F_loc(ctx.Nvec(ii)) = F_loc(ctx.Nvec(ii)) - F_story_loc(ii);
@@ -719,14 +722,15 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         % Energy bookkeeping and cavitation mask
         Ap_mat = repmat(ctx.Ap_story, Nt_loc,1);
-        sgn_series = sign(orf_series.Q + 0);
-        p_pf_series = orf_series.dP_eff .* sgn_series;
-        if ctx.pf_res_only
-            s_series = tanh(ctx.gate_k*dvel);
-            p_pf_series = s_series .* max(0, s_series .* p_pf_series);
-        end
-        PF_term_series = p_pf_series;
-        PF_force_series = Ap_mat .* PF_term_series;
+        sgn_series  = sign(orf_series.Q + 0);
+p_pf_series = - orf_series.dP_eff .* sgn_series; % ← dissipatif
+if ctx.pf_res_only
+    s_series    = tanh( ctx.gate_k * dvel );
+p_pf_series = - orf_series.dP_eff .* s_series;
+end
+PF_term_series  = p_pf_series;
+PF_force_series = Ap_mat .* PF_term_series;
+
         F_story_series = F_lin_series + PF_force_series;
 
         P_visc_per = zeros(size(dvel));
@@ -800,8 +804,9 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         epsm = max(epsm, 0.05*median(dP_full(:) + 1));
         dP_eff = 0.5*(dP_full + dP_cav - sqrt((dP_full - dP_cav).^2 + epsm.^2));
 
-        sgn  = sign(Q + 0);
-        F_orf = dP_eff .* Ap_mat .* sgn;
+        sgn   = sign(Q + 0);
+F_orf = - dP_eff .* Ap_mat .* sgn; % ← hızın tersine (dissipatif)
+
 
         if isColumn
             F_orf = F_orf.';
