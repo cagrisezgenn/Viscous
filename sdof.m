@@ -809,17 +809,19 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         F_story_series = F_lin_series + PF_force_series;
 
-        P_visc_per = zeros(size(dvel));
+        % --- ORIFICE LOSS: unchanged bookkeeping ---
         P_loss_series = orf_series.dP_eff .* abs(orf_series.Q);
-        P_sum = (P_visc_per + P_loss_series) * ctx.multi';
-         P_orf_per = orf_series.dP_kv .* abs(orf_series.Q);
-         P_orf_tot = P_orf_per * ctx.multi';
-         P_struct_tot = (F_story_series .* dvel) * ones(Ns_loc,1);
+        P_sum = (P_loss_series) * ctx.multi';
 
-         % Integrate full orifice losses (kv + laminar) for energy
-         P_orf_full_tot = P_loss_series * ctx.multi';
-         E_orf = cumtrapz(t, P_orf_full_tot);
-         E_struct = cumtrapz(t, P_struct_tot);
+        % --- STRUCTURAL POWER: elastic contribution only (k_sd * drift) ---
+        P_struct_tot = (F_lin_series .* dvel) * ones(Ns_loc,1);
+
+        % --- Energy integration (damper loss + elastic work) ---
+        E_orf = cumtrapz(t, P_loss_series * ctx.multi');
+        E_struct = cumtrapz(t, P_struct_tot);
+
+        % Passive safety check (optional logging)
+        passivity_viol = any((PF_force_series .* dvel) > 1e-9, 'all');
 
         p_up_series = ctx.orf.p_amb * ones(size(F_lin_series));
         p_vap_mat = repmat(p_vap_series, 1, Ns_loc);
@@ -829,7 +831,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         out = struct('dvel', dvel, 'story_force', F_story_series, 'Q', orf_series.Q, ...
             'dP_eff', orf_series.dP_eff, 'PF', PF_force_series, 'cav_mask', cav_mask, 'P_sum', P_sum, ...
-            'E_orf', E_orf, 'E_struct', E_struct, 'T_oil', T_o, 'T_steel', T_s, ...
+            'E_orf', E_orf, 'E_struct', E_struct, 'passivity_viol', passivity_viol, 'T_oil', T_o, 'T_steel', T_s, ...
             'mu', mu_series, 'rho', rho_series, 'beta', beta_series, 'p_vap', p_vap_series, ...
             'c_lam', ctx.c_lam, 'dP_kv', orf_series.dP_kv, 'dP_cav', orf_series.dP_cav, ...
             'F_lin', F_lin_series, 'Re', orf_series.Re);
