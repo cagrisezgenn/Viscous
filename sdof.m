@@ -658,13 +658,12 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         F_lin_loc = ctx.k_sd * drift;
         orf_loc = compute_orifice_terms_local(dvel, F_lin_loc, mu_loc, rho_loc, ctx);
 
-        dp_pf_loc = (ctx.c_lam * dvel + orf_loc.F_orf) ./ ctx.Ap_story_col;
+        dp_pf_loc = orf_loc.dP_eff ./ ctx.Ap_story_col;
         if ctx.pf_res_only
             s_loc = tanh(ctx.gate_k*dvel);
             dp_pf_loc = s_loc .* max(0, s_loc .* dp_pf_loc);
         end
-        w_pf = pf_weight_local(tt, ctx.cfg);
-        PF_term = (ctx.gain_pf * w_pf) * dp_pf_loc;
+        PF_term = dp_pf_loc;
         F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;
         F_loc = zeros(ctx.n,1);
         for ii = 1:ctx.Ns
@@ -675,7 +674,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         dv_loc = ctx.M \ ( -ctx.C*v_loc - ctx.K*x_loc - F_loc - ctx.M*ctx.r*ctx.agf(tt) );
 
         qmag_loc = abs(orf_loc.Q);
-        P_heat_loc = sum( (orf_loc.dP_h .* qmag_loc) .* ctx.multi_col );
+        P_heat_loc = sum( (orf_loc.dP_eff .* qmag_loc) .* ctx.multi_col );
         P_heat_loc = max(P_heat_loc, 0);
 
         dT_o_loc = ( P_heat_loc - ctx.hA_os * (T_o_loc - T_s_loc) ...
@@ -719,19 +718,17 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         % Energy bookkeeping and cavitation mask
         Ap_mat = repmat(ctx.Ap_story, Nt_loc,1);
-        dp_pf_series = (ctx.c_lam * dvel + orf_series.F_orf) ./ Ap_mat;
+        dp_pf_series = orf_series.dP_eff ./ Ap_mat;
         if ctx.pf_res_only
             s_series = tanh(ctx.gate_k*dvel);
             dp_pf_series = s_series .* max(0, s_series .* dp_pf_series);
         end
-        w_pf_vec = pf_weight_local(t(:), ctx.cfg);
-        w_pf_mat = repmat(w_pf_vec, 1, Ns_loc);
-        PF_term_series = (ctx.gain_pf * w_pf_mat) .* dp_pf_series;
+        PF_term_series = dp_pf_series;
         PF_force_series = Ap_mat .* PF_term_series;
         F_story_series = F_lin_series + PF_force_series;
 
         P_visc_per = ctx.c_lam * (dvel.^2);
-        P_loss_series = orf_series.dP_h .* abs(orf_series.Q);
+        P_loss_series = orf_series.dP_eff .* abs(orf_series.Q);
         P_sum = (P_visc_per + P_loss_series) * ctx.multi';
          P_orf_per = orf_series.dP_kv .* abs(orf_series.Q);
          P_orf_tot = P_orf_per * ctx.multi';
