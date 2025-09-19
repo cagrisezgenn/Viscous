@@ -220,14 +220,9 @@ function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story
         metrics.IDR = 0;
     end
     abs_dP = abs(diag_d.dP_eff(idx,:));
-    abs_Q = abs(diag_d.Q(idx,:));
-    Qcap_ratio = abs_Q ./ max(Qcap_big, eps);
     abs_story_force = abs(diag_d.story_force(idx,:));
     dP_q50 = quantile(abs_dP, 0.50);
     dP_q95 = quantile(abs_dP, 0.95);
-    Q_q50 = quantile(abs_Q, 0.50);
-    Q_q95 = quantile(abs_Q, 0.95);
-    Qcap95_vec = quantile(Qcap_ratio, 0.95);
     story_force_q95 = quantile(abs_story_force, 0.95);
     [~, ws] = max(story_force_q95);
     if isempty(ws) || ~isfinite(ws)
@@ -235,13 +230,33 @@ function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story
     end
     metrics.dP95 = dP_q95(ws);
     metrics.dP50 = dP_q50(ws);
-    metrics.Q_q95 = Q_q95(ws);
-    metrics.Q_q50 = Q_q50(ws);
-    metrics.Qcap95 = Qcap95_vec(ws);
+    if isfield(diag_d,'Q') && ~isempty(diag_d.Q)
+        abs_Q = abs(diag_d.Q(idx,:));
+        Q_q50 = quantile(abs_Q, 0.50);
+        Q_q95 = quantile(abs_Q, 0.95);
+        metrics.Q_q50 = Q_q50(ws);
+        metrics.Q_q95 = Q_q95(ws);
+
+        Qcap_ratio = abs_Q ./ max(Qcap_big, eps);
+        Qcap95_vec = quantile(Qcap_ratio, 0.95);
+        metrics.Qcap95 = Qcap95_vec(ws);
+    else
+        [metrics.Q_q50, metrics.Q_q95, metrics.Qcap95] = deal(0);
+    end
     cav_mean = mean(diag_d.cav_mask(idx,:), 1);
     metrics.cav_pct = cav_mean(ws);
-    metrics.E_orifice_sum = diag_d.E_orf(end);
-    metrics.E_struct_sum = diag_d.E_struct(end);
+    E_orf_end    = isfield(diag_d,'E_orf')    && ~isempty(diag_d.E_orf);
+    E_struct_end = isfield(diag_d,'E_struct') && ~isempty(diag_d.E_struct);
+    if E_orf_end
+        metrics.E_orifice_sum = diag_d.E_orf(end);
+    else
+        metrics.E_orifice_sum = 0;
+    end
+    if E_struct_end
+        metrics.E_struct_sum = diag_d.E_struct(end);
+    else
+        metrics.E_struct_sum = 0;
+    end
     metrics.energy_tot_sum = metrics.E_orifice_sum + metrics.E_struct_sum;
     if metrics.E_struct_sum > 0
         metrics.E_ratio = metrics.E_orifice_sum / max(metrics.E_struct_sum, eps);
@@ -249,7 +264,9 @@ function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story
         metrics.E_ratio = 0;
     end
     if isfield(diag_d,'P_sum') && ~isempty(diag_d.P_sum)
-        metrics.P_mech_sum = mean(diag_d.P_sum(idx));
+        P_mech_win = diag_d.P_sum(idx);
+        P_mech_win = P_mech_win(isfinite(P_mech_win));
+        metrics.P_mech_sum = mean(P_mech_win);
     else
         metrics.P_mech_sum = NaN;
     end
@@ -910,7 +927,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         dP_kv = 0.5 * rho_mat .* (abs(Q) ./ max(Cd .* Ao_mat, 1e-12)).^2;
         R_lam = (128 * mu_mat .* ctx.Lori) ./ max(pi * ctx.d_o_single^4, 1e-24) ./ max(n_orf_mat,1);
-        dP_lam = R_lam .* abs(Q);
+        dP_lam = R_lam .* Q .* sign(Q);
         dP_h = dP_kv + dP_lam;
         if isfield(ctx,'hyd_inertia') && ctx.hyd_inertia
             Lori_mat = expand_to_matrix_local(ctx.Lori, size(Q,1), size(Q,2));
@@ -1049,7 +1066,7 @@ function params = default_params()
     cfg.PF = struct('mode','ramp','tau',1.0,'gain',0.85,'t_on',0,'auto_t_on',true,'k',0.01,'tau_floor',1e-6);
     cfg.on = struct('pressure_force',true,'mu_floor',false, ...
         'pf_resistive_only',false,'Rlam',true,'Rkv',true, ...
-        'hyd_inertia',true,'cavitation',true);
+        'hyd_inertia',false,'cavitation',true);
     cfg.use_orifice = true;
     cfg.use_thermal = true;
     cfg.K_leak = 0;
