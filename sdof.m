@@ -226,22 +226,34 @@ function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story
         metrics.IDR = 0;
     end
     abs_dP = abs(diag_d.dP_eff(idx,:));
-    abs_story_force = abs(diag_d.story_force(idx,:));
-    dP_q50 = quantile(abs_dP, 0.50);
-    dP_q95 = quantile(abs_dP, 0.95);
-    story_force_q95 = quantile(abs_story_force, 0.95);
-    [~, ws] = max(story_force_q95);
+    abs_Q = [];
+    if isfield(diag_d,'Q') && ~isempty(diag_d.Q)
+        abs_Q = abs(diag_d.Q(idx,:));
+    end
+
+    PF_abs = [];
+    if isfield(diag_d,'PF') && ~isempty(diag_d.PF)
+        PF_abs = abs(diag_d.PF(idx,:));
+    end
+    if isempty(PF_abs)
+        PF_abs = abs(diag_d.story_force(idx,:));
+    end
+
+    pf_q95_vec = quantile(PF_abs, 0.95);
+    [~, ws] = max(pf_q95_vec);
     if isempty(ws) || ~isfinite(ws)
         ws = 1;
     end
-    metrics.dP95 = dP_q95(ws);
-    metrics.dP50 = dP_q50(ws);
-    if isfield(diag_d,'Q') && ~isempty(diag_d.Q)
-        abs_Q = abs(diag_d.Q(idx,:));
-        Q_q50 = quantile(abs_Q, 0.50);
-        Q_q95 = quantile(abs_Q, 0.95);
-        metrics.Q_q50 = Q_q50(ws);
-        metrics.Q_q95 = Q_q95(ws);
+    abs_dP_ws = abs_dP(:, ws);
+    dP_q50 = quantile(abs_dP_ws, 0.50);
+    dP_q95 = quantile(abs_dP_ws, 0.95);
+    metrics.dP95 = dP_q95;
+    metrics.dP50 = dP_q50;
+
+    if ~isempty(abs_Q)
+        abs_Q_ws = abs_Q(:, ws);
+        metrics.Q_q50 = quantile(abs_Q_ws, 0.50);
+        metrics.Q_q95 = quantile(abs_Q_ws, 0.95);
 
         Qcap_ratio = abs_Q ./ max(Qcap_big, eps);
         Qcap95_vec = quantile(Qcap_ratio, 0.95);
@@ -251,6 +263,9 @@ function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story
     end
     cav_mean = mean(diag_d.cav_mask(idx,:), 1);
     metrics.cav_pct = cav_mean(ws);
+
+    PF_ws_abs = PF_abs(:, ws);
+    metrics.PF_p95 = quantile(PF_ws_abs, 0.95);
     E_orf_end    = isfield(diag_d,'E_orf')    && ~isempty(diag_d.E_orf);
     E_struct_end = isfield(diag_d,'E_struct') && ~isempty(diag_d.E_struct);
     if isfield(diag_d,'E_orifice_sum') && ~isempty(diag_d.E_orifice_sum)
@@ -275,16 +290,6 @@ function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story
         metrics.P_mech_sum = mean(P_mech_win);
     else
         metrics.P_mech_sum = NaN;
-    end
-    if isfield(diag_d,'PF') && ~isempty(diag_d.PF)
-        PF_abs = abs(diag_d.PF(idx,:));
-        if size(PF_abs,2) >= ws
-            metrics.PF_p95 = quantile(PF_abs(:,ws), 0.95);
-        else
-            metrics.PF_p95 = NaN;
-        end
-    else
-        metrics.PF_p95 = NaN;
     end
     if isfield(diag_d,'T_oil') && ~isempty(diag_d.T_oil)
         metrics.T_end = diag_d.T_oil(end);
@@ -731,15 +736,17 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         F_lin_loc = ctx.k_sd * drift;
         orf_loc = compute_orifice_terms_local(dvel, F_lin_loc, mu_loc, rho_loc, ctx);
 
-        % gate_k zaten ctx içine ekli (default 20); hız ile ölçekli kapı:
-        s_loc = tanh(ctx.gate_k * dvel);                     % [-1,1], C^∞ pürüzsüz
-        p_pf_loc = - orf_loc.dP_eff .* s_loc;                % dissipatif, süreklilik var
-
+        Ap_mat_loc = expand_to_matrix_local(ctx.Ap_story, size(orf_loc.dP_eff,1), size(orf_loc.dP_eff,2));
+        Ap_mat_loc = max(Ap_mat_loc, 1e-12);
+        dp_pf_loc = orf_loc.dP_eff ./ Ap_mat_loc;
+        zero_mask_loc = Ap_mat_loc <= 1e-12;
+        dp_pf_loc(~isfinite(dp_pf_loc) | zero_mask_loc) = 0;
         if ctx.pf_res_only
-            p_pf_loc = s_loc .* max(0, s_loc .* p_pf_loc);
+            sgn_loc = sign(dvel + 0);
+            dp_pf_loc = sgn_loc .* max(0, sgn_loc .* dp_pf_loc);
         end
-        PF_term     = p_pf_loc;
-        F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;  % N
+        PF_term     = dp_pf_loc;
+        F_story_loc = F_lin_loc + Ap_mat_loc .* PF_term;  % N
 
         F_loc = zeros(ctx.n,1);
         for ii = 1:ctx.Ns
@@ -749,9 +756,8 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         dv_loc = ctx.M \ ( -ctx.C*v_loc - ctx.K*x_loc - F_loc - ctx.M*ctx.r*ctx.agf(tt) );
 
-        qmag_loc = abs(orf_loc.Q);
-        P_heat_loc = sum( (orf_loc.dP_eff .* qmag_loc) .* ctx.multi_col );
-        P_heat_loc = max(P_heat_loc, 0);
+        P_loss_elem = abs(orf_loc.dP_eff) .* abs(orf_loc.Q);
+        P_heat_loc = sum( P_loss_elem .* ctx.multi_col );
 
         dT_o_loc = ( P_heat_loc - ctx.hA_os * (T_o_loc - T_s_loc) ...
                      - ctx.hA_o_env * (T_o_loc - ctx.T_env) ) / ctx.C_oil;
@@ -793,20 +799,23 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         orf_series = compute_orifice_terms_local(dvel, F_lin_series, mu_series, rho_series, ctx);
 
         % Energy bookkeeping and cavitation mask
-        Ap_mat = repmat(ctx.Ap_story, Nt_loc,1);
-        s_series = tanh(ctx.gate_k * dvel);
-        p_pf_series = - orf_series.dP_eff .* s_series;
+        Ap_mat = expand_to_matrix_local(ctx.Ap_story, Nt_loc, Ns_loc);
+        Ap_denom_series = max(Ap_mat, 1e-12);
+        dp_pf_series = orf_series.dP_eff ./ Ap_denom_series;
+        zero_mask_series = Ap_denom_series <= 1e-12;
+        dp_pf_series(~isfinite(dp_pf_series) | zero_mask_series) = 0;
         if ctx.pf_res_only
-            p_pf_series = s_series .* max(0, s_series .* p_pf_series);
+            sgn_series = sign(dvel + 0);
+            dp_pf_series = sgn_series .* max(0, sgn_series .* dp_pf_series);
         end
-        PF_term_series  = p_pf_series;
+        PF_term_series  = dp_pf_series;
         PF_force_series = Ap_mat .* PF_term_series;
 
         F_story_series = F_lin_series + PF_force_series;
 
         % --- Enerji/ güç muhasebesi (tek kanal) ---
         P_visc_per    = zeros(size(dvel));  %#ok<NASGU> ikinci kanal yok
-        P_loss_series = orf_series.dP_eff .* abs(orf_series.Q);   % ≥ 0
+        P_loss_series = abs(orf_series.dP_eff) .* abs(orf_series.Q);
 
         % Damper kuvveti*Hiz (yapi isi); F_story_series zaten (PF+lineer) iceriyor
         P_struct_series = sum(F_story_series .* dvel, 2);
@@ -838,7 +847,8 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
             'E_orf', E_orf, 'E_struct', E_struct, 'E_orifice_sum', E_orifice_sum, 'E_struct_sum', E_struct_sum, ...
             'E_balance', E_balance, 'passivity_viol', passivity_viol, 'T_oil', T_o, 'T_steel', T_s, ...
             'mu', mu_series, 'rho', rho_series, 'beta', beta_series, 'p_vap', p_vap_series, ...
-            'c_lam', ctx.c_lam, 'dP_kv', orf_series.dP_kv, 'dP_cav', orf_series.dP_cav, ...
+            'c_lam', ctx.c_lam, 'dP_kv', orf_series.dP_kv, 'dP_lam', orf_series.dP_lam, ...
+            'dP_h', orf_series.dP_h, 'dP_cav', orf_series.dP_cav, ...
             'F_lin', F_lin_series, 'Re', orf_series.Re, 'orf_series', orf_series_diag);
 
     end
@@ -913,30 +923,44 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         Cd = ctx.orf.CdInf - (ctx.orf.CdInf - ctx.orf.Cd0) ./ (1 + Re.^ctx.orf.p_exp);
         Cd_min = getfield_default_local(ctx.orf,'Cd_min',0.5); Cd_max = getfield_default_local(ctx.orf,'Cd_max',0.9); Cd = min(max(Cd, Cd_min), Cd_max);
 
-        dP_kv = 0.5 * rho_mat .* (abs(Q) ./ max(Cd .* Ao_mat, 1e-12)).^2;
-        R_lam = (128 * mu_mat .* ctx.Lori) ./ max(pi * ctx.d_o_single^4, 1e-24) ./ max(n_orf_mat,1);
-dP_lam = R_lam .* Q;    % ← işaretli laminer düşüm
-        dP_h = dP_kv + dP_lam;
+        sgn = sign(Q + 0);
+        if any(sgn(:) == 0)
+            sgn(sgn == 0) = sign(dQdt(sgn == 0));
+        end
+        sgn(sgn == 0) = 1; % artık kalan nötr hücreler için pozitif varsay
+
+        absQ = abs(Q);
+        Lori_mat = expand_to_matrix_local(ctx.Lori, size(Q,1), size(Q,2));
+        dP_kv_mag = 0.5 * rho_mat .* (absQ ./ max(Cd .* Ao_mat, 1e-12)).^2;
+        dP_lam_scale = (128 * mu_mat .* Lori_mat) ./ max(pi * ctx.d_o_single^4, 1e-24) ./ max(n_orf_mat,1);
+        dP_lam_mag = dP_lam_scale .* absQ;
+
+        dP_kv_signed = dP_kv_mag .* sgn;
+        dP_lam_signed = dP_lam_mag .* sgn;
+        dP_full_signed = dP_kv_signed + dP_lam_signed;
         if isfield(ctx,'hyd_inertia') && ctx.hyd_inertia
-            Lori_mat = expand_to_matrix_local(ctx.Lori, size(Q,1), size(Q,2));
             Lh1 = rho_mat .* Lori_mat ./ max(Ao_mat, 1e-12);
             Lh = Lh1 ./ max(n_orf_mat, 1);
-            dP_h = dP_h + Lh .* abs(dQdt);
+            dP_full_signed = dP_full_signed + Lh .* dQdt;
         end
 
-        p_up = ctx.orf.p_amb * ones(size(dP_h));
+        dP_full_mag = max(sgn .* dP_full_signed, 0);
+
+        p_up = ctx.orf.p_amb * ones(size(dP_full_mag));
         p_vap = getfield_default_local(ctx.orf,'p_vap_eff', 150);
-        p_vap_mat = expand_to_matrix_local(p_vap, size(dP_h,1), size(dP_h,2));
+        p_vap_mat = expand_to_matrix_local(p_vap, size(dP_full_mag,1), size(dP_full_mag,2));
         gamma_c = getfield_default_local(ctx.orf,'cav_sf', 1.0);
         dP_cav = max(p_up - gamma_c * p_vap_mat, 0);
 
-        dP_full = dP_h;
         epsm = max(getfield_default_local(ctx,'soft_eps',1e5), ...
-                   0.05*median(dP_full(:) + 1));
-        dP_eff = 0.5*(dP_full + dP_cav - sqrt((dP_full - dP_cav).^2 + epsm.^2));
+                   0.05*median(dP_full_mag(:) + 1));
+        dP_eff_mag = 0.5*(dP_full_mag + dP_cav - sqrt((dP_full_mag - dP_cav).^2 + epsm.^2));
 
-        sgn   = sign(Q + 0);
-F_orf = - dP_eff .* Ap_mat .* sgn; % ← hızın tersine (dissipatif)
+        dP_eff = sgn .* dP_eff_mag;
+        F_orf = dP_eff .* Ap_mat;
+        dP_kv = dP_kv_signed;
+        dP_lam = dP_lam_signed;
+        dP_h = dP_full_signed;
 
 
         if isColumn
