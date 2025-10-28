@@ -84,36 +84,96 @@ GM.index = 1;           % 1..10 (A/B için hangi kaydı istediğin)
 
 switch lower(GM.mode)
     case 'raw_one'      % A) ölçeksiz tek kayıt
-        rec = records(GM.index);
+        dataset = records;
 
     case 'scaled_one'   % B) ölçekli tek kayıt
-        rec = scaled(GM.index);
+        dataset = scaled;
 
     case 'all_scaled'   % C) tüm kayıtları ortak IM hedefine ölçekli set
-        recs_batch = scaled;             % tüm ölçekli set (istersen döngüyle hepsini koştur)
-        rec = recs_batch(GM.index);      % tek koşu için varsayılan olarak birini al
+        dataset = scaled;
     otherwise
         error('GM.mode must be raw_one | scaled_one | all_scaled');
 end
 
-t = rec.t; 
-ag = rec.ag;
+if isempty(dataset)
+    error('Seçilen GM.mode için kullanılabilir kayıt bulunamadı.');
+end
 
-win = make_arias_window_local(t, ag); 
-t5 = win.t5; 
+GM.index = max(1, min(numel(dataset), GM.index));
+rec = dataset(GM.index);
+
+if strcmpi(GM.mode,'all_scaled')
+    recs_batch = dataset;
+else
+    recs_batch = rec;
+end
+
+%% SDOF çözümü için parametre paketini oluştur
+sim_model = struct('M', M, 'C0', C0, 'K', K, 'k_sd', k_sd, 'c_lam0', c_lam0, ...
+    'Lori', Lori, 'orf', orf, 'rho', rho, 'Ap', Ap, 'Ao', Ao, 'Qcap_big', Qcap_big, ...
+    'mu_ref', mu_ref, 'thermal', thermal, 'T0_C', T0_C, 'T_ref_C', T_ref_C, ...
+    'b_mu', b_mu, 'c_lam_min', c_lam_min, 'c_lam_cap', c_lam_cap, 'Lgap', Lgap, ...
+    'cp_oil', cp_oil, 'cp_steel', cp_steel, 'steel_to_oil_mass_ratio', steel_to_oil_mass_ratio, ...
+    'story_mask', story_mask, 'n_dampers_per_story', n_dampers_per_story, ...
+    'resFactor', resFactor, 'cfg', cfg, 'story_height', story_height, 'Qcap_big', Qcap_big);
+
+%% Seçilen kayıt için çözümü üret
+sel = run_sdof_single_record(rec, sim_model);
+
+t = sel.t;
+ag = sel.ag;
+win = sel.win;
+t5 = win.t5;
 t95 = win.t95;
+x0 = sel.x0;
+x_d = sel.x_d;
+a_rel0 = sel.a_rel0;
+a_d = sel.a_d;
+diag_d = sel.diag_d;
+x10_0 = sel.x_top0;
+x10_d = sel.x_topd;
+a10_0 = sel.a_top0_abs;
+a10_d = sel.a_topd_abs;
+drift0 = sel.drift0;
+drift_d = sel.drift_d;
+idx = sel.idx;
+IDR0 = sel.IDR0;
+IDR_d = sel.IDR_d;
 
-%% Damperless and damper responses
-[x0,a_rel0] = solve_linear_mck_local(t, ag, M, C0, K);
-[x_d,a_d,diag_d] = mck_with_damper_local(t, ag, M, C0, K, k_sd, c_lam0, Lori, ...
-    orf, rho, Ap, Ao, Qcap_big, mu_ref, thermal, T0_C, T_ref_C, b_mu, ...
-    c_lam_min, c_lam_cap, Lgap, cp_oil, cp_steel, steel_to_oil_mass_ratio, ...
-    story_mask, n_dampers_per_story, resFactor, cfg);
+%% Batch modu: tüm ölçekli kayıtları dolaşarak GA özetine eşdeğer metrikleri hesapla
+metrics_records_table = table();
+metrics_selected = sel.metrics;
+metrics_selected.PFA_mean = metrics_selected.PFA;
+metrics_selected.IDR_mean = metrics_selected.IDR;
+metrics_selected = compute_penalties_local(metrics_selected);
+metrics = metrics_selected;
 
-x10_0 = x0(:,10);
-x10_d = x_d(:,10);
-a10_0 = a_rel0(:,10) + ag;
-a10_d = a_d(:,10) + ag;
+if strcmpi(GM.mode,'all_scaled')
+    nBatch = numel(recs_batch);
+    metrics_batch = repmat(sel.metrics, nBatch, 1);
+    record_names = strings(nBatch,1);
+    for k = 1:nBatch
+        if k == GM.index
+            res_k = sel;
+        else
+            res_k = run_sdof_single_record(recs_batch(k), sim_model);
+        end
+        metrics_batch(k) = res_k.metrics;
+        if isfield(res_k, 'record_name') && ~isempty(res_k.record_name)
+            record_names(k) = string(res_k.record_name);
+        else
+            record_names(k) = string(sprintf('record_%02d', k));
+        end
+    end
+
+    metrics = aggregate_sdof_metrics_local(metrics_batch);
+    metrics.PFA = metrics.PFA_mean;
+    metrics.IDR = metrics.IDR_mean;
+    metrics = compute_penalties_local(metrics);
+
+    metrics_records_table = struct2table(metrics_batch);
+    metrics_records_table = [table(record_names, 'VariableNames', {'record'}), metrics_records_table];
+end
 
 %% Assemble equivalent damping/stiffness matrices for modal check
 nStories = n - 1;
@@ -154,11 +214,6 @@ plot([t95 t95],yl,'k--','HandleVisibility','off');
 grid on; xlabel('t [s]'); ylabel('a10abs(t) [m/s^2]');
 legend('Dampersiz','Damperli','Location','best');
 
-drift0 = x0(:,2:end) - x0(:,1:end-1);
-drift_d = x_d(:,2:end) - x_d(:,1:end-1);
-idx = win.idx;
-IDR0 = max(abs(drift0(idx,:)))./story_height;
-IDR_d = max(abs(drift_d(idx,:)))./story_height;
 story_ids = 1:(n-1);
 figure('Name','Maksimum IDR','Color','w');
 plot(story_ids, IDR0,'k-o','LineWidth',1.4); hold on;
@@ -185,11 +240,14 @@ fprintf(['Self-check zeta1: %.3f%% (dampersiz) vs %.3f%% (damperli); ' ...
         100*zeta0, 100*zeta_d, x10_max_0, x10_max_damperli, ...
         a10abs_max_0, a10abs_max_damperli, IDR_max_0, IDR_max_damperli);
 
+if strcmpi(GM.mode,'all_scaled')
+    fprintf(['Toplam %d ölçekli kayıt için toplu özet: PFA_{mean}=%.4g m/s^2, ' ...
+            'IDR_{mean}=%.4g, dP95=%.4g, Qcap95=%.4g, cav=%.4g, T_{end}=%.4g, mu_{end}=%.4g\n'], ...
+            nBatch, metrics.PFA_mean, metrics.IDR_mean, metrics.dP95, metrics.Qcap95, ...
+            metrics.cav_pct, metrics.T_end, metrics.mu_end);
+end
+
 %% Metric aggregation and CSV export
-metrics = compute_sdof_metrics_local(t, x_d, a_d, ag, diag_d, story_height, win, Qcap_big);
-metrics.PFA_mean = metrics.PFA;
-metrics.IDR_mean = metrics.IDR;
-metrics = compute_penalties_local(metrics);
 
 row = struct( ...
     'PFA_mean', metrics.PFA_mean, ...
@@ -224,7 +282,143 @@ tstamp = datestr(now,'yyyymmdd_HHMMSS');
 outfile = fullfile('out', ['sdof_' tstamp '.csv']);
 writetable(T_metrics, outfile);
 fprintf('SDOF metrics written to %s\n', outfile);
+if strcmpi(GM.mode,'all_scaled') && ~isempty(metrics_records_table)
+    detail_outfile = fullfile('out', ['sdof_records_' tstamp '.csv']);
+    writetable(metrics_records_table, detail_outfile);
+    fprintf('Per-record metrics written to %s\n', detail_outfile);
+end
 %% Local helpers
+function result = run_sdof_single_record(rec, model)
+    t = rec.t;
+    ag = rec.ag;
+    win = make_arias_window_local(t, ag);
+
+    [x0, a_rel0] = solve_linear_mck_local(t, ag, model.M, model.C0, model.K);
+    [x_d, a_d, diag_d] = mck_with_damper_local(t, ag, model.M, model.C0, model.K, ...
+        model.k_sd, model.c_lam0, model.Lori, model.orf, model.rho, model.Ap, model.Ao, ...
+        model.Qcap_big, model.mu_ref, model.thermal, model.T0_C, model.T_ref_C, model.b_mu, ...
+        model.c_lam_min, model.c_lam_cap, model.Lgap, model.cp_oil, model.cp_steel, ...
+        model.steel_to_oil_mass_ratio, model.story_mask, model.n_dampers_per_story, ...
+        model.resFactor, model.cfg);
+
+    idx = win.idx(:);
+    if isempty(idx) || all(~idx)
+        idx = true(size(t));
+    end
+
+    drift0 = x0(:,2:end) - x0(:,1:end-1);
+    drift_d = x_d(:,2:end) - x_d(:,1:end-1);
+    story_height = model.story_height;
+    story_height_vec = story_height;
+    if isempty(story_height_vec)
+        story_height_vec = 1;
+    end
+    if isscalar(story_height_vec)
+        story_height_vec = repmat(story_height_vec, 1, size(drift0,2));
+    else
+        story_height_vec = story_height_vec(:).';
+        if numel(story_height_vec) ~= size(drift0,2)
+            story_height_vec = repmat(story_height_vec(1), 1, size(drift0,2));
+        end
+    end
+
+    IDR0 = max(abs(drift0(idx,:)), [], 1) ./ story_height_vec;
+    IDR_d = max(abs(drift_d(idx,:)), [], 1) ./ story_height_vec;
+    IDR0 = reshape(IDR0, 1, []);
+    IDR_d = reshape(IDR_d, 1, []);
+
+    top_idx = min(size(x0,2), 10);
+    if top_idx < 1
+        top_idx = 1;
+    end
+    x_top0 = x0(:, top_idx);
+    x_topd = x_d(:, top_idx);
+    a_top0_abs = a_rel0(:, top_idx) + ag;
+    a_topd_abs = a_d(:, top_idx) + ag;
+
+    metrics = compute_sdof_metrics_local(t, x_d, a_d, ag, diag_d, story_height, win, model.Qcap_big);
+
+    result = struct('t', t, 'ag', ag, 'win', win, 'x0', x0, 'x_d', x_d, ...
+        'a_rel0', a_rel0, 'a_d', a_d, 'diag_d', diag_d, 'metrics', metrics, ...
+        'idx', idx, 'drift0', drift0, 'drift_d', drift_d, 'IDR0', IDR0, 'IDR_d', IDR_d, ...
+        'x_top0', x_top0, 'x_topd', x_topd, 'a_top0_abs', a_top0_abs, 'a_topd_abs', a_topd_abs);
+
+    if isfield(rec, 'name')
+        result.record_name = rec.name;
+    end
+end
+
+function metrics = aggregate_sdof_metrics_local(metrics_array)
+    if isempty(metrics_array)
+        metrics = struct('PFA_mean', 0, 'IDR_mean', 0, 'x10_max_damperli', 0, ...
+            'a10abs_max_damperli', 0, 'dP95', 0, 'Qcap95', 0, 'cav_pct', 0, ...
+            'T_end', 0, 'mu_end', 1, 'Q_q50', 0, 'Q_q95', 0, 'dP50', 0, ...
+            'energy_tot_sum', 0, 'E_orifice_sum', 0, 'E_struct_sum', 0, ...
+            'E_ratio', 0, 'P_mech_sum', 0, 'PFA', 0, 'IDR', 0);
+        return;
+    end
+
+    PFA = collect_metric_field_local(metrics_array, 'PFA', 0);
+    IDR = collect_metric_field_local(metrics_array, 'IDR', 0);
+    x10 = collect_metric_field_local(metrics_array, 'x10_max_damperli', 0);
+    a10 = collect_metric_field_local(metrics_array, 'a10abs_max_damperli', 0);
+    dP95 = collect_metric_field_local(metrics_array, 'dP95', 0);
+    Qcap = collect_metric_field_local(metrics_array, 'Qcap95', 0);
+    cav = collect_metric_field_local(metrics_array, 'cav_pct', 0);
+    T_end = collect_metric_field_local(metrics_array, 'T_end', 0);
+    mu = collect_metric_field_local(metrics_array, 'mu_end', 1);
+    Q_q50 = collect_metric_field_local(metrics_array, 'Q_q50', 0);
+    Q_q95 = collect_metric_field_local(metrics_array, 'Q_q95', 0);
+    dP50 = collect_metric_field_local(metrics_array, 'dP50', 0);
+    E_orifice = collect_metric_field_local(metrics_array, 'E_orifice_sum', 0);
+    E_struct = collect_metric_field_local(metrics_array, 'E_struct_sum', 0);
+    P_mech = collect_metric_field_local(metrics_array, 'P_mech_sum', 0);
+
+    metrics = struct();
+    metrics.PFA_mean = mean(PFA);
+    metrics.IDR_mean = mean(IDR);
+    metrics.x10_max_damperli = max(x10);
+    metrics.a10abs_max_damperli = max(a10);
+    metrics.dP95 = max(dP95);
+    metrics.Qcap95 = max(Qcap);
+    metrics.cav_pct = max(cav);
+    metrics.T_end = max(T_end);
+    metrics.mu_end = min(mu);
+    metrics.Q_q50 = max(Q_q50);
+    metrics.Q_q95 = max(Q_q95);
+    metrics.dP50 = max(dP50);
+    metrics.E_orifice_sum = sum(E_orifice);
+    metrics.E_struct_sum = sum(E_struct);
+    metrics.energy_tot_sum = metrics.E_orifice_sum + metrics.E_struct_sum;
+    if metrics.E_struct_sum > 0
+        metrics.E_ratio = metrics.E_orifice_sum / max(metrics.E_struct_sum, eps);
+    else
+        metrics.E_ratio = 0;
+    end
+    metrics.P_mech_sum = sum(P_mech);
+end
+
+function vals = collect_metric_field_local(metrics_array, fieldName, defaultVal)
+    n = numel(metrics_array);
+    vals = defaultVal * ones(n,1);
+    for ii = 1:n
+        if isfield(metrics_array(ii), fieldName)
+            v = metrics_array(ii).(fieldName);
+        else
+            v = defaultVal;
+        end
+        if isempty(v)
+            v = defaultVal;
+        elseif ~isscalar(v)
+            v = v(1);
+        end
+        if ~isfinite(v)
+            v = defaultVal;
+        end
+        vals(ii) = v;
+    end
+end
+
 function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story_height, win, Qcap_big)
     if nargin < 8 || ~isfinite(Qcap_big) || Qcap_big <= 0
         Qcap_big = eps;
