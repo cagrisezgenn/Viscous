@@ -38,6 +38,9 @@ try
 
     d_o = xb.d_o_mm/1000;      % [m]
     n_orf = xb.n_orf;
+    cfg.PF.tau  = xb.PF_tau;
+    cfg.PF.gain = xb.PF_gain;
+    cfg.PF.t_on = xb.PF_t_on;
     orf.Cd0  = xb.Cd0;
     orf.CdInf= xb.CdInf;
     orf.p_exp= xb.p_exp;
@@ -88,29 +91,24 @@ a10_0 = a_rel0(:,10) + ag;
 a10_d = a_d(:,10) + ag;
 
 %% Assemble equivalent damping/stiffness matrices for modal check
-% nStories = n - 1;
-% mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
-% ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
-% multi = (mask .* ndps);
-% Kadd = zeros(n); C_add = zeros(n);
-% for i = 1:nStories
-%     idx = [i,i+1];
-%     k_eq = k_sd * multi(i);
-%     c_eq = diag_d.c_lam * multi(i);
-%     kM  = k_eq * [1 -1; -1 1];
-%     cM  = c_eq * [1 -1; -1 1];
-%     Kadd(idx,idx) = Kadd(idx,idx) + kM;
-%     C_add(idx,idx)= C_add(idx,idx) + cM;
-% end
-% K_tot = K + Kadd;
-% C_d = C0 + C_add;
-% [V,D] = eig(K_tot,M); [w2,ord] = sort(diag(D),'ascend');
-% phi1 = V(:,ord(1)); w1 = sqrt(w2(1));
-% normM = phi1.' * M * phi1;
-
-[V_base,D_base] = eig(K,M); [w2_base,ord_base] = sort(diag(D_base),'ascend');
-phi1 = V_base(:,ord_base(1));
-w1 = sqrt(w2_base(1));
+nStories = n - 1;
+mask = story_mask(:); if numel(mask)==1, mask = mask*ones(nStories,1); end
+ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
+multi = (mask .* ndps);
+Kadd = zeros(n); C_add = zeros(n);
+for i = 1:nStories
+    idx = [i,i+1];
+    k_eq = k_sd * multi(i);
+    c_eq = diag_d.c_lam * multi(i);
+    kM  = k_eq * [1 -1; -1 1];
+    cM  = c_eq * [1 -1; -1 1];
+    Kadd(idx,idx) = Kadd(idx,idx) + kM;
+    C_add(idx,idx)= C_add(idx,idx) + cM;
+end
+K_tot = K + Kadd;
+C_d = C0 + C_add;
+[V,D] = eig(K_tot,M); [w2,ord] = sort(diag(D),'ascend');
+phi1 = V(:,ord(1)); w1 = sqrt(w2(1));
 normM = phi1.' * M * phi1;
 
 %% Plots: 10th floor displacement and acceleration, plus IDR
@@ -145,6 +143,7 @@ legend('Dampersiz','Damperli','Location','best');
 
 %% Summary printout
 zeta0 = (phi1.' * C0 * phi1) / (2*w1*normM);
+zeta_d = (phi1.' * C_d * phi1) / (2*w1*normM);
 
 idx = win.idx;
 x10_max_0 = max(abs(x10_0(idx)));
@@ -154,25 +153,18 @@ a10abs_max_damperli = max(abs(a10_d(idx)));
 IDR_max_0 = max(IDR0);
 IDR_max_damperli = max(IDR_d);
 
-fprintf(['Self-check zeta1 (yapısal baz): %.3f%%; ' ...
+fprintf(['Self-check zeta1: %.3f%% (dampersiz) vs %.3f%% (damperli); ' ...
          'x10_{max}0=%.4g m; x10_{max}d=%.4g m; ' ...
          'a10abs_{max}0=%.4g m/s^2; a10abs_{max}d=%.4g m/s^2; ' ...
          'IDR_{max}0=%.4g; IDR_{max}d=%.4g\n'], ...
-        100*zeta0, x10_max_0, x10_max_damperli, ...
+        100*zeta0, 100*zeta_d, x10_max_0, x10_max_damperli, ...
         a10abs_max_0, a10abs_max_damperli, IDR_max_0, IDR_max_damperli);
 
-%% Metric aggregation and CSV export  (CLEAN)
+%% Metric aggregation and CSV export
 metrics = compute_sdof_metrics_local(t, x_d, a_d, ag, diag_d, story_height, win, Qcap_big);
-
-% SCI-rapor metrik adları (mean alanlarını aynı değere eşle)
 metrics.PFA_mean = metrics.PFA;
 metrics.IDR_mean = metrics.IDR;
-
-% Ceza terimleri
 metrics = compute_penalties_local(metrics);
-
-% Artık dP95/dP50, Q_q50, Q_q95, Qcap95, PF_p95, cav_pct, T_end, mu_end
-% hepsi compute_sdof_metrics_local içinden geliyor — tekrar hesaplama YOK.
 
 row = struct( ...
     'PFA_mean', metrics.PFA_mean, ...
@@ -198,11 +190,13 @@ row = struct( ...
     'E_orifice_sum', metrics.E_orifice_sum, ...
     'E_struct_sum', metrics.E_struct_sum, ...
     'E_ratio', metrics.E_ratio, ...
-    'P_mech_sum', metrics.P_mech_sum );
+    'P_mech_sum', metrics.P_mech_sum);
 
 T_metrics = struct2table(row);
-if ~exist('out','dir'); mkdir('out'); end
-tstamp  = datestr(now,'yyyymmdd_HHMMSS');
+if ~exist('out','dir')
+    mkdir('out');
+end
+tstamp = datestr(now,'yyyymmdd_HHMMSS');
 outfile = fullfile('out', ['sdof_' tstamp '.csv']);
 writetable(T_metrics, outfile);
 fprintf('SDOF metrics written to %s\n', outfile);
@@ -225,71 +219,49 @@ function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story
     if ~isfinite(metrics.IDR)
         metrics.IDR = 0;
     end
-    abs_dP = abs(diag_d.dP_eff(idx,:));
-    abs_Q = [];
-    if isfield(diag_d,'Q') && ~isempty(diag_d.Q)
-        abs_Q = abs(diag_d.Q(idx,:));
-    end
-
-    PF_abs = [];
-    if isfield(diag_d,'PF') && ~isempty(diag_d.PF)
-        PF_abs = abs(diag_d.PF(idx,:));
-    end
-    if isempty(PF_abs)
-        PF_abs = abs(diag_d.story_force(idx,:));
-    end
-
-    pf_q95_vec = quantile(PF_abs, 0.95);
-    [~, ws] = max(pf_q95_vec);
+    abs_dP = abs(diag_d.dP_orf(idx,:));
+    abs_Q = abs(diag_d.Q(idx,:));
+    Qcap_ratio = abs_Q ./ max(Qcap_big, eps);
+    abs_story_force = abs(diag_d.story_force(idx,:));
+    dP_q50 = quantile(abs_dP, 0.50);
+    dP_q95 = quantile(abs_dP, 0.95);
+    Q_q50 = quantile(abs_Q, 0.50);
+    Q_q95 = quantile(abs_Q, 0.95);
+    Qcap95_vec = quantile(Qcap_ratio, 0.95);
+    story_force_q95 = quantile(abs_story_force, 0.95);
+    [~, ws] = max(story_force_q95);
     if isempty(ws) || ~isfinite(ws)
         ws = 1;
     end
-    abs_dP_ws = abs_dP(:, ws);
-    dP_q50 = quantile(abs_dP_ws, 0.50);
-    dP_q95 = quantile(abs_dP_ws, 0.95);
-    metrics.dP95 = dP_q95;
-    metrics.dP50 = dP_q50;
-
-    if ~isempty(abs_Q)
-        abs_Q_ws = abs_Q(:, ws);
-        metrics.Q_q50 = quantile(abs_Q_ws, 0.50);
-        metrics.Q_q95 = quantile(abs_Q_ws, 0.95);
-
-        Qcap_ratio = abs_Q ./ max(Qcap_big, eps);
-        Qcap95_vec = quantile(Qcap_ratio, 0.95);
-        metrics.Qcap95 = Qcap95_vec(ws);
-    else
-        [metrics.Q_q50, metrics.Q_q95, metrics.Qcap95] = deal(0);
-    end
+    metrics.dP95 = dP_q95(ws);
+    metrics.dP50 = dP_q50(ws);
+    metrics.Q_q95 = Q_q95(ws);
+    metrics.Q_q50 = Q_q50(ws);
+    metrics.Qcap95 = Qcap95_vec(ws);
     cav_mean = mean(diag_d.cav_mask(idx,:), 1);
     metrics.cav_pct = cav_mean(ws);
-
-    PF_ws_abs = PF_abs(:, ws);
-    metrics.PF_p95 = quantile(PF_ws_abs, 0.95);
-    E_orf_end    = isfield(diag_d,'E_orf')    && ~isempty(diag_d.E_orf);
-    E_struct_end = isfield(diag_d,'E_struct') && ~isempty(diag_d.E_struct);
-    if isfield(diag_d,'E_orifice_sum') && ~isempty(diag_d.E_orifice_sum)
-        metrics.E_orifice_sum = diag_d.E_orifice_sum;
-    elseif E_orf_end
-        metrics.E_orifice_sum = diag_d.E_orf(end);
-    else
-        metrics.E_orifice_sum = 0;
-    end
-    if isfield(diag_d,'E_struct_sum') && ~isempty(diag_d.E_struct_sum)
-        metrics.E_struct_sum = diag_d.E_struct_sum;
-    elseif E_struct_end
-        metrics.E_struct_sum = diag_d.E_struct(end);
-    else
-        metrics.E_struct_sum = 0;
-    end
+    metrics.E_orifice_sum = diag_d.E_orf(end);
+    metrics.E_struct_sum = diag_d.E_struct(end);
     metrics.energy_tot_sum = metrics.E_orifice_sum + metrics.E_struct_sum;
-    metrics.E_ratio = metrics.E_orifice_sum / max(metrics.E_orifice_sum + abs(metrics.E_struct_sum), eps);
+    if metrics.E_struct_sum > 0
+        metrics.E_ratio = metrics.E_orifice_sum / max(metrics.E_struct_sum, eps);
+    else
+        metrics.E_ratio = 0;
+    end
     if isfield(diag_d,'P_sum') && ~isempty(diag_d.P_sum)
-        P_mech_win = diag_d.P_sum(idx);
-        P_mech_win = P_mech_win(isfinite(P_mech_win));
-        metrics.P_mech_sum = mean(P_mech_win);
+        metrics.P_mech_sum = mean(diag_d.P_sum(idx));
     else
         metrics.P_mech_sum = NaN;
+    end
+    if isfield(diag_d,'PF') && ~isempty(diag_d.PF)
+        PF_abs = abs(diag_d.PF(idx,:));
+        if size(PF_abs,2) >= ws
+            metrics.PF_p95 = quantile(PF_abs(:,ws), 0.95);
+        else
+            metrics.PF_p95 = NaN;
+        end
+    else
+        metrics.PF_p95 = NaN;
     end
     if isfield(diag_d,'T_oil') && ~isempty(diag_d.T_oil)
         metrics.T_end = diag_d.T_oil(end);
@@ -308,6 +280,34 @@ function y = softmin_local(a,b,epsm)
         epsm = 1e5;
     end
     y = 0.5*(a + b - sqrt((a - b).^2 + epsm.^2));
+end
+
+function w = pf_weight_local(t, cfg)
+    if nargin < 2 || ~isstruct(cfg), cfg = struct(); end
+    cfg.on = struct('pressure_force',true,'mu_floor',false, ...
+        'pf_resistive_only',false,'Rlam',true,'Rkv',true, ...
+        'hyd_inertia',true,'cavitation',true);
+    if ~isfield(cfg.on,'pressure_force'), cfg.on.pressure_force = true; end
+    cfg.PF = struct('mode','ramp','tau',1.0,'gain',0.85,'t_on',0,'auto_t_on',true,'k',0.01,'tau_floor',1e-6);
+    if ~isfield(cfg.PF,'t_on'), cfg.PF.t_on = 0; end
+    if ~isfield(cfg.PF,'tau'),  cfg.PF.tau  = 1.0; end
+    if ~isfield(cfg,'compat_simple'), cfg.compat_simple = true; end
+    k = getfield_default_local(cfg.PF,'k',0.01);
+    tau_floor = getfield_default_local(cfg.PF,'tau_floor',1e-6);
+    t = double(t);
+    if cfg.compat_simple
+        dt  = max(t - cfg.PF.t_on, 0);
+        tau = max(cfg.PF.tau, tau_floor);
+        w_local = 1 - exp(-dt ./ tau);
+    else
+        k = max(k, tau_floor);
+        sp_dt = (log1p(exp(-abs((t - cfg.PF.t_on)./k))) + max((t - cfg.PF.t_on)./k, 0));
+        dt  = sp_dt .* k;
+        sp_tau = (log1p(exp(-abs((cfg.PF.tau - tau_floor)./k))) + max((cfg.PF.tau - tau_floor)./k, 0));
+        tau = sp_tau .* k + tau_floor;
+        w_local = 1 - exp(-dt ./ tau);
+    end
+    w = cfg.on.pressure_force .* w_local;
 end
 
 function win = make_arias_window_local(t, ag, varargin)
@@ -599,15 +599,7 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
     z0(2*n + 1) = T0_C;
     z0(2*n + 2) = T0_C;
 
-    if numel(t) > 1
-        dt_nom = median(diff(t));
-    else
-        dt_nom = 1;
-    end
-    dt_nom = max(dt_nom, eps);
-
-    opts = odeset('RelTol',1e-3,'AbsTol',1e-6, ...
-                  'MaxStep', 0.05);
+    opts = odeset('RelTol',1e-3,'AbsTol',1e-6);
 
     ctx = struct('n',n,'Ns',Ns,'M',M,'C',C,'K',K,'r',r,'agf',agf, ...
                  'Nvec',Nvec,'Mvec',Mvec,'multi',multi_row,'multi_col',multi_col,'k_sd',k_sd,'c_lam',c_lam, ...
@@ -619,99 +611,29 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
                  'beta0',beta0,'b_beta',b_beta,'T_ref',T_ref,'T_env',T_env, ...
                  'C_oil',C_oil,'C_steel',C_steel,'hA_os',hA_os,'hA_o_env',hA_o_env,'hA_s_env',hA_s_env, ...
                  'T_min',T0_C,'T_max',T0_C + dT_max,'orf',orf,'Qcap_eff',Qcap_eff, ...
-                 'thermal',thermal, 'rho_min', getfield_default_local(thermal,'rho_min',600), 'gate_k', getfield_default_local(cfg,'gate_k',20), ...
-                 'hyd_inertia', logical(getfield_default_local(cfg_on,'hyd_inertia', false)), 'dt', dt_nom, ...
-                 'cache_token', randi([0 2^31-1]));
+                 'thermal',thermal, 'rho_min', getfield_default_local(thermal,'rho_min',600), 'gate_k', getfield_default_local(cfg,'gate_k',20));
 
-    try
-        sol = ode15s(@(tt,z) damper_rhs_local(tt,z,ctx), [t(1) t(end)], z0, opts);
-    catch
-        opts2 = odeset(opts,'RelTol',5e-3,'AbsTol',2e-6);
-        sol = ode23tb(@(tt,z) damper_rhs_local(tt,z,ctx), [t(1) t(end)], z0, opts2);
-    end
+    sol = ode15s(@(tt,z) damper_rhs_local(tt,z,ctx), [t(1) t(end)], z0, opts);
+    Z = deval(sol, t).';
 
-    t_end_num = sol.x(end);
-    t_clip = min(t, t_end_num);
-    Z = deval(sol, t_clip).';
-
-    x_eff = Z(:,1:n);
-    v_eff = Z(:,n+1:2*n);
+    x = Z(:,1:n);
+    v = Z(:,n+1:2*n);
     T_o = Z(:,2*n+1);
     T_s = Z(:,2*n+2);
 
-    diag_eff = postprocess_state_local(ctx, t_clip, x_eff, v_eff, T_o, T_s);
+    diag = postprocess_state_local(ctx, t, x, v, T_o, T_s);
 
-    Nt_eff = numel(t_clip);
-    ag_clip = agf(t_clip);
-
-    F_story = diag_eff.story_force;
-    F = zeros(Nt_eff, n);
+    F_story = diag.story_force;
+    F = zeros(Nt, n);
     for k = 1:Ns
         idxN = Nvec(k);
         idxM = Mvec(k);
         F(:,idxN) = F(:,idxN) - F_story(:,k);
         F(:,idxM) = F(:,idxM) + F_story(:,k);
     end
-    a_rel_eff = ( -(M\(C*v_eff.' + K*x_eff.' + F.' )).' - ag_clip(:).*r.' );
-
-    x = x_eff;
-    a_rel = a_rel_eff;
-    diag = diag_eff;
-
-    if Nt_eff < Nt
-        x = pad_timeseries_local(x, Nt_eff, Nt);
-        a_rel = pad_timeseries_local(a_rel, Nt_eff, Nt);
-        diag = pad_diag_struct_local(diag, Nt_eff, Nt);
-    end
+    a_rel = ( -(M\(C*v.' + K*x.' + F.' )).' - ag(:).*r.' );
 
     ts = diag;
-
-    function val_pad = pad_timeseries_local(val, Nt_eff_loc, Nt_loc)
-        if Nt_eff_loc >= Nt_loc || Nt_loc <= 0
-            val_pad = val;
-            return;
-        end
-
-        pad_len = Nt_loc - Nt_eff_loc;
-        if pad_len <= 0 || isempty(val)
-            val_pad = val;
-            return;
-        end
-
-        sz = size(val);
-        if sz(1) ~= Nt_eff_loc
-            val_pad = val;
-            return;
-        end
-
-        nd = ndims(val);
-        rep_dims = ones(1, max(nd, 1));
-        rep_dims(1) = pad_len;
-
-        idx = repmat({':'}, 1, max(nd,1));
-        idx{1} = Nt_eff_loc;
-        last_slice = val(idx{:});
-        pad_block = repmat(last_slice, rep_dims);
-        val_pad = cat(1, val, pad_block);
-    end
-
-    function out_struct = pad_diag_struct_local(in_struct, Nt_eff_loc, Nt_loc)
-        out_struct = in_struct;
-        if Nt_eff_loc >= Nt_loc
-            return;
-        end
-        fns = fieldnames(in_struct);
-        for jj = 1:numel(fns)
-            name = fns{jj};
-            val = in_struct.(name);
-            if isnumeric(val) || islogical(val)
-                sz = size(val);
-                if ~isempty(val) && sz(1) == Nt_eff_loc
-                    out_struct.(name) = pad_timeseries_local(val, Nt_eff_loc, Nt_loc);
-                end
-            end
-        end
-    end
 
     function dz = damper_rhs_local(tt,z,ctx)
         x_loc = z(1:ctx.n);
@@ -736,18 +658,14 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         F_lin_loc = ctx.k_sd * drift;
         orf_loc = compute_orifice_terms_local(dvel, F_lin_loc, mu_loc, rho_loc, ctx);
 
-        Ap_mat_loc = expand_to_matrix_local(ctx.Ap_story, size(orf_loc.dP_eff,1), size(orf_loc.dP_eff,2));
-        Ap_mat_loc = max(Ap_mat_loc, 1e-12);
-        dp_pf_loc = orf_loc.dP_eff ./ Ap_mat_loc;
-        zero_mask_loc = Ap_mat_loc <= 1e-12;
-        dp_pf_loc(~isfinite(dp_pf_loc) | zero_mask_loc) = 0;
+        dp_pf_loc = (ctx.c_lam * dvel + orf_loc.F_orf) ./ ctx.Ap_story_col;
         if ctx.pf_res_only
-            sgn_loc = sign(dvel + 0);
-            dp_pf_loc = sgn_loc .* max(0, sgn_loc .* dp_pf_loc);
+            s_loc = tanh(ctx.gate_k*dvel);
+            dp_pf_loc = s_loc .* max(0, s_loc .* dp_pf_loc);
         end
-        PF_term     = dp_pf_loc;
-        F_story_loc = F_lin_loc + Ap_mat_loc .* PF_term;  % N
-
+        w_pf = pf_weight_local(tt, ctx.cfg);
+        PF_term = (ctx.gain_pf * w_pf) * dp_pf_loc;
+        F_story_loc = F_lin_loc + ctx.Ap_story_col .* PF_term;
         F_loc = zeros(ctx.n,1);
         for ii = 1:ctx.Ns
             F_loc(ctx.Nvec(ii)) = F_loc(ctx.Nvec(ii)) - F_story_loc(ii);
@@ -756,8 +674,9 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
 
         dv_loc = ctx.M \ ( -ctx.C*v_loc - ctx.K*x_loc - F_loc - ctx.M*ctx.r*ctx.agf(tt) );
 
-        P_loss_elem = orf_loc.dP_eff .* orf_loc.Q;
-        P_heat_loc = sum( max(P_loss_elem, 0) .* ctx.multi_col );
+        qmag_loc = abs(orf_loc.Q);
+        P_heat_loc = sum( (orf_loc.dP_h .* qmag_loc) .* ctx.multi_col );
+        P_heat_loc = max(P_heat_loc, 0);
 
         dT_o_loc = ( P_heat_loc - ctx.hA_os * (T_o_loc - T_s_loc) ...
                      - ctx.hA_o_env * (T_o_loc - ctx.T_env) ) / ctx.C_oil;
@@ -799,57 +718,42 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         orf_series = compute_orifice_terms_local(dvel, F_lin_series, mu_series, rho_series, ctx);
 
         % Energy bookkeeping and cavitation mask
-        Ap_mat = expand_to_matrix_local(ctx.Ap_story, Nt_loc, Ns_loc);
-        Ap_denom_series = max(Ap_mat, 1e-12);
-        dp_pf_series = orf_series.dP_eff ./ Ap_denom_series;
-        zero_mask_series = Ap_denom_series <= 1e-12;
-        dp_pf_series(~isfinite(dp_pf_series) | zero_mask_series) = 0;
+        Ap_mat = repmat(ctx.Ap_story, Nt_loc,1);
+        dp_pf_series = (ctx.c_lam * dvel + orf_series.F_orf) ./ Ap_mat;
         if ctx.pf_res_only
-            sgn_series = sign(dvel + 0);
-            dp_pf_series = sgn_series .* max(0, sgn_series .* dp_pf_series);
+            s_series = tanh(ctx.gate_k*dvel);
+            dp_pf_series = s_series .* max(0, s_series .* dp_pf_series);
         end
-        PF_term_series  = dp_pf_series;
+        w_pf_vec = pf_weight_local(t(:), ctx.cfg);
+        w_pf_mat = repmat(w_pf_vec, 1, Ns_loc);
+        PF_term_series = (ctx.gain_pf * w_pf_mat) .* dp_pf_series;
         PF_force_series = Ap_mat .* PF_term_series;
-
         F_story_series = F_lin_series + PF_force_series;
 
-        % --- Enerji/ güç muhasebesi (tek kanal) ---
-        P_visc_per    = zeros(size(dvel));  %#ok<NASGU> ikinci kanal yok
-        P_loss_series = orf_series.dP_eff .* orf_series.Q;
-        P_loss_series = max(P_loss_series, 0);
+        P_visc_per = ctx.c_lam * (dvel.^2);
+        P_loss_series = orf_series.dP_h .* abs(orf_series.Q);
+        P_sum = (P_visc_per + P_loss_series) * ctx.multi';
+         P_orf_per = orf_series.dP_kv .* abs(orf_series.Q);
+         P_orf_tot = P_orf_per * ctx.multi';
+         P_struct_tot = (F_story_series .* dvel) * ones(Ns_loc,1);
 
-        % Damper kuvveti*Hiz (yapi isi); F_story_series zaten (PF+lineer) iceriyor
-        P_struct_series = sum(F_story_series .* dvel, 2);
+         % Integrate full orifice losses (kv + laminar) for energy
+         P_orf_full_tot = P_loss_series * ctx.multi';
+         E_orf = cumtrapz(t, P_orf_full_tot);
+         E_struct = cumtrapz(t, P_struct_tot);
 
-        % Zaman entegralleri
-        P_loss_weighted = bsxfun(@times, P_loss_series, ctx.multi);
-        E_orf           = cumtrapz(t, sum(P_loss_weighted, 2));   % ≥ 0 olmalı
-        E_struct        = cumtrapz(t, P_struct_series);           % işaret serbest
-
-        % Rapor/sagduyu kontrolu
-        E_orifice_sum = E_orf(end);
-        E_struct_sum  = E_struct(end);
-        E_balance     = E_orifice_sum + E_struct_sum;             % ≈ 0 olmalı
-        P_sum = sum(P_loss_weighted, 2);
-
-        % Passive safety check (optional logging)
-        passivity_viol = any((PF_force_series .* dvel) > 1e-9, 'all');
-
-        p_up_series = ctx.orf.p_amb * ones(size(F_lin_series));
+        p_up_series = ctx.orf.p_amb + abs(F_lin_series) ./ max(Ap_mat, 1e-12);
         p_vap_mat = repmat(p_vap_series, 1, Ns_loc);
-        p2_est_series = p_up_series - orf_series.dP_eff;
+        p2_est_series = p_up_series - orf_series.dP_orf;
         cav_thresh = ctx.orf.cav_sf * p_vap_mat;
         cav_mask = p2_est_series <= cav_thresh;
 
-        orf_series_diag = struct('dP_eff', orf_series.dP_eff, 'Q', orf_series.Q);
-
         out = struct('dvel', dvel, 'story_force', F_story_series, 'Q', orf_series.Q, ...
-            'dP_eff', orf_series.dP_eff, 'PF', PF_force_series, 'cav_mask', cav_mask, 'P_sum', P_sum, ...
-            'E_orf', E_orf, 'E_struct', E_struct, 'E_orifice_sum', E_orifice_sum, 'E_struct_sum', E_struct_sum, ...
-            'E_balance', E_balance, 'passivity_viol', passivity_viol, 'T_oil', T_o, 'T_steel', T_s, ...
+            'dP_orf', orf_series.dP_orf, 'PF', PF_force_series, 'cav_mask', cav_mask, 'P_sum', P_sum, ...
+            'E_orf', E_orf, 'E_struct', E_struct, 'T_oil', T_o, 'T_steel', T_s, ...
             'mu', mu_series, 'rho', rho_series, 'beta', beta_series, 'p_vap', p_vap_series, ...
             'c_lam', ctx.c_lam, 'dP_kv', orf_series.dP_kv, 'dP_cav', orf_series.dP_cav, ...
-            'F_lin', F_lin_series, 'Re', orf_series.Re, 'orf_series', orf_series_diag);
+            'F_lin', F_lin_series, 'Re', orf_series.Re);
 
     end
     function out = compute_orifice_terms_local(dvel, F_lin, mu_val, rho_val, ctx)
@@ -871,83 +775,29 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
         end
 
         nRows = size(dvel_mat,1);
-        Ap_mat    = repmat(ctx.Ap_story,   nRows, 1);
-        Ao_mat    = repmat(ctx.Ao_story,   nRows, 1);
+        Qcap_mat = repmat(ctx.Qcap_story, nRows, 1);
+        Ap_mat   = repmat(ctx.Ap_story,   nRows, 1);
+        Ao_mat   = repmat(ctx.Ao_story,   nRows, 1);
         n_orf_mat = repmat(ctx.n_orf_total, nRows, 1);
 
-        persistent cache_tokens cache_lastQ
-        if isempty(cache_tokens)
-            cache_tokens = zeros(0,1);
-            cache_lastQ = {};
-        end
-
-        cache_token = NaN;
-        if isfield(ctx,'cache_token')
-            cache_token = double(ctx.cache_token);
-        end
-
-        Q = Ap_mat .* dvel_mat;                   % (1) Kinematic continuity
-
-        dt_loc = getfield_default_local(ctx,'dt',0);
-        if size(Q,1) > 1 && dt_loc > 0
-            dQdt = gradient(Q, dt_loc);
-            if ~isnan(cache_token)
-                idx_tok = find(cache_tokens == cache_token, 1);
-                if isempty(idx_tok)
-                    cache_tokens(end+1,1) = cache_token; %#ok<AGROW>
-                    cache_lastQ{end+1} = Q(end,:);
-                else
-                    cache_lastQ{idx_tok} = Q(end,:);
-                end
-            end
-        elseif dt_loc > 0 && ~isnan(cache_token)
-            idx_tok = find(cache_tokens == cache_token, 1);
-            if isempty(idx_tok)
-                cache_tokens(end+1,1) = cache_token; %#ok<AGROW>
-                cache_lastQ{end+1} = Q;
-                dQdt = zeros(size(Q));
-            else
-                prev_Q = cache_lastQ{idx_tok};
-                if isempty(prev_Q)
-                    dQdt = zeros(size(Q));
-                else
-                    dQdt = (Q - prev_Q) ./ dt_loc;
-                end
-                cache_lastQ{idx_tok} = Q;
-            end
-        else
-            dQdt = zeros(size(Q));
-        end
+        veps = getfield_default_local(ctx.orf,'veps',0.10);
+        qmag = Qcap_mat .* tanh((Ap_mat ./ Qcap_mat) .* sqrt(dvel_mat.^2 + veps^2));
+        sgn  = dvel_mat ./ sqrt(dvel_mat.^2 + veps^2);
+        Q = qmag .* sgn;
 
         Re = (rho_mat .* abs(Q)) .* ctx.d_o_single ./ max(Ao_mat .* mu_mat, 1e-9);
         Cd = ctx.orf.CdInf - (ctx.orf.CdInf - ctx.orf.Cd0) ./ (1 + Re.^ctx.orf.p_exp);
         Cd_min = getfield_default_local(ctx.orf,'Cd_min',0.5); Cd_max = getfield_default_local(ctx.orf,'Cd_max',0.9); Cd = min(max(Cd, Cd_min), Cd_max);
 
-        sgn = sign(Q + 0);
-        dP_kv = 0.5 * rho_mat .* (abs(Q) ./ max(Cd .* Ao_mat, 1e-12)).^2 .* sgn;
+        dP_kv = 0.5 * rho_mat .* (abs(Q) ./ max(Cd .* Ao_mat, 1e-12)).^2;
         R_lam = (128 * mu_mat .* ctx.Lori) ./ max(pi * ctx.d_o_single^4, 1e-24) ./ max(n_orf_mat,1);
-        dP_lam = R_lam .* Q;                      % işaret Q ile aynı
+        dP_lam = R_lam .* Q;
         dP_h = dP_kv + dP_lam;
-        if isfield(ctx,'hyd_inertia') && ctx.hyd_inertia
-            Lori_mat = expand_to_matrix_local(ctx.Lori, size(Q,1), size(Q,2));
-            Lh1 = rho_mat .* Lori_mat ./ max(Ao_mat, 1e-12);
-            Lh = Lh1 ./ max(n_orf_mat, 1);
-            dP_h = dP_h + Lh .* dQdt;
-        end
 
-        p_up = ctx.orf.p_amb * ones(size(dP_h));
-        p_vap = getfield_default_local(ctx.orf,'p_vap_eff', 150);
-        p_vap_mat = expand_to_matrix_local(p_vap, size(dP_h,1), size(dP_h,2));
-        gamma_c = getfield_default_local(ctx.orf,'cav_sf', 1.0);
-        dP_cav = max(p_up - gamma_c * p_vap_mat, 0);
-
-        dP_full = dP_h;
-        epsm = max(getfield_default_local(ctx,'soft_eps',1e5), ...
-                   0.05*median(dP_full(:) + 1));
-        dP_eff = 0.5*(dP_full + dP_cav - sqrt((dP_full - dP_cav).^2 + epsm.^2));
-
-        F_orf = dP_eff .* Ap_mat .* sgn;
-
+        p_up = ctx.orf.p_amb + abs(F_lin_mat) ./ max(Ap_mat, 1e-12);
+        dP_cav = max((p_up - ctx.orf.p_cav_eff) .* ctx.orf.cav_sf, 0);
+        dP_orf = softmin_local(dP_kv, dP_cav, ctx.soft_eps);
+        F_orf = dP_orf .* Ap_mat .* sgn;
 
         if isColumn
             F_orf = F_orf.';
@@ -956,13 +806,13 @@ function [x,a_rel,ts] = mck_with_damper_local(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,
             dP_lam = dP_lam.';
             dP_h = dP_h.';
             dP_cav = dP_cav.';
-            dP_eff = dP_eff.';
+            dP_orf = dP_orf.';
             Re = Re.';
             Cd = Cd.';
         end
 
         out = struct('F_orf',F_orf,'Q',Q,'dP_kv',dP_kv,'dP_lam',dP_lam,'dP_h',dP_h, ...
-            'dP_cav',dP_cav,'dP_eff',dP_eff,'Re',Re,'Cd',Cd);
+            'dP_cav',dP_cav,'dP_orf',dP_orf,'Re',Re,'Cd',Cd);
     end
 
 end
@@ -983,9 +833,13 @@ function mat = expand_to_matrix_local(val, nR, nC)
     end
 end
 function p_v = p_vap_Antoine_local(T_C, thermal, orf)
-    %#ok<INUSD>
-    p_v_const = getfield_default_local(thermal,'p_vap_const_Pa', 150);
-    p_v = max(1, p_v_const);
+    if nargin < 3 || isempty(orf), orf = struct(); end
+    A = getfield_default_local(thermal,'antoine_A',5.0);
+    B = getfield_default_local(thermal,'antoine_B',1700);
+    C = getfield_default_local(thermal,'antoine_C',-80);
+    T_C = double(T_C);
+    p_v = 10.^(A - B./(C + T_C));
+    p_v = min(max(p_v, 5), 5e2);
 end
 function params = default_params()
 
@@ -1050,7 +904,7 @@ function params = default_params()
 
 
     params.steel_to_oil_mass_ratio = 1.5;
-    params.n_dampers_per_story = 2;
+    params.n_dampers_per_story = 1;
     params.story_mask = ones(n-1,1);
     params.cp_oil = 1800;
     params.cp_steel = 500;
@@ -1061,9 +915,10 @@ function params = default_params()
     params.c_lam_min_abs = 1e5;
 
     cfg = struct();
+    cfg.PF = struct('mode','ramp','tau',1.0,'gain',0.85,'t_on',0,'auto_t_on',true,'k',0.01,'tau_floor',1e-6);
     cfg.on = struct('pressure_force',true,'mu_floor',false, ...
         'pf_resistive_only',false,'Rlam',true,'Rkv',true, ...
-        'hyd_inertia',false,'cavitation',true);
+        'hyd_inertia',true,'cavitation',true);
     cfg.use_orifice = true;
     cfg.use_thermal = true;
     cfg.K_leak = 0;
@@ -1116,26 +971,46 @@ function params = recompute_damper_params_local(params)
     end
     if ~isfield(params,'n_orf'), params.n_orf = 1; end
 
+    nd = 1;
+    if isfield(params,'nd') && isfinite(params.nd)
+        nd = params.nd;
+    elseif isfield(params,'n_parallel') && isfinite(params.n_parallel)
+        nd = params.n_parallel;
+    elseif isfield(params,'n_dampers_per_story')
+        nds = params.n_dampers_per_story;
+        if isnumeric(nds)
+            if isscalar(nds), nd = nds; else, nd = max(1, round(max(nds(:)))); end
+        end
+    end
+    nd = max(1, round(nd));
+
     Ap = pi * params.Dp^2 / 4;
     Ao_single = pi * params.orf.d_o^2 / 4;
     Ao = params.n_orf * Ao_single;
+    Ap_eff = nd * Ap;
+    Ao_eff = nd * Ao;
+
+    rho_loc = getfield_default_local(params,'rho',850);
+    Lh = rho_loc * params.Lori / max(Ao^2, 1e-18);
 
     k_h = params.Kd * Ap^2 / params.Lgap;
     k_s = params.Ebody * Ap / params.Lgap;
     k_hyd = 1 / (1/k_h + 1/k_s);
     k_p = params.Gsh * params.d_w^4 / (8 * params.n_turn * params.D_m^3);
+    k_sd_simple = k_hyd + k_p;
+    k_sd_adv    = nd * (k_hyd + k_p);
 
-    % --- Laminer eşdeğer c: R_lam * A_p^2 ile TUTARLI ---
-    R_lam_single = (128 * params.mu_ref * params.Lori) / (pi * params.orf.d_o^4);
-    R_lam_total  = R_lam_single / max(params.n_orf,1);
-    c_lam0 = R_lam_total * ((pi * params.Dp^2 / 4)^2);
+    c_lam0 = 12 * params.mu_ref * params.Lori * Ap^2 / (params.orf.d_o^4);
 
     params.Ap = Ap;
     params.Ao = Ao;
-
-    % Disable hydraulic and parallel spring stiffness contributions
-    params.k_p = 0;
-    params.k_sd = 0;
+    params.Ap_eff = Ap_eff;
+    params.Ao_eff = Ao_eff;
+    params.Lh = Lh;
+    params.k_p = k_p;
+    params.k_sd_simple = k_sd_simple;
+    params.k_sd_adv = k_sd_adv;
+    params.k_sd = k_sd_adv;
     params.c_lam0 = c_lam0;
 end
 
