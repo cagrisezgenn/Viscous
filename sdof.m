@@ -231,11 +231,11 @@ function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story
         abs_Q = abs(diag_d.Q(idx,:));
     end
 
+    % --- 1) En kötü katı PF'e göre seç ---
     PF_abs = [];
     if isfield(diag_d,'PF') && ~isempty(diag_d.PF)
         PF_abs = abs(diag_d.PF(idx,:));
-    end
-    if isempty(PF_abs)
+    else
         PF_abs = abs(diag_d.story_force(idx,:));
     end
 
@@ -244,16 +244,19 @@ function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story
     if isempty(ws) || ~isfinite(ws)
         ws = 1;
     end
+
+    % --- 2) Eşzamanlı p95/p50 hesapları ---
+    PF_ws_abs = PF_abs(:, ws);
+    metrics.PF_p95 = quantile(PF_ws_abs, 0.95);
+
     abs_dP_ws = abs_dP(:, ws);
-    dP_q50 = quantile(abs_dP_ws, 0.50);
-    dP_q95 = quantile(abs_dP_ws, 0.95);
-    metrics.dP95 = dP_q95;
-    metrics.dP50 = dP_q50;
+    metrics.dP95 = quantile(abs_dP_ws, 0.95);
+    metrics.dP50 = quantile(abs_dP_ws, 0.50);
 
     if ~isempty(abs_Q)
         abs_Q_ws = abs_Q(:, ws);
-        metrics.Q_q50 = quantile(abs_Q_ws, 0.50);
         metrics.Q_q95 = quantile(abs_Q_ws, 0.95);
+        metrics.Q_q50 = quantile(abs_Q_ws, 0.50);
 
         Qcap_ratio = abs_Q ./ max(Qcap_big, eps);
         Qcap95_vec = quantile(Qcap_ratio, 0.95);
@@ -261,11 +264,9 @@ function metrics = compute_sdof_metrics_local(t, x_d, a_rel_d, ag, diag_d, story
     else
         [metrics.Q_q50, metrics.Q_q95, metrics.Qcap95] = deal(0);
     end
+
     cav_mean = mean(diag_d.cav_mask(idx,:), 1);
     metrics.cav_pct = cav_mean(ws);
-
-    PF_ws_abs = PF_abs(:, ws);
-    metrics.PF_p95 = quantile(PF_ws_abs, 0.95);
     E_orf_end    = isfield(diag_d,'E_orf')    && ~isempty(diag_d.E_orf);
     E_struct_end = isfield(diag_d,'E_struct') && ~isempty(diag_d.E_struct);
     if isfield(diag_d,'E_orifice_sum') && ~isempty(diag_d.E_orifice_sum)
