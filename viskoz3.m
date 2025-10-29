@@ -1323,17 +1323,22 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)
         drift_ = x_(Mvec) - x_(Nvec);
         dvel_  = v_(Mvec) - v_(Nvec);
-        multi_row = multi(:).';
+        multi_col = multi(:);
         % Sütun yönelimli etkin parametreler
         % Faz 3: Lineer parçada sadece yay
-        F_lin_ = k_sd*drift_;
+        F_lin_ = k_sd * drift_;
+        F_lin_ = F_lin_(:);
         params = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
                         'Ao',Ao,'mu',mu_abs_loc,'F_lin',F_lin_,'Lori',Lori);
         [F_orf_, ~, ~, ~] = calc_orifice_force(dvel_, params);
-        F_orf_eff_  = F_orf_  .* multi_row;          % orifis kuvvetine multi
+        F_orf_ = F_orf_(:);
+        dvel_  = dvel_(:);
+        F_orf_eff_  = F_orf_  .* multi_col;          % orifis kuvvetine multi
         F_visc_raw_ = c_lam_loc .* dvel_;            % laminer kuvvet
-        F_visc_eff_ = F_visc_raw_ .* multi_row;      % laminer + multi
+        F_visc_raw_ = F_visc_raw_(:);
+        F_visc_eff_ = F_visc_raw_ .* multi_col;      % laminer + multi
         F_story_ = F_lin_ + F_visc_eff_ + F_orf_eff_;
+        F_story_ = F_story_(:);
         Fd = zeros(n,1);
         Fd(Nvec) = Fd(Nvec) - F_story_;
         Fd(Mvec) = Fd(Mvec) + F_story_;
