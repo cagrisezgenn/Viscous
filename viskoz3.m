@@ -46,23 +46,23 @@ optsEval.thr = util_default_qc_thresholds(util_getfield_default(optsEval,'thr', 
 
     obj = @(x) eval_design_fast(x, scaled, params, optsEval); % içerde kuantize/clamplar
 
-  % --- HIZLI �N TARAMA AYARLARI ---
-POP_SIZE_QUICK = 40;   % D���k pop�lasyon yeterli
-MAX_GEN_QUICK = 10;    % �ok az jenerasyon (Belki 15-20 de olabilir)
+  % --- HIZLI ÖN TARAMA AYARLARI ---
+POP_SIZE_QUICK = 40;   % Düşük popülasyon yeterli
+MAX_GEN_QUICK = 10;    % Çok az jenerasyon (Belki 15-20 de olabilir)
 
 options = optimoptions('gamultiobj', ...
-       'PopulationSize',    POP_SIZE_QUICK, ... % D���k
-       'MaxGenerations',    MAX_GEN_QUICK, ...  % D���k
+       'PopulationSize',    POP_SIZE_QUICK, ... % Düşük
+       'MaxGenerations',    MAX_GEN_QUICK, ...  % Düşük
        'CrossoverFraction', 0.8, ...
        'MutationFcn',       {@mutationadaptfeasible}, ...
-       'ParetoFraction',    0.4, ... % �e�itlili�i korumak �nemli
-       'StallGenLimit',     10, ... % D���k
+       'ParetoFraction',    0.4, ... % Çeşitliliği korumak önemli
+       'StallGenLimit',     10, ... % Düşük
        'DistanceMeasureFcn','distancecrowding', ...
        'OutputFcn',         @(options,state,flag) ga_out_best_pen(options,state,flag, scaled, params, optsEval), ...
        'UseParallel',       usePool, ...
        'Display','iter',...
-       'PlotFcn', {@gaplotpareto, @gaplotspread}, ... % Grafikler �nemli
-       'FunctionTolerance', 1e-4); % Tolerans� biraz gev�etebiliriz
+       'PlotFcn', {@gaplotpareto, @gaplotspread}, ... % Grafikler önemli
+       'FunctionTolerance', 1e-4); % Toleransı biraz gevşetebiliriz
 
         [X,F,exitflag,output] = gamultiobj(obj, numel(lb), [],[],[],[], lb, ub, [], IntCon, options);
     gaout = struct('exitflag',exitflag,'output',output);
@@ -158,6 +158,13 @@ options = optimoptions('gamultiobj', ...
 end
 
 function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
+% eval_design_fast — Hızlı tasarım değerlendirmesi (GA amaç fonksiyonu)
+% Amaçlar: f1 = mean(PFA) [m/s²], f2 = mean(IDR) [-]. Pencereli ortalamalar
+%   run_batch_windowed tarafından hesaplanır. Yumuşak cezalar: dP [Pa],
+%   Qcap [-], cav [-], T_end [°C], μ_end [Pa·s] terimlerinin normalize edilmiş
+%   sapmaları λ ölçeği ile toplanır. Hard-kill nedenleri (ör. Qcap95>0.90, cav>0.01)
+%   cezadan ayrıdır; meta.hard_kill_reason alanına ve stdout loguna yazılır.
+% Boyut kontrolü: f bileşenleri [m/s²] ve [-]; ceza terimleri boyutsuzlaştırılır.
     details = struct();
     % ızgaralara oturt
     x = x(:)';
@@ -204,14 +211,24 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
     dP95v = S.table.dP95;
     qcapv = S.table.Qcap95;
     cavv  = S.table.cav_pct;
-    if any(qcapv > 0.90) || any(cavv > 0.01)
+    % Hard-kill politikası: Fiziksel/operasyonel kısıtları açıkça günlükle ve meta’ya işle.
+    % İzlenebilirlik için CSV yerine meta alanı ve stdout log kullanıldı.
+    kill_reason = '';
+    if any(qcapv > 0.90)
+        kill_reason = 'Qcap95>0.90';
+    end
+    if any(cavv > 0.01)
+        if ~isempty(kill_reason), kill_reason = [kill_reason '+']; end
+        kill_reason = [kill_reason 'cav>0.01'];
+    end
+    if ~isempty(kill_reason)
         f = [1e6, 1e6];
         meta = struct('x',x,'f',f,'hard_kill',true, ...
+                      'hard_kill_reason', kill_reason, ...
                       'pen',0,'pen_dP',0,'pen_Qcap',0,'pen_cav',0,'pen_T',0,'pen_mu',0);
         memo(key) = meta;
-        if nargout > 2
-            details = S;
-        end
+        fprintf('[HARD-KILL] %s\n', kill_reason);
+        if nargout > 2, details = S; end
         return;
     end
 
@@ -259,10 +276,11 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
         end
     end
     meta = struct('x',x,'f',f,'PFA_mean',f1,'IDR_mean',f2, ...
-                 'pen',Penalty,'pen_dP',pen_parts.dP,'pen_Qcap',pen_parts.Qcap, ...
-                 'pen_cav',pen_parts.cav,'pen_T',pen_parts.T,'pen_mu',pen_parts.mu, ...
-                 'pen_parts',pen_parts,'x10_max_damperli',x10_max_damperli_local, ...
-                 'a10abs_max_damperli',a10abs_max_damperli_local);
+                    'pen',Penalty,'pen_dP',pen_parts.dP,'pen_Qcap',pen_parts.Qcap, ...
+                    'pen_cav',pen_parts.cav,'pen_T',pen_parts.T,'pen_mu',pen_parts.mu, ...
+                   'pen_parts',pen_parts,'x10_max_damperli',x10_max_damperli_local, ...
+                   'a10abs_max_damperli',a10abs_max_damperli_local, ...
+                   'hard_kill_reason','');
     % === Penaltı sürücüleri ve diagnostikleri ekle (varsa) ===
         if isfield(S,'table') && istable(S.table)
             candCols = {'dP95','Qcap95','cav_pct','T_end','mu_end', ...
@@ -663,8 +681,8 @@ c_lam_cap      = 2e7;
 c_lam_min_frac = 0.05;
 c_lam_min_abs  = 1e5;
 
-cfg = struct();
-cfg.on = struct('pressure_force', false, 'mu_floor', false);
+    cfg = struct();
+    cfg.on = struct('pressure_force', false, 'mu_floor', false, 'thermal_feedback', false);
 cfg.compat_simple = false;
 cfg.num = struct('softmin_eps', 1e4, 'mu_min_phys', 0.6, 'dP_cap', NaN);
 
@@ -1008,20 +1026,14 @@ end
 end
 
 function metr = compute_metrics_windowed(t, x, a_rel, ag, ts, story_height, win, params)
-%COMPUTE_METRICS_WINDOWED Zaman penceresi içindeki tepkileri hesaplar.
-%   METR = COMPUTE_METRICS_WINDOWED(T,X,A_REL,AG,TS,STORY_HEIGHT,WIN,PARAMS)
-%   fonksiyonu, WIN.IDX tarafından tanımlanan zaman aralığında yapının
-%   performansına ilişkin metrikleri üretir. METR değişkeni tepe kat mutlak
-%   ivmesi, katlar arası ötelenme oranları, orifis basınç istatistikleri,
-%   enerji ölçümleri ve nihai ("sıcak") damper katsayısına bağlı modal sönüm
-%   oranlarını içerir.
-%
-%   Girdi değişkenleri T, X, A_REL ve AG sırasıyla zaman vektörü, kat yer
-%   değiştirmeleri, göreli kat ivmeleri ve yer ivmesini temsil eder. TS
-%   yapısal analizin ürettiği ek zaman serilerini içerir; bu yapı sadece
-%   metrik hesapları için gerekli dizi alanlarını barındırır. STORY_HEIGHT her
-%   katın yüksekliğidir. WIN.IDX ilgilenilen pencereyi seçen mantıksal
-%   vektördür. PARAMS yapısal ve damper parametrelerini içerir.
+% compute_metrics_windowed — Zaman penceresi içinde tepkileri ve enerji dengelerini derler
+% Pencere içi metrikler: PFA [m/s²], IDR [-], dP95 [Pa], Qcap95 [-], cav_pct [-],
+%   enerji toplamları [J], ortalama güç [W], Re_max [-].
+% Enerji oranı: E_ratio = E_orifice_sum / max(E_struct_sum, ε) ile tanımlanır;
+%   ε ≈ 1e-9 J alınarak boyut analizi korunur. Δp·q ve c_lam·Δv² güç terimlerinin
+%   boyutu [W]; zaman integralleri [J] üretir.
+% Varsayımlar: WIN.idx mantıksal pencere, story_height [m], ts.dvel [m/s].
+%   Termal durum ve viskozite [Pa·s] ts.mu içinde bulunur.
 
 idx = win.idx;
 
@@ -1171,8 +1183,33 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, story_mask, ...
     n_dampers_per_story, resFactor, cfg)
+% mck_with_damper — Doğrusal MCK + doğrusal-yay (k_sd) + laminer (c_lam) + orifis (Δp_orf) damper modeli
+% Yöneten denklem:
+%   M * ẍ + C0 * ẋ + K * x + f_damper = - M * r * a_g
+% Kat i için damper kuvveti:
+%   f_i = k_sd * Δx_i  +  c_lam * Δv_i  +  A_p * Δp_orf,i * sgn(Δv_i)
+%   [k_sd]: N/m  |  [c_lam]: N·s/m  |  [Δx]: m  |  [Δv]: m/s  |  [A_p]: m²  |  [Δp_orf]: Pa
+% Orifis akışı ve basınç düşümü:
+%   q = Q_cap * tanh( (A_p / Q_cap) * sqrt(Δv^2 + ε_v^2) )             [q]: m³/s
+%   Re = (ρ * q * d_o) / (A_o * μ)                                      [ρ]: kg/m³, [μ]: Pa·s, [d_o]: m, [A_o]: m²
+%   C_d(Re) = C_d,∞ - (C_d,∞ - C_d,0) / (1 + (Re / Re_c)^p_exp)
+%   Δp_kv = ½ ρ ( q / (C_d A_o) )²
+%   Δp_cav = max( (p_up - p_cav,eff) * cav_sf, 0 ),   p_up = p_amb + |F_lin| / A_p
+%   Δp_orf = softmin(Δp_kv, Δp_cav; ε)   (p-state yok, kararlı harmanlama)
+% Enerji denklik kontrolü (pencere içi):
+%   Σ_i f_i Δv_i  =  Σ_i (c_lam Δv_i²)  +  Σ_i (Δp_orf,i q_i)  +  d/dt(E_kin + E_pot)
+% Boyut kontrolü:
+%   [Δp q] = (Pa)(m³/s) = N·m/s = W,  [c_lam Δv²] = (N·s/m)(m²/s²) = N·m/s = W
+% Çoklu damper ölçeği:
+%   multi = (#damper/story) · (aktiflik maskesi); bu faktör laminer ve orifis kuvvetlerine de uygulanır.
+% Termo-viskozite geri beslemesi şu an tanısal; dinamiğe bağlanmadı.
 %% Girdi Parametreleri
     n = size(M,1); r = ones(n,1);
+    thermal_feedback_on = false;
+    if isfield(cfg,'on') && isfield(cfg.on,'thermal_feedback')
+        thermal_feedback_on = logical(cfg.on.thermal_feedback);
+    end %#ok<NASGU>
+    % Termal geri besleme kancası; ileride viskozite-dinamik bağlaması için kullanılacak.
     agf = griddedInterpolant(t,ag,'linear','nearest');
     z0 = zeros(2*n,1);
     opts= odeset('RelTol',1e-3,'AbsTol',1e-6);
@@ -1197,7 +1234,7 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
 
     drift = x(:,Mvec) - x(:,Nvec);
     dvel  = v(:,Mvec) - v(:,Nvec);
-    % Faz 3: Lineer parca sadece yay (laminer viskoz katk� taraf�nda)
+    % Faz 3: Lineer parca sadece yay (laminer viskoz katkı tarafında)
     F_lin = k_sd*drift;
 
     % Faz 6: Qcap ölçeği ve softmin eps opsiyonu
@@ -1221,6 +1258,13 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     dP_kv_loc = 0.5*rho .* ( qmag_loc ./ max(Cd_loc.*Ao,1e-12) ).^2;
     p_up_loc  = orf.p_amb + abs(F_lin)./max(Ap,1e-12);
     dP_cav_loc= max( (p_up_loc - orf.p_cav_eff).*orf.cav_sf, 0 );
+    % --- Kavitasyon maskesi (fiziksel eşiklere dayalı) ---
+    % Tolerans: ölçüm/hesap dalgalanmalarını yutmak için %5 dP_cav veya min 1e4 Pa
+    tol_loc = max(1e4, 0.05*max(dP_cav_loc,[],'all'));  % [Pa]
+    Qcap_ratio_loc = abs(Q) ./ max(Qcap_eff, eps);       % [-]
+    cav_mask_loc = (dP_kv_loc > (dP_cav_loc - tol_loc)) | (Qcap_ratio_loc > 0.98);
+    % Paketleme:
+    % ts.cav_mask = cav_mask_loc;   % boyut: [Nt x nStories], mantıksal
     F_p = F_lin + F_orf;
 
     multi_mat = repmat(multi(:).', size(dvel,1), 1);
@@ -1229,8 +1273,10 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     F_orf_total = F_orf .* multi_mat;
 
 
-    % Geometri �l�eklendirmesi R sadece montajda uygulan�r
+    % Geometri ölçeklendirmesi R sadece montajda uygulanır
     F_story = F_lin + F_visc_total + F_orf_total;
+    % NOT: Enerji tarafında P_visc_per = c_lam .* (dvel.^2) ve P_orf_per = Δp_orf .* |Q|,
+    % ve toplamlar multi_mat ile ölçeklendiğinden, dinamik (F*dvel) ile enerji (P_toplam) aynı ölçekle tutarlı hale geldi.
     P_visc_per = c_lam .* (dvel.^2);
     P_sum = sum( (P_visc_per + P_orf_per) .* multi_mat, 2 );
     P_orf_tot = sum(P_orf_per .* multi_mat, 2);
@@ -1270,27 +1316,35 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     a_rel = ( -(M\(C*v.' + K*x.' + F.')).' - ag.*r.' );
 
     ts = struct('dvel', dvel, 'story_force', F_story, 'Q', Q, ...
-        'dP_orf', dP_orf, 'cav_mask', dP_orf < 0, 'P_sum', P_sum, ...
+        'dP_orf', dP_orf, 'cav_mask', cav_mask_loc, 'P_sum', P_sum, ...
         'E_orf', E_orf, 'E_struct', E_struct, 'T_oil', T_o, 'mu', mu, 'c_lam', c_lam);
 
 %% İç Fonksiyonlar
     function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)
         drift_ = x_(Mvec) - x_(Nvec);
         dvel_  = v_(Mvec) - v_(Nvec);
+        multi_row = multi(:).';
         % Sütun yönelimli etkin parametreler
         % Faz 3: Lineer parçada sadece yay
         F_lin_ = k_sd*drift_;
         params = struct('Ap',Ap,'Qcap',Qcap,'orf',orf,'rho',rho,...
                         'Ao',Ao,'mu',mu_abs_loc,'F_lin',F_lin_,'Lori',Lori);
         [F_orf_, ~, ~, ~] = calc_orifice_force(dvel_, params);
-        F_story_ = k_sd*drift_ + F_orf_ + c_lam_loc*dvel_;
+        F_orf_eff_  = F_orf_  .* multi_row;          % orifis kuvvetine multi
+        F_visc_raw_ = c_lam_loc .* dvel_;            % laminer kuvvet
+        F_visc_eff_ = F_visc_raw_ .* multi_row;      % laminer + multi
+        F_story_ = F_lin_ + F_visc_eff_ + F_orf_eff_;
         Fd = zeros(n,1);
         Fd(Nvec) = Fd(Nvec) - F_story_;
         Fd(Mvec) = Fd(Mvec) + F_story_;
     end
     function [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params)
-        % Phase 6 (no p-states): smoother Cd(Re) and kv-only orifice drop.
-        % Laminar viscous loss is handled by c_lam*dvel; avoid double counting here.
+        % calc_orifice_force — Orifis damper akış ve basınç düşümü modeli
+        % Tanımlar: q [m³/s], Δp_kv [Pa], Δp_cav [Pa], Δp_orf [Pa], F_orf [N], P_orf [W]
+        % P_orifis = Δp_orf * |q|  (laminer güç c_lam Δv² ayrı tutulur; çifte sayım yok)
+        % C_d(Re) korelasyonu ve sınırları (0.2 ≤ C_d ≤ 1.2) ve Re → 0/∞ limitleri
+        % Enerji denklik notu: Δp_orf · q boyut kontrolü ile N·m/s = W sağlar.
+        % Varsayımlar: p-state yok, tanh saturasyonu (ε_v) küçük hızlarda nümerik güvenlik sağlar.
 
         % Saturated volumetric flow magnitude (stability)
         qmag = params.Qcap * tanh( (params.Ap/params.Qcap) * sqrt(dvel.^2 + params.orf.veps^2) );
@@ -1401,7 +1455,7 @@ for k = 1:numel(fn)
 end
 
 %% Yükleme Özeti
-if opts.verbose, fprintf('Toplam %d zemin hareketi kayd� y�klendi\\n', numel(records)); end
+if opts.verbose, fprintf('Toplam %d zemin hareketi kaydı yüklendi\\n', numel(records)); end
 for k = 1:numel(records)
     r = records(k);
     if opts.verbose, fprintf('%2d) %-12s dt=%6.4f s dur=%6.2f s PGA=%7.3f PGV=%7.3f\\n', ...
@@ -1436,7 +1490,7 @@ if nargin >= 1 && ~isempty(T1)
         records(idx) = [];
         IM(idx) = [];
     end
-    if ~isempty(dropped) && opts.verbose, fprintf('TRIM: ay�klanan u� de�erler = %s\\n', strjoin(dropped,', ')); end
+    if ~isempty(dropped) && opts.verbose, fprintf('TRIM: ayıklanan uç değerler = %s\\n', strjoin(dropped,', ')); end
     IM_low  = max(s_bounds(1)*IM);
     IM_high = min(s_bounds(2)*IM);
     targetIM0 = median(IM);
@@ -1473,7 +1527,7 @@ if nargin >= 1 && ~isempty(T1)
         modeStr = 'PSA@T1';
     end
     clipCount = n_clipped * doClip;
-    if opts.verbose, fprintf('Hedef IM = %.3f (%s). Maks hata = %.2f%% | uygun aral�k=[%.3f, %.3f] | s_min=%.2f s_max=%.2f | KIRPILAN=%d\\n', ...
+    if opts.verbose, fprintf('Hedef IM = %.3f (%s). Maks hata = %.2f%% | uygun aralık=[%.3f, %.3f] | s_min=%.2f s_max=%.2f | KIRPILAN=%d\\n', ...
         targetIM, modeStr, max(err), IM_low, IM_high, min(s_all), max(s_all), clipCount); end
 
     meta = struct('IM_mode', IM_mode, 'band_fac', band_fac, 's_bounds', s_bounds);
@@ -1524,11 +1578,13 @@ Sa = max(abs(abs_acc));
 end
 
 function params = build_params(params)
-%BUILD_PARAMS Compute derived damper and hydraulic fields once.
-%   PARAMS = BUILD_PARAMS(PARAMS) fills in fields such as Ap, k_sd,
-%   c_lam0, Qcap_big and c_lam_min based on the fundamental geometry and
-%   material properties stored in PARAMS. The input struct is returned with
-%   the additional fields populated.
+% build_params — Hidrolik ve yapısal türetilmiş alanların hesaplanması
+% Ap = π D_p²/4 [m²], A_o = n_orf π d_o²/4 [m²], k_sd [N/m], c_lam0 [N·s/m]
+% c_lam0 Poiseuille laminer akışından türetilir: Δp = 128 μ L q /(π d⁴) ⇒
+%   F_lam = c_lam0 Δv, c_lam0 ≈ 128 μ L / (π d⁴) · A_p² / L_gap varsayımıyla,
+%   paralel kanalların eşdeğer uzunluğu L_gap ve silindirik delik kabulüyle.
+% Qcap_big teorik orifis tavanı (Δp_cap [Pa]) ile belirlenir.
+% Varsayımlar: Newtonyen yağ (μ sabit referans), sabit sıcaklık T_ref, rijit piston.
 
 if nargin < 1 || ~isstruct(params)
     params = struct();
@@ -1537,12 +1593,18 @@ end
 % Reuse existing utility for core damper quantities
 params = util_recompute_damper_params(params);
 
-% Large orifice flow cap (per damper, adjusted for parallels)
+    % Qcap_big — Büyük basınç farkı altında (Δp ≤ dP_cap) teorik azami debi [m³/s]
+    % Formül: Qcap_big = C_d,∞ * A_o * sqrt( 2 Δp_cap / ρ )
+    % Öneri: Δp_cap ~ 5–30 MPa aralığı (ürün ve güvenlik kısıtlarına göre seçilir). Varsayılan 20 MPa.
     if isfield(params,'orf') && isfield(params.orf,'CdInf') && ...
             isfield(params,'Ao') && isfield(params,'rho')
-    params.Qcap_big = max(params.orf.CdInf * params.Ao, 1e-9) * ...
-        sqrt(2*1.0e9 / params.rho);
-end
+        dP_cap = util_getfield_default( ...
+                     util_getfield_default(params,'cfg',struct()), ...
+                     'num', struct());
+        dP_cap = util_getfield_default(dP_cap,'dP_cap', 20e6);  % [Pa], varsayılan 20 MPa
+        params.Qcap_big = max(params.orf.CdInf * params.Ao, 1e-9) * ...
+            sqrt(2*dP_cap / params.rho);
+    end
 
 % Minimum laminar damping based on c_lam0
 if isfield(params,'c_lam_min_abs') && isfield(params,'c_lam_min_frac') && ...
