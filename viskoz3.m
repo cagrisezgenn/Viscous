@@ -34,7 +34,7 @@ assert(~isempty(scaled), 'run_ga_driver: scaled dataset is empty.');
 assert(~isempty(params), 'run_ga_driver: params is empty.');
 
 % ---------- Varsayılan değerlendirme ayarları (IO yok) ----------
-optsEval.thr = util_default_qc_thresholds(util_getfield_default(optsEval,'thr', struct()));
+optsEval.thr = compute_thr(params, util_getfield_default(optsEval,'thr', struct()));
 %% GA Kurulumu
 % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
     rng(42);
@@ -89,14 +89,11 @@ options = optimoptions('gamultiobj', ...
     % ceza bileşenleri (eval ile aynı)
     pen     = zeros(nF,1);
     pen_dP  = zeros(nF,1); pen_Qcap = zeros(nF,1); pen_cav = zeros(nF,1); pen_T = zeros(nF,1); pen_mu = zeros(nF,1);
-    lambda  = util_getfield_default(optsEval,'penalty_scale',5);   % daha yumuşak ceza
-    pwr     = util_getfield_default(optsEval,'penalty_power',1.0);
-    W       = util_getfield_default(optsEval,'penalty_weights', struct('dP',1,'Qcap',1,'cav',1.5,'T',0.5,'mu',0.5));
-    rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
-    rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
-
-    Opost = struct('thr', optsEval.thr);
-
+    [lambda,pwr,W] = util_default_penalty_opts(optsEval);
+    Opost = optsEval;
+    Opost.thr = optsEval.thr;
+    Opost.penalty = struct('lambda',lambda,'power',pwr,'W',W);
+    % parfor güvenliği için tüm yardımcılar subfunction’dır; nested kullanılmaz.
     parfor i = 1:nF
         Xi = quant_clamp_x(X(i,:));
         Pi = decode_params_from_x(params, Xi);
@@ -160,28 +157,16 @@ end
 function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
 % eval_design_fast — Hızlı tasarım değerlendirmesi (GA amaç fonksiyonu)
 % Amaçlar: f1 = mean(PFA) [m/s²], f2 = mean(IDR) [-]. Pencereli ortalamalar
-%   run_batch_windowed tarafından hesaplanır. Yumuşak cezalar: dP [Pa],
-%   Qcap [-], cav [-], T_end [°C], μ_end [Pa·s] terimlerinin normalize edilmiş
-%   sapmaları λ ölçeği ile toplanır. Hard-kill nedenleri (ör. Qcap95>0.90, cav>0.01)
-%   cezadan ayrıdır; meta.hard_kill_reason alanına ve stdout loguna yazılır.
-% Boyut kontrolü: f bileşenleri [m/s²] ve [-]; ceza terimleri boyutsuzlaştırılır.
+%   run_batch_windowed tarafından hesaplanır. Yumuşak ceza, dP95 [Pa],
+%   Qcap95 [-], cav_pct [-]: kavitasyon payı, T_end [°C], μ_end [Pa·s]
+%   sapmalarını λ (boyutsuz) ölçeği ile ağırlıklı toplar: pen = λ·Σ W_i·δ_i.
+%   Hard-kill kriterleri (Qcap95>0.90, cav>0.01) ceza dışıdır; meta.hard_kill_reason
+%   alanı ve stdout logu ile raporlanır. PFA boyutu [m/s²], IDR boyutsuzdur;
+%   çarpan ceza vektörü de boyutsuz tutularak f bileşenlerinin birimleri korunur.
     details = struct();
-    % ızgaralara oturt
+    % Kuantizasyon: eval ve GA sonrası aynı ızgara [mm, -, -] (bkz. quant_clamp_x)
     x = x(:)';
-    % kuantize et
-    x(1) = util_quantize_step(x(1),0.05);  % d_o_mm
-    x(3) = util_quantize_step(x(3),0.01);  % Cd0
-    x(4) = util_quantize_step(x(4),0.01);  % CdInf
-    x(5) = util_quantize_step(x(5),0.05);  % p_exp
-    if numel(x) >= 6,  x(6)  = util_quantize_step(x(6),1);   end % Lori_mm
-    if numel(x) >= 7,  x(7)  = util_quantize_step(x(7),25);  end % hA_W_perK
-    if numel(x) >= 8,  x(8)  = util_quantize_step(x(8),1);   end % Dp_mm
-    if numel(x) >= 9,  x(9)  = util_quantize_step(x(9),0.5); end % d_w_mm
-    if numel(x) >=10,  x(10) = util_quantize_step(x(10),5);  end % D_m_mm
-    if numel(x) >=11,  x(11) = round(x(11));                end % n_turn
-    if numel(x) >=12,  x(12) = util_quantize_step(x(12),0.05); end % mu_ref
-    x(2)  = round(max(x(2),1));        % n_orf tam sayi, >=1
-    if numel(x) >=11, x(11) = round(max(x(11),1)); end
+    x = quant_clamp_x(x);
 
     
 
@@ -235,30 +220,29 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
     f1 = mean(S.table.PFA);
     f2 = mean(S.table.IDR);
     thr = O.thr;
-    dP95v   = S.table.dP95;
-    qcapv   = S.table.Qcap95;
-    cavv    = S.table.cav_pct;
-    T_endv   = S.table.T_end;
-    mu_endv  = S.table.mu_end;
+    dP95v   = enforce_finite(S.table.dP95);
+    qcapv   = enforce_finite(S.table.Qcap95);
+    cavv    = enforce_finite(S.table.cav_pct);
+    T_endv   = enforce_finite(S.table.T_end);
+    mu_endv  = enforce_finite(S.table.mu_end);
     % --- PENALTY (soft, multiplicative) ---
-    lambda  = util_getfield_default(optsEval,'penalty_scale',10);
-    pwr     = util_getfield_default(optsEval,'penalty_power',1.0);
+    [lambda,pwr,W] = util_default_penalty_opts(optsEval);
     rel = @(v,lim) max(0, (v - lim)./max(lim,eps)).^pwr;
     rev = @(v,lim) max(0, (lim - v)./max(lim,eps)).^pwr;
-    W = util_getfield_default(optsEval,'penalty_weights', struct('dP',1,'Qcap',1,'cav',2,'T',0.5,'mu',0.5));
     pen_dP   = isfield(thr,'dP95_max')   * mean(rel(dP95v,  thr.dP95_max));
     pen_Qcap = isfield(thr,'Qcap95_max') * mean(rel(qcapv,  thr.Qcap95_max));
-    if isfield(thr,'cav_pct_max')
-        if thr.cav_pct_max<=0, pen_cav = mean(max(0,cavv).^pwr); else, pen_cav = mean(rel(cavv, thr.cav_pct_max)); end
+    cav_lim = util_getfield_default(thr,'cav_pct_max',0);
+    if cav_lim <= 0
+        pen_cav = mean(max(0,cavv).^pwr);
     else
-        pen_cav = 0;
+        pen_cav = mean(rel(cavv, cav_lim));
     end
     pen_T    = isfield(thr,'T_end_max')  * mean(rel(T_endv,  thr.T_end_max));
     pen_mu   = isfield(thr,'mu_end_min') * mean(rev(mu_endv, thr.mu_end_min));
-    pen = W.dP*pen_dP + W.Qcap*pen_Qcap + W.cav*pen_cav + W.T*pen_T + W.mu*pen_mu;
-    % multiplicative penalty keeps scale of objectives
-    f = [f1, f2] .* (1 + lambda*pen);
-    Penalty   = lambda*pen;
+    pen_core = W.dP*pen_dP + W.Qcap*pen_Qcap + W.cav*pen_cav + W.T*pen_T + W.mu*pen_mu;
+    Penalty  = lambda * pen_core;
+    % Ceza çarpanı boyutsuz; amaç bileşenlerinin birimleri korunur.
+    f = [f1, f2] .* (1 + Penalty);
     pen_parts = struct('dP',pen_dP,'Qcap',pen_Qcap,'cav',pen_cav,'T',pen_T,'mu',pen_mu);
     if ~isfinite(Penalty), Penalty = 0; end
     pf = {'dP','Qcap','cav','T','mu'};
@@ -280,7 +264,7 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
                     'pen_cav',pen_parts.cav,'pen_T',pen_parts.T,'pen_mu',pen_parts.mu, ...
                    'pen_parts',pen_parts,'x10_max_damperli',x10_max_damperli_local, ...
                    'a10abs_max_damperli',a10abs_max_damperli_local, ...
-                   'hard_kill_reason','');
+                   'hard_kill',false,'hard_kill_reason','');
     % === Penaltı sürücüleri ve diagnostikleri ekle (varsa) ===
         if isfield(S,'table') && istable(S.table)
             candCols = {'dP95','Qcap95','cav_pct','T_end','mu_end', ...
@@ -321,67 +305,35 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
     end
     metrics = summarize_metrics_table(tbl0, Opost, lambda, pwr, W);
 
-    vn = T.Properties.VariableNames;
     T0 = T(1,:);
     T0{1,:} = nan(1,width(T0));
 
-    assign('d_o_mm',  X0(1));
-    assign('n_orf',   X0(2));
-    assign('Cd0',     X0(3));
-    assign('CdInf',   X0(4));
-    assign('p_exp',   X0(5));
-    assign('Lori_mm', X0(6));
-    assign('hA_W_perK', X0(7));
-    assign('Dp_mm',   X0(8));
-    assign('d_w_mm',  X0(9));
-    assign('D_m_mm',  X0(10));
-    assign('n_turn',  X0(11));
-    assign('mu_ref',  X0(12));
+    names = {'d_o_mm','n_orf','Cd0','CdInf','p_exp','Lori_mm','hA_W_perK', ...
+             'Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref'};
+    values = num2cell(X0);
+    for idx_loc = 1:numel(names)
+        T0 = set_field_safe(T0, names{idx_loc}, values{idx_loc});
+    end
 
-    assign('f1', f0(1));
-    assign('f2', f0(2));
-    assign('PFA_mean', metrics.PFA_mean);
-    assign('IDR_mean', metrics.IDR_mean);
-
-    assign('pen',     metrics.pen);
-    assign('pen_dP',  metrics.pen_dP);
-    assign('pen_Qcap',metrics.pen_Qcap);
-    assign('pen_cav', metrics.pen_cav);
-    assign('pen_T',   metrics.pen_T);
-    assign('pen_mu',  metrics.pen_mu);
-
-    assign('x10_max_damperli', metrics.x10_max_damperli);
-    assign('a10abs_max_damperli', metrics.a10abs_max_damperli);
-    assign('dP95', metrics.dP95);
-    assign('Qcap95', metrics.Qcap95);
-    assign('cav_pct', metrics.cav_pct);
-    assign('T_end', metrics.T_end);
-    assign('mu_end', metrics.mu_end);
-    assign('Q_q50', metrics.Q_q50);
-    assign('Q_q95', metrics.Q_q95);
-    assign('dP50', metrics.dP50);
-    assign('E_orifice_sum', metrics.E_orifice_sum);
-    assign('E_struct_sum', metrics.E_struct_sum);
-    assign('energy_tot_sum', metrics.energy_tot_sum);
-    assign('E_ratio', metrics.E_ratio);
-    assign('P_mech_sum', metrics.P_mech_sum);
+    T0 = set_field_safe(T0,'f1',f0(1));
+    T0 = set_field_safe(T0,'f2',f0(2));
+    metric_names = {'PFA_mean','IDR_mean','pen','pen_dP','pen_Qcap','pen_cav', ...
+                    'pen_T','pen_mu','x10_max_damperli','a10abs_max_damperli', ...
+                    'dP95','Qcap95','cav_pct','T_end','mu_end','Q_q50','Q_q95', ...
+                    'dP50','E_orifice_sum','E_struct_sum','energy_tot_sum', ...
+                    'E_ratio','P_mech_sum'};
+    metric_vals = {metrics.PFA_mean,metrics.IDR_mean,metrics.pen,metrics.pen_dP, ...
+                   metrics.pen_Qcap,metrics.pen_cav,metrics.pen_T,metrics.pen_mu, ...
+                   metrics.x10_max_damperli,metrics.a10abs_max_damperli,metrics.dP95, ...
+                   metrics.Qcap95,metrics.cav_pct,metrics.T_end,metrics.mu_end, ...
+                   metrics.Q_q50,metrics.Q_q95,metrics.dP50,metrics.E_orifice_sum, ...
+                   metrics.E_struct_sum,metrics.energy_tot_sum,metrics.E_ratio, ...
+                   metrics.P_mech_sum};
+    for idx_loc = 1:numel(metric_names)
+        T0 = set_field_safe(T0, metric_names{idx_loc}, metric_vals{idx_loc});
+    end
 
     T = [T0; T];
-
-    function assign(name, val)
-        if ~ismember(name, vn)
-            return;
-        end
-        if iscell(T.(name))
-            T0.(name) = {val};
-        else
-            if isnumeric(val)
-                T0.(name) = val;
-            else
-                T0.(name) = NaN;
-            end
-        end
-    end
 end
 
 function write_pareto_results(T, outdir)
@@ -390,6 +342,14 @@ end
 
 
 function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
+% summarize_metrics_table — CSV/MAT metrikleri için tek kaynak (boyut kontrolü)
+% Pencereli metrikler: PFA [m/s²], IDR [-]: yer değiştirme oranı,
+%   dP95 [Pa], Qcap95 [-]: doluluk oranı, cav_pct [-]: kavitasyon yüzdesi,
+%   T_end [°C], μ_end [Pa·s], E_orifice_sum ve E_struct_sum [J],
+%   enerji toplamı energy_tot_sum [J], P_mech_sum [W·s ≈ J].
+%   Kuantiller Q_q50, Q_q95 [m³/s] ve dP50 [Pa] izlenir.
+%   Penalty: δ_i = rel/ rev sapmaları, pen = λ·Σ W_i·δ_i.
+% Boyut analizi: Enerji alanları [J], güç = Δp·q [W], pen boyutsuzdur.
     if nargin < 1 || isempty(tbl)
         tbl = table();
     end
@@ -405,58 +365,52 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
     if nargin < 5 || isempty(W)
         W = struct('dP',1,'Qcap',1,'cav',1,'T',1,'mu',1);
     end
+
     rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
     rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
 
+    v_PFA        = enforce_finite(get_numeric_column(tbl,'PFA',0));
+    v_IDR        = enforce_finite(get_numeric_column(tbl,'IDR',0));
+    v_x10        = enforce_finite(get_numeric_column(tbl,'x10_max_damperli',0));
+    v_a10        = enforce_finite(get_numeric_column(tbl,'a10abs_max_damperli',0));
+    v_dP95       = enforce_finite(get_numeric_column(tbl,'dP95',0));
+    v_Qcap       = enforce_finite(get_numeric_column(tbl,'Qcap95',0));
+    v_cav        = enforce_finite(get_numeric_column(tbl,'cav_pct',0));
+    v_T_end      = enforce_finite(get_numeric_column(tbl,'T_end',0));
+    v_mu         = enforce_finite(get_numeric_column(tbl,'mu_end',0));
+    v_Q_q50      = enforce_finite(get_numeric_column(tbl,'Q_q50',0));
+    v_Q_q95      = enforce_finite(get_numeric_column(tbl,'Q_q95',0));
+    v_dP50       = enforce_finite(get_numeric_column(tbl,'dP50',0));
+    v_E_orifice  = enforce_finite(get_numeric_column(tbl,'E_orifice_sum',0));
+    v_E_struct   = enforce_finite(get_numeric_column(tbl,'E_struct_sum',0));
+    v_P_mech     = enforce_finite(get_numeric_column(tbl,'P_mech_sum',0));
+
     metrics = struct();
-    v_PFA = get_numeric('PFA', 0);
-    v_IDR = get_numeric('IDR', 0);
-    v_x10 = get_numeric('x10_max_damperli', 0);
-    v_a10 = get_numeric('a10abs_max_damperli', 0);
-    v_dP95 = get_numeric('dP95', 0);
-    v_Qcap = get_numeric('Qcap95', 0);
-    v_cav  = get_numeric('cav_pct', 0);
-    v_T_end = get_numeric('T_end', 0);
-    v_mu   = get_numeric('mu_end', 1);
-    v_Q_q50  = get_numeric('Q_q50', 0);
-    v_Q_q95  = get_numeric('Q_q95', 0);
-    v_dP50   = get_numeric('dP50', 0);
-    v_E_orifice = get_numeric('E_orifice_sum', 0);
-    v_E_struct  = get_numeric('E_struct_sum', 0);
-    v_P_mech    = get_numeric('P_mech_sum', 0);
-
-    v_Q_q50(~isfinite(v_Q_q50))   = 0;
-    v_Q_q95(~isfinite(v_Q_q95))   = 0;
-    v_dP50(~isfinite(v_dP50))     = 0;
-    v_E_orifice(~isfinite(v_E_orifice)) = 0;
-    v_E_struct(~isfinite(v_E_struct))   = 0;
-    v_P_mech(~isfinite(v_P_mech))       = 0;
-
-    metrics.PFA_mean = mean(v_PFA(:));
-    metrics.IDR_mean = mean(v_IDR(:));
-    metrics.x10_max_damperli = max(v_x10(:));
+    metrics.PFA_mean            = mean(v_PFA(:));
+    metrics.IDR_mean            = mean(v_IDR(:));
+    metrics.x10_max_damperli    = max(v_x10(:));
     metrics.a10abs_max_damperli = max(v_a10(:));
-    metrics.dP95   = max(v_dP95(:));
-    metrics.Qcap95 = max(v_Qcap(:));
-    metrics.cav_pct = max(v_cav(:));
-    metrics.T_end  = max(v_T_end(:));
-    metrics.mu_end = min(v_mu(:));
-    metrics.Q_q50  = max(v_Q_q50(:));
-    metrics.Q_q95  = max(v_Q_q95(:));
-    metrics.dP50   = max(v_dP50(:));
-    metrics.E_orifice_sum = sum(v_E_orifice(:));
-    metrics.E_struct_sum  = sum(v_E_struct(:));
-    metrics.energy_tot_sum = metrics.E_orifice_sum + metrics.E_struct_sum;
-    metrics.E_ratio = 0;
+    metrics.dP95                = max(v_dP95(:));
+    metrics.Qcap95              = max(v_Qcap(:));
+    metrics.cav_pct             = max(v_cav(:));
+    metrics.T_end               = max(v_T_end(:));
+    metrics.mu_end              = min(v_mu(:));
+    metrics.Q_q50               = max(v_Q_q50(:));
+    metrics.Q_q95               = max(v_Q_q95(:));
+    metrics.dP50                = max(v_dP50(:));
+    metrics.E_orifice_sum       = sum(v_E_orifice(:));
+    metrics.E_struct_sum        = sum(v_E_struct(:));
+    metrics.energy_tot_sum      = metrics.E_orifice_sum + metrics.E_struct_sum;
+    metrics.E_ratio             = 0;
     if metrics.E_struct_sum > 0
         metrics.E_ratio = metrics.E_orifice_sum / max(metrics.E_struct_sum, eps);
     end
-    metrics.P_mech_sum = sum(v_P_mech(:));
+    metrics.P_mech_sum          = sum(v_P_mech(:));
 
     thr = util_getfield_default(Opost, 'thr', struct());
     metrics.pen_dP   = mean(rel(v_dP95(:), util_getfield_default(thr,'dP95_max',inf)));
     metrics.pen_Qcap = mean(rel(v_Qcap(:), util_getfield_default(thr,'Qcap95_max',inf)));
-    cav_lim = util_getfield_default(thr,'cav_pct_max', inf);
+    cav_lim = util_getfield_default(thr,'cav_pct_max',0);
     if cav_lim <= 0
         metrics.pen_cav = mean(max(0, v_cav(:)).^pwr);
     else
@@ -464,24 +418,8 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
     end
     metrics.pen_T    = mean(rel(v_T_end(:), util_getfield_default(thr,'T_end_max',inf)));
     metrics.pen_mu   = mean(rev(v_mu(:), util_getfield_default(thr,'mu_end_min',0)));
-    metrics.pen = lambda*(W.dP*metrics.pen_dP + W.Qcap*metrics.pen_Qcap + ...
-                          W.cav*metrics.pen_cav + W.T*metrics.pen_T + W.mu*metrics.pen_mu);
-
-    function arr = get_numeric(varName, defaultVal)
-        if istable(tbl) && ismember(varName, tbl.Properties.VariableNames)
-            v = tbl.(varName);
-            if isempty(v)
-                v = defaultVal;
-            end
-        else
-            v = defaultVal;
-        end
-        if ~isnumeric(v) || isempty(v)
-            arr = defaultVal;
-        else
-            arr = v;
-        end
-    end
+    metrics.pen      = lambda * (W.dP*metrics.pen_dP + W.Qcap*metrics.pen_Qcap + ...
+                                 W.cav*metrics.pen_cav + W.T*metrics.pen_T + W.mu*metrics.pen_mu);
 end
 
 function sig = dataset_signature(scaled)
@@ -492,6 +430,52 @@ function sig = dataset_signature(scaled)
     IM = arrayfun(@(s) util_getfield_default(s,'IM',0), scaled);
     PGA = arrayfun(@(s) util_getfield_default(s,'PGA',0), scaled);
     sig = sum(double(IM(:))) + sum(double(PGA(:))) + numel(scaled);
+end
+
+function vec = enforce_finite(vec)
+    if isempty(vec)
+        vec = 0;
+    end
+    if ~isnumeric(vec)
+        vec = 0;
+        return;
+    end
+    vec(~isfinite(vec)) = 0;
+end
+
+function arr = get_numeric_column(tbl, varName, defaultVal)
+    if nargin < 3
+        defaultVal = 0;
+    end
+    if istable(tbl) && ismember(varName, tbl.Properties.VariableNames)
+        arr = tbl.(varName);
+        if isempty(arr)
+            arr = defaultVal;
+        end
+    else
+        arr = defaultVal;
+    end
+    if ~isnumeric(arr)
+        arr = defaultVal;
+    end
+end
+
+function Trow = set_field_safe(Trow, name, val)
+    if ~istable(Trow)
+        return;
+    end
+    if ~ismember(name, Trow.Properties.VariableNames)
+        return;
+    end
+    if iscell(Trow.(name))
+        Trow.(name) = {val};
+    else
+        if isnumeric(val)
+            Trow.(name) = val;
+        else
+            Trow.(name) = NaN;
+        end
+    end
 end
 
 function x = encode_params_to_x(params)
@@ -521,7 +505,11 @@ end
 
 
 function xq = quant_clamp_x(x)
-    % Apply the same quantization/clamps as in eval
+    % quant_clamp_x — Karar vektörünü GA/eval ile aynı ızgaraya kilitler
+    % Izgara adımları: d_o_mm 0.05 [mm], Cd0/CdInf 0.01 [-]:, p_exp 0.05 [-]:
+    %   Lori_mm 1 [mm], hA_W_perK 25 [W/K], Dp_mm 1 [mm], d_w_mm 0.5 [mm],
+    %   D_m_mm 5 [mm], mu_ref 0.05 [Pa·s referans]. n_orf, n_turn tam sayı ≥1.
+    % Boyut analizi: [mm] → karar uzayı, dönüştürme decode_params_from_x içinde m'ye yapılır.
     xq = x;
     if isvector(x), xq = x(:)'; end
     xq(:,1) = util_quantize_step(xq(:,1),0.05);
@@ -542,6 +530,9 @@ end
 
 
 function P = decode_params_from_x(params_base_, x_)
+    % decode_params_from_x — Karar vektöründen fiziksel parametreleri türetir
+    % Birim dönüşümleri: [mm] → [m], Cd [-]:, p_exp [-]:, hA_W_perK [W/K], μ_ref [Pa·s]
+    % Boyut kontrolü: Uzunluklar 1e-3 çarpanı ile metreye çevrilir.
     d_o_mm = x_(1); n_orf = round(x_(2));
     Cd0 = x_(3); CdInf = x_(4); p_exp = x_(5);
     Lori_mm = x_(6); hA_W_perK = x_(7);
@@ -711,7 +702,7 @@ function [summary, all_out] = run_batch_windowed(scaled, params, opts)
 
 if nargin < 3, opts = struct(); end
 if ~isfield(opts,'thr'), opts.thr = struct(); end
-opts.thr = util_default_qc_thresholds(opts.thr);
+opts.thr = compute_thr(params, opts.thr);
 
 % İstenirse kayıtların yürütülme sırası yeniden düzenlenir
 if isfield(opts,'order_perm')
@@ -899,7 +890,7 @@ end
 
 % QC eşikleri (eksik alanlar varsayılanlarla doldurulur)
 if ~isfield(opts,'thr'), opts.thr = struct(); end
-thr = util_default_qc_thresholds(opts.thr);
+thr = compute_thr(params, opts.thr);
 
 assert(isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), ...
     'run_one_record_windowed: params.thermal.hA_W_perK eksik');
@@ -1349,6 +1340,7 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         % P_orifis = Δp_orf * |q|  (laminer güç c_lam Δv² ayrı tutulur; çifte sayım yok)
         % C_d(Re) korelasyonu ve sınırları (0.2 ≤ C_d ≤ 1.2) ve Re → 0/∞ limitleri
         % Enerji denklik notu: Δp_orf · q boyut kontrolü ile N·m/s = W sağlar.
+        % Boyut analizi: Δp [Pa], q [m³/s], F_orf [N], P_orf [W] ⇒ 1 Pa = 1 N/m².
         % Varsayımlar: p-state yok, tanh saturasyonu (ε_v) küçük hızlarda nümerik güvenlik sağlar.
 
         % Saturated volumetric flow magnitude (stability)
@@ -1590,6 +1582,7 @@ function params = build_params(params)
 %   paralel kanalların eşdeğer uzunluğu L_gap ve silindirik delik kabulüyle.
 % Qcap_big teorik orifis tavanı (Δp_cap [Pa]) ile belirlenir.
 % Varsayımlar: Newtonyen yağ (μ sabit referans), sabit sıcaklık T_ref, rijit piston.
+% Boyut analizi: Ap,Ao [m²], Qcap_big [m³/s], k_sd [N/m], c_lam0 [N·s/m], Δp_cap [Pa].
 
 if nargin < 1 || ~isstruct(params)
     params = struct();
@@ -1785,21 +1778,85 @@ else
 end
 end
 
-function thr = util_default_qc_thresholds(optsThr)
-%UTIL_DEFAULT_QC_THRESHOLDS Populate QC thresholds with defaults.
-if nargin < 1 || isempty(optsThr)
-    optsThr = struct();
+function [lambda,pwr,W] = util_default_penalty_opts(optsEval)
+% util_default_penalty_opts — Ceza çekirdeğini tekleştirir.
+% Varsayılanlar: λ=3 [-]: ölçek, pwr=2 [-]: üstel, W={dP=1,Qcap=1,cav=1,T=0.5,μ=0.5} [-]: ağırlıklar.
+% Kullanıcı optsEval.penalty.(lambda|power|W) veya eski alanlar (penalty_scale,
+%   penalty_power, penalty_weights) ile override edebilir.
+    lambda = 3;
+    pwr = 2;
+    W = struct('dP',1,'Qcap',1,'cav',1,'T',0.5,'mu',0.5);
+    if nargin < 1 || isempty(optsEval) || ~isstruct(optsEval)
+        return;
+    end
+
+    if isfield(optsEval,'penalty') && isstruct(optsEval.penalty)
+        pen_loc = optsEval.penalty;
+        lambda = util_getfield_default(pen_loc,'lambda',lambda);
+        pwr    = util_getfield_default(pen_loc,'power',pwr);
+        if isfield(pen_loc,'W') && isstruct(pen_loc.W)
+            W = merge_penalty_weights(W, pen_loc.W);
+        end
+    end
+
+    if isfield(optsEval,'penalty_scale') && ~isempty(optsEval.penalty_scale)
+        lambda = optsEval.penalty_scale;
+    end
+    if isfield(optsEval,'penalty_power') && ~isempty(optsEval.penalty_power)
+        pwr = optsEval.penalty_power;
+    end
+    if isfield(optsEval,'penalty_weights') && isstruct(optsEval.penalty_weights)
+        W = merge_penalty_weights(W, optsEval.penalty_weights);
+    end
 end
-thr = struct();
-thr.dP95_max   = util_getfield_default(optsThr,'dP95_max',50e6);
-thr.Qcap95_max = util_getfield_default(optsThr,'Qcap95_max',0.5);
-thr.cav_pct_max= util_getfield_default(optsThr,'cav_pct_max',0);
-thr.T_end_max  = util_getfield_default(optsThr,'T_end_max',75);
-thr.mu_end_min = util_getfield_default(optsThr,'mu_end_min',0.5);
-extra = setdiff(fieldnames(optsThr), fieldnames(thr));
-for ii = 1:numel(extra)
-    thr.(extra{ii}) = optsThr.(extra{ii});
+
+function Wout = merge_penalty_weights(Wbase, Woverride)
+    Wout = Wbase;
+    if ~isstruct(Woverride)
+        return;
+    end
+    fn = fieldnames(Woverride);
+    for k = 1:numel(fn)
+        val_loc = Woverride.(fn{k});
+        if isnumeric(val_loc) && isscalar(val_loc)
+            Wout.(fn{k}) = val_loc;
+        end
+    end
 end
+
+function thr = compute_thr(params, thr_in)
+% compute_thr — QC eşiklerini tek kaynaktan üretir (override destekli).
+% Varsayılanlar: Qcap95_max=0.90 [-]: doluluk sınırı, cav_pct_max=0.00 [-]: kavitasyon
+%   yasağı, dP95_max=3·10^7 [Pa] ~ 30 MPa, T_end_max=T0_C+dT_max [°C],
+%   μ_end_min ≥0.6 [Pa·s]. Kullanıcı thr_in alanları ile override yapabilir.
+% Boyut kontrolü: tüm eşikler SI temellidir; T [°C] farkları lineer toplanır.
+    if nargin < 2 || isempty(thr_in)
+        thr_in = struct();
+    end
+    thermal_loc = util_getfield_default(params,'thermal', struct());
+    cfg_loc     = util_getfield_default(params,'cfg', struct());
+    num_loc     = util_getfield_default(cfg_loc,'num', struct());
+
+    T0_C_loc  = util_getfield_default(params,'T0_C',25);
+    dT_max_loc = util_getfield_default(thermal_loc,'dT_max',80);
+    mu_min_phys_loc = util_getfield_default(num_loc,'mu_min_phys',0.6);
+
+    thr = struct();
+    thr.Qcap95_max = 0.90;
+    thr.cav_pct_max = 0.00;
+    thr.dP95_max = 3e7;
+    thr.T_end_max = T0_C_loc + dT_max_loc;
+    thr.mu_end_min = max(mu_min_phys_loc, 0.6);
+
+    if ~isempty(thr_in) && isstruct(thr_in)
+        fn = fieldnames(thr_in);
+        for k = 1:numel(fn)
+            val_loc = thr_in.(fn{k});
+            if ~isempty(val_loc)
+                thr.(fn{k}) = val_loc;
+            end
+        end
+    end
 end
 
 function P = util_initial_pop_grid(lb, ub, N, steps)
