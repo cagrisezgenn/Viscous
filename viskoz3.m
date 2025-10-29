@@ -1303,6 +1303,16 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     mu_abs = mu_ref;
     c_lam = c_lam0;
 
+    % Faz 6: Qcap ölçeği ve softmin eps opsiyonu (dinamikte ve diagnostikte paylaşılır)
+    Qcap_eff = Qcap;
+    if isfield(cfg,'num') && isfield(cfg.num,'Qcap_scale') && isfinite(cfg.num.Qcap_scale)
+        Qcap_eff = max(1e-9, Qcap * cfg.num.Qcap_scale);
+    end
+    orf_loc = orf;
+    if isfield(cfg,'num') && isfield(cfg.num,'softmin_eps') && isfinite(cfg.num.softmin_eps)
+        orf_loc.softmin_eps = cfg.num.softmin_eps;
+    end
+
 %% ODE Çözümü
     odef = @(tt,z) [ z(n+1:end); M \ ( -C*z(n+1:end) - K*z(1:n) - dev_force(tt,z(1:n),z(n+1:end),c_lam,mu_abs) - M*r*agf(tt) ) ];
     sol  = ode15s(odef,[t(1) t(end)],z0,opts);
@@ -1314,15 +1324,6 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     % Faz 3: Lineer parca sadece yay (laminer viskoz katkı tarafında)
     F_lin = k_sd*drift;
 
-    % Faz 6: Qcap ölçeği ve softmin eps opsiyonu
-    Qcap_eff = Qcap;
-    if isfield(cfg,'num') && isfield(cfg.num,'Qcap_scale') && isfinite(cfg.num.Qcap_scale)
-        Qcap_eff = max(1e-9, Qcap * cfg.num.Qcap_scale);
-    end
-    orf_loc = orf;
-    if isfield(cfg,'num') && isfield(cfg.num,'softmin_eps') && isfinite(cfg.num.softmin_eps)
-        orf_loc.softmin_eps = cfg.num.softmin_eps;
-    end
     params = struct('Ap',Ap,'Qcap',Qcap_eff,'orf',orf_loc,'rho',rho,...
                     'Ao',Ao,'mu',mu_abs,'F_lin',F_lin,'Lori',Lori);
     [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params);
