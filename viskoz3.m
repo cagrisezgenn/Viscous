@@ -34,7 +34,8 @@ assert(~isempty(scaled), 'run_ga_driver: scaled dataset is empty.');
 assert(~isempty(params), 'run_ga_driver: params is empty.');
 
 % ---------- Varsayılan değerlendirme ayarları (IO yok) ----------
-optsEval.thr = compute_thr(params, util_getfield_default(optsEval,'thr', struct()));
+thr = compute_thr(params, util_getfield_default(optsEval,'thr', struct()));
+optsEval.thr = thr;
 %% GA Kurulumu
 % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
     rng(42);
@@ -69,6 +70,29 @@ options = optimoptions('gamultiobj', ...
 
     %% Sonuçların Paketlenmesi
     % GA tamamlandıktan sonra sonuçları dosyalara kaydet.
+    % Bu blokta ceza [boyutsuz] çekirdeği ve QC eşikleri [Pa, -, °C, Pa·s] tek
+    % kaynaktan üretilerek GA amaç fonksiyonu ile aynı şemada yeniden kullanım
+    % sağlanır. Penaltı ölçeği λ [-]: f = f·(1 + λ·pen) çarpanı ile uygulanır; QC
+    % eşikleri hidrolik basınç (Δp95_max [Pa]), kapasite oranı (Qcap95_max [-]:),
+    % kavitasyon yüzdesi (cav_pct_max [-]:), son sıcaklık (T_end_max [°C]) ve son
+    % viskozite (μ_end_min [Pa·s]) için fiziksel sınırları temsil eder.
+    penopts = util_getfield_default(optsEval,'penalty', struct( ...
+         'lambda', 3, ...            % varsayılan
+         'power',  2, ...
+         'W', struct('dP',1,'Qcap',1,'cav',1,'T',0.5,'mu',0.5)));
+    lambda = util_getfield_default(penopts,'lambda',3);
+    pwr    = util_getfield_default(penopts,'power',2);
+    W      = util_getfield_default(penopts,'W', struct());
+    W.dP   = util_getfield_default(W,'dP',1);
+    W.Qcap = util_getfield_default(W,'Qcap',1);
+    W.cav  = util_getfield_default(W,'cav',1);
+    W.T    = util_getfield_default(W,'T',0.5);
+    W.mu   = util_getfield_default(W,'mu',0.5);
+    penopts.W = W;
+    rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
+    rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
+
+    Opost = struct('thr',thr,'penalty',penopts);
     tstamp = datestr(now,'yyyymmdd_HHMMSS_FFF');
     outdir = fullfile('out', ['ga_' tstamp]);
     if ~exist(outdir,'dir'), mkdir(outdir); end
@@ -89,10 +113,6 @@ options = optimoptions('gamultiobj', ...
     % ceza bileşenleri (eval ile aynı)
     pen     = zeros(nF,1);
     pen_dP  = zeros(nF,1); pen_Qcap = zeros(nF,1); pen_cav = zeros(nF,1); pen_T = zeros(nF,1); pen_mu = zeros(nF,1);
-    [lambda,pwr,W] = util_default_penalty_opts(optsEval);
-    Opost = optsEval;
-    Opost.thr = optsEval.thr;
-    Opost.penalty = struct('lambda',lambda,'power',pwr,'W',W);
     % parfor güvenliği için tüm yardımcılar subfunction’dır; nested kullanılmaz.
     parfor i = 1:nF
         Xi = quant_clamp_x(X(i,:));
@@ -136,6 +156,9 @@ options = optimoptions('gamultiobj', ...
         'Q_q50','Q_q95','dP50','energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum'});
 
     % === BASELINE (pre-GA) ROW: params başlangıcıyla tek koşu, ilk satır ===
+    % Karşılaştırılabilirlik için baseline tasarım GA ile aynı QC [Pa, -, °C, Pa·s]
+    % ve ceza çekirdeği (λ, pwr, W) altında yeniden değerlendirilir; böylece
+    % CSV/MAT dosyalarında yer alan ilk satır bilimsel açıdan tutarlı kalır.
     T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W);
 
     write_pareto_results(T, outdir);
@@ -210,7 +233,7 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
         f = [1e6, 1e6];
         meta = struct('x',x,'f',f,'hard_kill',true, ...
                       'hard_kill_reason', kill_reason, ...
-                      'pen',0,'pen_dP',0,'pen_Qcap',0,'pen_cav',0,'pen_T',0,'pen_mu',0);
+                      'pen',0,'pen_raw',0,'pen_dP',0,'pen_Qcap',0,'pen_cav',0,'pen_T',0,'pen_mu',0);
         memo(key) = meta;
         fprintf('[HARD-KILL] %s\n', kill_reason);
         if nargout > 2, details = S; end
@@ -226,9 +249,25 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
     T_endv   = enforce_finite(S.table.T_end);
     mu_endv  = enforce_finite(S.table.mu_end);
     % --- PENALTY (soft, multiplicative) ---
-    [lambda,pwr,W] = util_default_penalty_opts(optsEval);
-    rel = @(v,lim) max(0, (v - lim)./max(lim,eps)).^pwr;
-    rev = @(v,lim) max(0, (lim - v)./max(lim,eps)).^pwr;
+    % Ceza çekirdeği boyutsuz normalize sapmalardan (δ_i) oluşur ve
+    % Penalty = λ·Σ W_i·δ_i formülüyle hedef fonksiyona f = f·(1 + Penalty)
+    % biçiminde uygulanır. Δp95 [Pa], Qcap95 [-]:, cav_pct [-]:, T_end [°C],
+    % μ_end [Pa·s] eşiklerine göre göreli aşım/eksik hesaplanır; λ ve W_i
+    % kullanıcı tarafından override edilebilir.
+    penopts = util_getfield_default(optsEval,'penalty', struct( ...
+         'lambda', 3, ...            % varsayılan
+         'power',  2, ...
+         'W', struct('dP',1,'Qcap',1,'cav',1,'T',0.5,'mu',0.5)));
+    lambda = util_getfield_default(penopts,'lambda',3);
+    pwr    = util_getfield_default(penopts,'power',2);
+    W      = util_getfield_default(penopts,'W', struct());
+    W.dP   = util_getfield_default(W,'dP',1);
+    W.Qcap = util_getfield_default(W,'Qcap',1);
+    W.cav  = util_getfield_default(W,'cav',1);
+    W.T    = util_getfield_default(W,'T',0.5);
+    W.mu   = util_getfield_default(W,'mu',0.5);
+    rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
+    rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
     pen_dP   = isfield(thr,'dP95_max')   * mean(rel(dP95v,  thr.dP95_max));
     pen_Qcap = isfield(thr,'Qcap95_max') * mean(rel(qcapv,  thr.Qcap95_max));
     cav_lim = util_getfield_default(thr,'cav_pct_max',0);
@@ -240,6 +279,9 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
     pen_T    = isfield(thr,'T_end_max')  * mean(rel(T_endv,  thr.T_end_max));
     pen_mu   = isfield(thr,'mu_end_min') * mean(rev(mu_endv, thr.mu_end_min));
     pen_core = W.dP*pen_dP + W.Qcap*pen_Qcap + W.cav*pen_cav + W.T*pen_T + W.mu*pen_mu;
+    if ~isfinite(pen_core)
+        pen_core = 0;
+    end
     Penalty  = lambda * pen_core;
     % Ceza çarpanı boyutsuz; amaç bileşenlerinin birimleri korunur.
     f = [f1, f2] .* (1 + Penalty);
@@ -260,7 +302,8 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
         end
     end
     meta = struct('x',x,'f',f,'PFA_mean',f1,'IDR_mean',f2, ...
-                    'pen',Penalty,'pen_dP',pen_parts.dP,'pen_Qcap',pen_parts.Qcap, ...
+                    'pen',Penalty,'pen_raw',pen_core, ...
+                    'pen_dP',pen_parts.dP,'pen_Qcap',pen_parts.Qcap, ...
                     'pen_cav',pen_parts.cav,'pen_T',pen_parts.T,'pen_mu',pen_parts.mu, ...
                    'pen_parts',pen_parts,'x10_max_damperli',x10_max_damperli_local, ...
                    'a10abs_max_damperli',a10abs_max_damperli_local, ...
@@ -348,7 +391,7 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
 %   T_end [°C], μ_end [Pa·s], E_orifice_sum ve E_struct_sum [J],
 %   enerji toplamı energy_tot_sum [J], P_mech_sum [W·s ≈ J].
 %   Kuantiller Q_q50, Q_q95 [m³/s] ve dP50 [Pa] izlenir.
-%   Penalty: δ_i = rel/ rev sapmaları, pen = λ·Σ W_i·δ_i.
+%   Penalty: δ_i = rel/ rev sapmaları, pen_raw = Σ W_i·δ_i, pen = λ·pen_raw.
 % Boyut analizi: Enerji alanları [J], güç = Δp·q [W], pen boyutsuzdur.
     if nargin < 1 || isempty(tbl)
         tbl = table();
@@ -364,6 +407,9 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
     end
     if nargin < 5 || isempty(W)
         W = struct('dP',1,'Qcap',1,'cav',1,'T',1,'mu',1);
+    end
+    if ~isstruct(W)
+        W = struct();
     end
 
     rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
@@ -384,6 +430,13 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
     v_E_orifice  = enforce_finite(get_numeric_column(tbl,'E_orifice_sum',0));
     v_E_struct   = enforce_finite(get_numeric_column(tbl,'E_struct_sum',0));
     v_P_mech     = enforce_finite(get_numeric_column(tbl,'P_mech_sum',0));
+
+    % Enerji [J] ve mekanik güç integrali [W·s≈J] büyüklükleri disipatif/iş
+    % girdisi olduğu için nümerik dalgalanmalarla negatif çıkmaları fiziksel
+    % değildir; taban düzeltmesi ile ≥0 garantilenir.
+    v_E_orifice = max(v_E_orifice, 0);
+    v_E_struct  = max(v_E_struct,  0);
+    v_P_mech    = max(v_P_mech,    0);
 
     metrics = struct();
     metrics.PFA_mean            = mean(v_PFA(:));
@@ -408,6 +461,11 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
     metrics.P_mech_sum          = sum(v_P_mech(:));
 
     thr = util_getfield_default(Opost, 'thr', struct());
+    W.dP   = util_getfield_default(W,'dP',1);
+    W.Qcap = util_getfield_default(W,'Qcap',1);
+    W.cav  = util_getfield_default(W,'cav',1);
+    W.T    = util_getfield_default(W,'T',1);
+    W.mu   = util_getfield_default(W,'mu',1);
     metrics.pen_dP   = mean(rel(v_dP95(:), util_getfield_default(thr,'dP95_max',inf)));
     metrics.pen_Qcap = mean(rel(v_Qcap(:), util_getfield_default(thr,'Qcap95_max',inf)));
     cav_lim = util_getfield_default(thr,'cav_pct_max',0);
@@ -418,8 +476,10 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
     end
     metrics.pen_T    = mean(rel(v_T_end(:), util_getfield_default(thr,'T_end_max',inf)));
     metrics.pen_mu   = mean(rev(v_mu(:), util_getfield_default(thr,'mu_end_min',0)));
-    metrics.pen      = lambda * (W.dP*metrics.pen_dP + W.Qcap*metrics.pen_Qcap + ...
-                                 W.cav*metrics.pen_cav + W.T*metrics.pen_T + W.mu*metrics.pen_mu);
+    pen_raw          = W.dP*metrics.pen_dP + W.Qcap*metrics.pen_Qcap + ...
+                       W.cav*metrics.pen_cav + W.T*metrics.pen_T + W.mu*metrics.pen_mu;
+    metrics.pen_raw  = pen_raw;
+    metrics.pen      = lambda * pen_raw;
 end
 
 function sig = dataset_signature(scaled)
@@ -1826,37 +1886,28 @@ end
 
 function thr = compute_thr(params, thr_in)
 % compute_thr — QC eşiklerini tek kaynaktan üretir (override destekli).
-% Varsayılanlar: Qcap95_max=0.90 [-]: doluluk sınırı, cav_pct_max=0.00 [-]: kavitasyon
-%   yasağı, dP95_max=3·10^7 [Pa] ~ 30 MPa, T_end_max=T0_C+dT_max [°C],
-%   μ_end_min ≥0.6 [Pa·s]. Kullanıcı thr_in alanları ile override yapabilir.
-% Boyut kontrolü: tüm eşikler SI temellidir; T [°C] farkları lineer toplanır.
-    if nargin < 2 || isempty(thr_in)
+% Hidrolik basınç üst sınırı Δp95_max [Pa], kapasite oranı Qcap95_max [-]:,
+% kavitasyon yüzdesi cav_pct_max [-]:, son sıcaklık T_end_max [°C] ve son yağ
+% viskozitesi μ_end_min [Pa·s] fiziksel kabullere dayanır. Kullanıcı thr_in
+% alanları ile override yapabilir; eksik alanlar varsayılanla doldurulur.
+    if nargin < 2 || ~isstruct(thr_in) || isempty(thr_in)
         thr_in = struct();
     end
+
     thermal_loc = util_getfield_default(params,'thermal', struct());
     cfg_loc     = util_getfield_default(params,'cfg', struct());
     num_loc     = util_getfield_default(cfg_loc,'num', struct());
 
-    T0_C_loc  = util_getfield_default(params,'T0_C',25);
-    dT_max_loc = util_getfield_default(thermal_loc,'dT_max',80);
-    mu_min_phys_loc = util_getfield_default(num_loc,'mu_min_phys',0.6);
+    T0_C_loc    = util_getfield_default(params,'T0_C',25);
+    dT_max_loc  = util_getfield_default(thermal_loc,'dT_max',80);
+    mu_phys_loc = util_getfield_default(num_loc,'mu_min_phys',0.6);
 
-    thr = struct();
-    thr.Qcap95_max = 0.90;
-    thr.cav_pct_max = 0.00;
-    thr.dP95_max = 3e7;
-    thr.T_end_max = T0_C_loc + dT_max_loc;
-    thr.mu_end_min = max(mu_min_phys_loc, 0.6);
-
-    if ~isempty(thr_in) && isstruct(thr_in)
-        fn = fieldnames(thr_in);
-        for k = 1:numel(fn)
-            val_loc = thr_in.(fn{k});
-            if ~isempty(val_loc)
-                thr.(fn{k}) = val_loc;
-            end
-        end
-    end
+    thr = thr_in;
+    thr.dP95_max    = util_getfield_default(thr,'dP95_max',   30e6);  % [Pa] 30 MPa sınırı
+    thr.Qcap95_max  = util_getfield_default(thr,'Qcap95_max', 0.90);  % [-]: kapasite oranı
+    thr.cav_pct_max = util_getfield_default(thr,'cav_pct_max',0.00);  % [-]: kavitasyon yok
+    thr.T_end_max   = util_getfield_default(thr,'T_end_max',  T0_C_loc + dT_max_loc); % [°C]
+    thr.mu_end_min  = util_getfield_default(thr,'mu_end_min', max(mu_phys_loc, 0.6)); % [Pa·s]
 end
 
 function P = util_initial_pop_grid(lb, ub, N, steps)
