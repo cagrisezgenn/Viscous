@@ -1772,20 +1772,3 @@ m_oil_tot = sum(multi) * (params.rho * V_oil_per);
 m_steel_tot = params.steel_to_oil_mass_ratio * m_oil_tot;
 Cth = max(m_oil_tot*params.cp_oil + m_steel_tot*params.cp_steel, eps);
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
