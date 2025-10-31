@@ -152,7 +152,7 @@ assignin('base','gaout',gaout);
         T_end(i)  = metrics.T_end;
         mu_end(i) = metrics.mu_end;
         Q_q50(i)  = metrics.Q_q50;
-        Q_q95(i)  = metrics.Q_q95;
+        Q_q95(i) = metrics.Q_q95;
         dP50(i)   = metrics.dP50;
         energy_tot_sum(i) = metrics.energy_tot_sum;
         E_orifice_sum(i)  = metrics.E_orifice_sum;
