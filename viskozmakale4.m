@@ -61,6 +61,12 @@ thr_src = resolve_thr_base(optsEval);
 thr = compute_thr(params, thr_src);
 optsEval.thr = thr;
 
+% Penalty çekirdeği parametrelerini tek noktada toparla.
+[lambda, pwr, W] = util_default_penalty_opts(optsEval);
+penalty_src = util_getfield_default(optsEval,'penalty', struct());
+cav_free = util_getfield_default(penalty_src,'cav_free', 0.002);
+penopts = struct('lambda',lambda,'power',pwr,'W',W,'cav_free',cav_free);
+
 %% Amaç Fonksiyonu ve Ceza Çekirdeği
 % Penalty çekirdeği [boyutsuz] parametreleri λ [-]:, kuvvet pwr [-]: ve ağırlık
 % W_i [-]: hidrolik kritikler (Δp, Qcap, cav, T, μ) için burada set edilir. pen_raw =
