@@ -113,7 +113,7 @@ assignin('base','gaout',gaout);
     outdir = fullfile('out', ['ga_' tstamp]);
     if ~exist(outdir,'dir'), mkdir(outdir); end
     date_str = tstamp;
-    front = struct('X',X,'F',F,'options',options,'date_str',date_str);
+    front = struct('X',X,'F',F,'options',options,'date_str',date_str,'ga_out_best_pen',@ga_out_best_pen);
     save(fullfile(outdir,'ga_front.mat'), '-struct', 'front', '-v7.3');
 
     % === Re-evaluate Pareto designs to collect metrics per-row ===
@@ -851,38 +851,15 @@ function [state, options, optchanged] = ga_out_best_pen(options, state, flag, sc
 % Ölçüler/Birimler: f_pen [-]:, f1 [m/s²], f2 [-]:.
 % Yöntem Özeti: Score matrisini leksikografik olarak sıralar, en iyi bireyin
 %   eval_design_fast değerini hesaplar ve fprintf ile kaydeder.
-    if nargin < 6 || isempty(optsEval)
-        optsEval = struct();
-    end
-    if nargin < 5 || isempty(params)
-        params = [];
-    end
-    if nargin < 4 || isempty(scaled)
-        scaled = [];
-    end
-
     optchanged = false;
-    if ~strcmp(flag, 'iter')
-        return;
+    if strcmp(flag,'iter') && ~isempty(state.Score)
+        scores = state.Score;                 % [f_pen, f1, f2]
+        [~, order] = sortrows(scores, [1 2 3]);
+        idx = order(1);
+        bestx = state.Population(idx,:);
+        [f_curr, ~] = eval_design_fast(bestx, scaled, params, optsEval);
+        fprintf('Gen %d: pen=%g f1=%g f2=%g\\n', state.Generation, f_curr(1), f_curr(2), f_curr(3));
     end
-
-    if isempty(state.Score) || isempty(state.Population)
-        return;
-    end
-
-    scores = state.Score;                 % [f_pen, f1, f2]
-    [~, order] = sortrows(scores, [1 2 3]);
-    idx = order(1);
-    bestx = state.Population(idx,:);
-
-    if isempty(scaled) || isempty(params)
-        fprintf('Gen %d: pen=%g f1=%g f2=%g (scaled/params unavailable)\n', ...
-                state.Generation, scores(idx,1), scores(idx,2), scores(idx,3));
-        return;
-    end
-
-    [f_curr, ~] = eval_design_fast(bestx, scaled, params, optsEval);
-    fprintf('Gen %d: pen=%g f1=%g f2=%g\n', state.Generation, f_curr(1), f_curr(2), f_curr(3));
 end
 
 function [scaled, params, T1] = prepare_inputs(optsGA)
