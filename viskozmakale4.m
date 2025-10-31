@@ -1,13 +1,34 @@
+%% GA Sürücüsü ve Kurulum
+% RUN_GA_DRIVER hibrit genetik algoritma (GA) iş akışını tek dosyada yönetir.
+% Amaç ve Kapsam: Bu ana sürücü, tasarım değişkenlerinin sınırları içindeki
+% kantitatif arama problemini çözer, hızlı ceza hesaplarını tetikler ve her
+% Pareto çözümü için pencere tabanlı metrikleri toplar.
+% Girdiler:
+%   scaled [-]: Önceden ölçeklendirilmiş yer hareketi kayıtları yapısı.
+%   params [-]: Başlangıç damper ve yapı parametreleri (SI birimleri).
+%   optsEval [-]: Ceza çekirdeği, QC eşiği ve pencereleme ayarları.
+%   optsGA [-]: Popülasyon, mutasyon ve paralel ayarlarını içeren GA opsiyonları.
+% Çıktılar:
+%   X [-]: Pareto ön cephesindeki karar vektörü satırları (mm değerleri henüz
+%        kuantize edilmemiş ham formdadır).
+%   F [-]: [f_pen, f1, f2] amaç değerlerini içeren tablo; f_pen yumuşak ceza
+%        terimidir, f1 ve f2 ise performans göstergeleridir.
+%   gaout [-]: GA yürütme meta verisi (exitflag, iterasyon istatistikleri).
+% Varsayımlar ve Sınırlar:
+%   - Parametreler `prepare_inputs` ile üretildiğinde tutarlı birimler sağlanır.
+%   - Parpool açılımı başarısız olursa seri hesap kabul edilir.
+%   - Karar vektörü sınırları mm bazındadır; değerlendirme sırasında mm→m
+%     dönüşümü alt fonksiyonlarda yapılır.
+% Ölçüler/Birimler: Q [m^3/s], Δp [Pa], P_mech_sum [J], energy_tot_sum [J],
+%   T_end [°C], mu_end [Pa·s], cav_pct [%], IDR [-]:, PFA [-]:.
+% Yöntem Özeti: GA sürücüsü Arias yoğunluğu penceresi (t5–t95) ile
+% pencereleme yapan `run_batch_windowed` fonksiyonunu çağırır. Termal durum
+% modları (her kayıt sonrası reset, taşıma veya soğuma) `run_one_record_windowed`
+% içindeki politika yorumlarında açıklanır. Güç-enerji ilişkisi P_mech ≈
+% Σ(Δp·q·Δt) olup [W·s] ≙ [J]; bu integral `summarize_metrics_table`
+% tarafından tutulur. Yumuşak ceza `pen_raw = Σ W_i·δ_i` ve `pen = λ·pen_raw`
+% şeklinde uygulanır; δ_i göreli sapma, λ ölçek katsayısıdır ve hepsi boyutsuzdur.
 function [X,F,gaout] = run_ga_driver(scaled, params, optsEval, optsGA)
-%RUN_GA_DRIVER Hibrit GA sÃƒÂ¼rÃƒÂ¼cÃƒÂ¼sÃƒÂ¼
-%   [X,F,GAOUT] = RUN_GA_DRIVER(SCALED, PARAMS, OPTSEVAL, OPTSGA)
-% `scaled` ve `params` doÃ„Å¸rudan argÃƒÂ¼man olarak verilebilir. EÃ„Å¸er boÃ…Å¸
-% bÃ„Â±rakÃ„Â±lÃ„Â±rsa, gerekli veri seti ve parametreler `prepare_inputs`
-% fonksiyonu ile hazÃ„Â±rlanÃ„Â±r. Uygunluk hesaplarÃ„Â± sÃ„Â±rasÃ„Â±nda IO yapÃ„Â±lmaz;
-% yeniden ÃƒÂ¶lÃƒÂ§ekleme beklenmez.
-%   Bu sÃƒÂ¼rÃƒÂ¼m, daha ÃƒÂ¶nce ayrÃ„Â± dosyalarda yer alan tÃƒÂ¼m yardÃ„Â±mcÃ„Â±
-%   fonksiyonlarÃ„Â± (hazÃ„Â±rlÃ„Â±k, kayÃ„Â±t dÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼, dinamik ÃƒÂ§ÃƒÂ¶zÃƒÂ¼m vb.) aynÃ„Â± dosya
-%   iÃƒÂ§inde toplayarak tek baÃ…Å¸Ã„Â±na ÃƒÂ§alÃ„Â±Ã…Å¸abilir bir GA iÃ…Å¸ akÃ„Â±Ã…Å¸Ã„Â± sunar.
 
 narginchk(0,4);
 
@@ -16,13 +37,13 @@ if nargin < 2 || isempty(params),  params  = []; end
 if nargin < 3 || isempty(optsEval), optsEval = struct; end
 if nargin < 4 || isempty(optsGA),   optsGA   = struct; end
 
-% Gerekli girdiler saÃ„Å¸lanmadÃ„Â±ysa otomatik hazÃ„Â±rla
+% Gerekli girdiler sağlanmadıysa otomatik hazırla.
 if isempty(scaled) || isempty(params)
     [scaled, params] = prepare_inputs(optsGA);
 end
 assignin('base','scaled',scaled);
 assignin('base','params',params);
-% === Parpool AÃƒÂ§Ã„Â±lÃ„Â±Ã…Å¸Ã„Â± (temizlik + iÃ…Å¸ parÃƒÂ§acÃ„Â±Ã„Å¸Ã„Â± sÃ„Â±nÃ„Â±rÃ„Â±) ===
+% === Parpool açılışı (temizlik + iş parçacığı sınırı) ===
 usePool = true;
 try
     usePool = parpool_hard_reset(16);
@@ -34,55 +55,57 @@ end
 assert(~isempty(scaled), 'run_ga_driver: scaled dataset is empty.');
 assert(~isempty(params), 'run_ga_driver: params is empty.');
 
-% QC eÃ…Å¸ikleri thr [Pa, -, Ã‚Â°C, PaÃ‚Â·s] tek kaynaktan toplanÃ„Â±r ve parametre
-% baÃ„Å¸Ã„Â±mlÃ„Â± eksikler compute_thr ile tamamlanÃ„Â±r; kullanÃ„Â±cÃ„Â± thr alanÃ„Â± baskÃ„Â±n kalÃ„Â±r.
+% QC eşikleri thr [Pa, -, °C, Pa·s] tek kaynaktan toplanır ve parametre
+% bağımlı eksikler compute_thr ile tamamlanır; kullanıcı thr alanı baskın kalır.
 thr_src = resolve_thr_base(optsEval);
 thr = compute_thr(params, thr_src);
 optsEval.thr = thr;
 
-    % Ceza ÃƒÂ§ekirdeÃ„Å¸i [boyutsuz] parametreleri ÃÂ» [-]:, kuvvet pwr [-]: ve aÃ„Å¸Ã„Â±rlÃ„Â±k
-    % W_i [-]: hidrolik kritikler (dP, Qcap, cav, T, ÃÂ¼) iÃƒÂ§in burada set edilir.
-    penopts = util_getfield_default(optsEval,'penalty', struct());
-    lambda = util_getfield_default(penopts,'lambda',5);
-    pwr    = util_getfield_default(penopts,'power',1.2);
-    W      = util_getfield_default(penopts,'W', struct());
-    if ~isstruct(W), W = struct(); end
-    W.dP   = util_getfield_default(W,'dP',2);
-    W.Qcap = util_getfield_default(W,'Qcap',3);
-    W.cav  = util_getfield_default(W,'cav',0.25);
-    W.T    = util_getfield_default(W,'T',0.5);
-    W.mu   = util_getfield_default(W,'mu',0.5);
-    penopts.lambda = lambda;
-    penopts.power  = pwr;
-    penopts.W      = W;
-    optsEval.penalty = penopts;
-%% GA Kurulumu
-% GA amaÃƒÂ§ fonksiyonu ve optimizasyon seÃƒÂ§eneklerini hazÃ„Â±rla.
+%% Amaç Fonksiyonu ve Ceza Çekirdeği
+% Penalty çekirdeği [boyutsuz] parametreleri λ [-]:, kuvvet pwr [-]: ve ağırlık
+% W_i [-]: hidrolik kritikler (Δp, Qcap, cav, T, μ) için burada set edilir. pen_raw =
+% Σ W_i·δ_i ifadesi ile toplanır ve pen = λ·pen_raw olarak ölçeklenir; δ_i
+% göreli sapmadır.
+penopt = util_getfield_default(optsEval,'penalty', struct());
+lambda = util_getfield_default(penopt,'lambda',5);
+pwr    = util_getfield_default(penopt,'power',1.2);
+W      = util_getfield_default(penopt,'W', struct());
+if ~isstruct(W), W = struct(); end
+W.dP   = util_getfield_default(W,'dP',2);
+W.Qcap = util_getfield_default(W,'Qcap',3);
+W.cav  = util_getfield_default(W,'cav',0.25);
+W.T    = util_getfield_default(W,'T',0.5);
+W.mu   = util_getfield_default(W,'mu',0.5);
+cav_free = util_getfield_default(penopt,'cav_free',0.002);
+penopts = struct('lambda',lambda,'power',pwr,'W',W,'cav_free',cav_free);
+optsEval.penalty = penopts;
+%% GA Sürücüsü ve Kurulum — Optimizasyon Ayarları
+% GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
     rng(42);
 
     % Karar vektoru: [d_o_mm, n_orf, Cd0, CdInf, p_exp, Lori_mm, hA_W_perK, Dp_mm, d_w_mm, D_m_mm, n_turn, mu_ref]
     lb = [1.0, 4, 0.60, 0.75, 0.90, 120, 200, 120, 10,  90,  6, 0.80];
     ub = [3.0, 8, 0.90, 1.00, 1.50, 200, 600, 240, 16, 160, 18, 1.5];
-    IntCon = [2 11];  % n_orf ve n_turn tam sayÃ„Â±
+    IntCon = [2 11];  % n_orf ve n_turn tam sayı
 
-    obj = @(x) eval_design_fast(x, scaled, params, optsEval); % iÃƒÂ§erde kuantize/clamplar
+    obj = @(x) eval_design_fast(x, scaled, params, optsEval); % içerde kuantize/clamplar
 
-  % --- HIZLI Ãƒâ€“N TARAMA AYARLARI ---
-POP_SIZE_QUICK = 40;   % DÃƒÂ¼Ã…Å¸ÃƒÂ¼k popÃƒÂ¼lasyon yeterli
-MAX_GEN_QUICK = 1;    % Ãƒâ€¡ok az jenerasyon (Belki 15-20 de olabilir)
+  % --- HIZLI ÖN TARAMA AYARLARI ---
+POP_SIZE_QUICK = 40;   % Düşük popülasyon yeterli
+MAX_GEN_QUICK = 1;    % Çok az jenerasyon (Belki 15-20 de olabilir)
 
 options = optimoptions('gamultiobj', ...
-       'PopulationSize',    POP_SIZE_QUICK, ... % DÃƒÂ¼Ã…Å¸ÃƒÂ¼k
-       'MaxGenerations',    MAX_GEN_QUICK, ...  % DÃƒÂ¼Ã…Å¸ÃƒÂ¼k
+       'PopulationSize',    POP_SIZE_QUICK, ... % Düşük
+       'MaxGenerations',    MAX_GEN_QUICK, ...  % Düşük
        'CrossoverFraction', 0.8, ...
        'MutationFcn',       {@mutationadaptfeasible}, ...
-       'ParetoFraction',    0.4, ... % Ãƒâ€¡eÃ…Å¸itliliÃ„Å¸i korumak ÃƒÂ¶nemli
-       'StallGenLimit',     10, ... % DÃƒÂ¼Ã…Å¸ÃƒÂ¼k
+       'ParetoFraction',    0.4, ... % Çeşitliliği korumak önemli
+       'StallGenLimit',     10, ... % Düşük
        'DistanceMeasureFcn','distancecrowding', ...
        'OutputFcn',         @(options,state,flag) ga_out_best_pen(options,state,flag, scaled, params, optsEval), ...
        'UseParallel',       usePool, ...
        'Display','iter', ...
-       'FunctionTolerance', 1e-4); % ToleransÃ„Â± biraz gevÃ…Å¸etebiliriz
+       'FunctionTolerance', 1e-4); % Toleransı biraz gevşetebiliriz
 
         [X,F,exitflag,output] = gamultiobj(obj, numel(lb), [],[],[],[], lb, ub, [], IntCon, options);
     gaout = struct('exitflag',exitflag,'output',output);
@@ -90,14 +113,14 @@ options = optimoptions('gamultiobj', ...
 assignin('base','F',F);
 assignin('base','gaout',gaout);
 
-    %% SonuÃƒÂ§larÃ„Â±n Paketlenmesi
-    % GA tamamlandÃ„Â±ktan sonra sonuÃƒÂ§larÃ„Â± dosyalara kaydet.
+    %% Sonuçların Paketlenmesi
+    % GA tamamlandıktan sonra sonuçları dosyalara kaydet.
     Opost = struct('thr',thr,'penalty',penopts);
     tstamp = datestr(now,'yyyymmdd_HHMMSS_FFF');
     outdir = fullfile('out', ['ga_' tstamp]);
     if ~exist(outdir,'dir'), mkdir(outdir); end
     date_str = tstamp;
-    front = struct('X',X,'F',F,'options',options,'date_str',date_str, ga_out_best_pen);
+    front = struct('X',X,'F',F,'options',options,'date_str',date_str,'ga_out_best_pen',ga_out_best_pen);
     save(fullfile(outdir,'ga_front.mat'), '-struct', 'front', '-v7.3');
 
     % === Re-evaluate Pareto designs to collect metrics per-row ===
@@ -110,10 +133,10 @@ assignin('base','gaout',gaout);
     energy_tot_sum   = zeros(nF,1);  E_orifice_sum = zeros(nF,1);   E_struct_sum  = zeros(nF,1); E_ratio = zeros(nF,1); P_mech_sum = zeros(nF,1);
     PFA_mean   = zeros(nF,1);  IDR_mean  = zeros(nF,1);
 
-    % ceza bileÃ…Å¸enleri (eval ile aynÃ„Â±)
+    % ceza bileşenleri (eval ile aynı)
     pen     = zeros(nF,1);
     pen_dP  = zeros(nF,1); pen_Qcap = zeros(nF,1); pen_cav = zeros(nF,1); pen_T = zeros(nF,1); pen_mu = zeros(nF,1);
-    % parfor gÃƒÂ¼venliÃ„Å¸i iÃƒÂ§in tÃƒÂ¼m yardÃ„Â±mcÃ„Â±lar subfunctionÃ¢â‚¬â„¢dÃ„Â±r; nested kullanÃ„Â±lmaz.
+    % parfor güvenliği için tüm yardımcılar subfunction'dır; nested kullanılmaz.
     parfor i = 1:nF
         Xi = quant_clamp_x(X(i,:));
         Pi = decode_params_from_x(params, Xi);
@@ -145,7 +168,7 @@ assignin('base','gaout',gaout);
         pen(i)     = metrics.pen;
     end
 
-    % SatÃ„Â±r baÃ…Å¸Ã„Â±na dizilerden T tablosunu oluÃ…Å¸tur
+    % Satır başına dizilerden T tablosunu oluştur
     data = [X F PFA_mean IDR_mean pen pen_dP pen_Qcap pen_cav pen_T pen_mu ...
             x10_max_damperli a10abs_max_damperli dP95 Qcap95 cav_pct T_end mu_end ...
             Q_q50 Q_q95 dP50 energy_tot_sum E_orifice_sum E_struct_sum E_ratio P_mech_sum];
@@ -155,16 +178,16 @@ assignin('base','gaout',gaout);
         'x10_max_damperli','a10abs_max_damperli','dP95','Qcap95','cav_pct','T_end','mu_end', ...
         'Q_q50','Q_q95','dP50','energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum'});
 
-    % === BASELINE (pre-GA) ROW: params baÃ…Å¸langÃ„Â±cÃ„Â±yla tek koÃ…Å¸u, ilk satÃ„Â±r ===
-    % KarÃ…Å¸Ã„Â±laÃ…Å¸tÃ„Â±rÃ„Â±labilirlik iÃƒÂ§in baseline tasarÃ„Â±m GA ile aynÃ„Â± QC [Pa, -, Ã‚Â°C, PaÃ‚Â·s]
-    % ve ceza ÃƒÂ§ekirdeÃ„Å¸i (ÃÂ», pwr, W) altÃ„Â±nda yeniden deÃ„Å¸erlendirilir; bÃƒÂ¶ylece
-    % CSV/MAT dosyalarÃ„Â±nda yer alan ilk satÃ„Â±r bilimsel aÃƒÂ§Ã„Â±dan tutarlÃ„Â± kalÃ„Â±r.
+    % === BASELINE (pre-GA) ROW: params başlangıcıyla tek koşu, ilk satır ===
+    % Karşılaştırılabilirlik için baseline tasarım GA ile aynı QC [Pa, -, °C, Pa·s]
+    % ve ceza çekirdeği (λ, pwr, W) altında yeniden değerlendirilir; böylece
+    % CSV/MAT dosyalarında yer alan ilk satır bilimsel açıdan tutarlı kalır.
     T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W);
 
     write_pareto_results(T, outdir);
-raporla_ga_sonuclari(X, F, scaled, params, optsEval, gaout);
-ciz_ga_grafikleri(X, scaled, params, optsEval);
-    % En iyi K tasarÃ„Â±mÃ„Â±n parametre listesi
+    raporla_ga_sonuclari(X, F, scaled, params, optsEval, gaout);
+    ciz_ga_grafikleri(X, scaled, params, optsEval);
+    % En iyi K tasarımın parametre listesi
     K = min(10, size(X,1));
     if K > 0
         idx = unique(round(linspace(1,size(X,1),K)));
@@ -179,19 +202,34 @@ ciz_ga_grafikleri(X, scaled, params, optsEval);
 end
 
 function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
-% eval_design_fast Ã¢â‚¬â€ HÃ„Â±zlÃ„Â± tasarÃ„Â±m deÃ„Å¸erlendirmesi (GA amaÃƒÂ§ fonksiyonu)
-% AmaÃƒÂ§ vektÃƒÂ¶rÃƒÂ¼ f = [f_pen, f1, f2];
-%   f_pen = ÃÂ»Ã‚Â·ÃÂ£ W_iÃ‚Â·ÃÂ´_i  (boyutsuz yumuÃ…Å¸ak ceza),
-%   f1    = mean(PFA) [m/sÃ‚Â²],
-%   f2    = mean(IDR) [-]:
-% Pencereli ortalamalar run_batch_windowed tarafÃ„Â±ndan hesaplanÃ„Â±r.
-% YumuÃ…Å¸ak ceza bileÃ…Å¸enleri dP95 [Pa], Qcap95 [-]: doluluk, cav_pct [-]: kavitasyon payÃ„Â±,
-%   T_end [Ã‚Â°C], ÃÂ¼_end [PaÃ‚Â·s] sapmalarÃ„Â±ndan tÃƒÂ¼retilir. Hard-kill eÃ…Å¸ikleri
-%   (Qcap95>0.90 veya cav>0.01) ceza dÃ„Â±Ã…Å¸Ã„Â±dÃ„Â±r; meta.hard_kill_reason alanÃ„Â± ve
-%   stdout logu ile raporlanÃ„Â±r. Lexicographic seÃƒÂ§im GA callback'inde uygulanÃ„Â±r;
-%   f1 ve f2 fiziksel birimlerini korurken f_pen boyutsuzdur.
+% EVAL_DESIGN_FAST hızlı amaç fonksiyonu değerlendirmesini yürütür.
+% Amaç ve Kapsam: Kuantize edilmiş karar vektörünü (mm seviyesinde) dinamik
+%   simülasyona aktarır, pencere tabanlı metrikleri toplar ve [f_pen, f1, f2]
+%   vektörünü döndürür.
+% Girdiler:
+%   x [-]: Tasarım karar vektörü; mm temelli bileşenler quant_clamp_x ile gridlenir.
+%   scaled [-]: Ölçekli yer hareketi kayıtları seti.
+%   params_base [-]: Referans parametre yapısı (SI birimleri).
+%   optsEval [-]: Ceza, QC, pencere ve termal politikaları içeren yapı.
+% Çıktılar:
+%   f [-]: [f_pen, f1, f2] amaç değerleri; f1 = mean(PFA) [m/s²], f2 = mean(IDR) [-]:.
+%   meta [-]: Ceza parçaları, enerji toplamları ve QC sonuçlarını içeren özet.
+%   details [-]: run_batch_windowed çıktısının isteğe bağlı tam kopyası.
+% Varsayımlar ve Sınırlar:
+%   - x vektörü 12 bileşenli olup orifis, termal ve malzeme parametrelerini içerir.
+%   - optsEval.penalty alanı λ [-]:, pwr [-]:, W_i [-]: ve cav_free [-] değerlerini sağlar.
+%   - scaled dataset_signature ile cache anahtarı oluşturulur; veri değişirse cache temizlenmelidir.
+% Ölçüler/Birimler: dP95 [Pa], Qcap95 [-]:, cav_pct [%], T_end [°C], μ_end [Pa·s],
+%   P_mech_sum [J], energy_tot_sum [J], Re [-]:, PFA [m/s²], IDR [-]:.
+% Yöntem Özeti: Karar vektörü önce quant_clamp_x ile belirtilen ızgara
+%   adımlarına (bkz. Tasarım Değişkenlerinin Izgaraya Kilitlenmesi) zorlanır.
+%   decode_params_from_x mm→m dönüşümlerini uygulayarak fiziksel modele aktarır.
+%   run_batch_windowed Arias yoğunluğu penceresi (t5–t95) üzerinden her kaydı
+%   çözer ve pen_raw = Σ W_i·δ_i hesaplanır; pen = λ·pen_raw^(pwr) şeklinde
+%   yumuşak ceza oluşturulur. cav_free [-] ölü-bölgesi cav_pct < cav_free
+%   olduğunda δ_cav = 0 kabul eder; bu nedenle hafif kavitasyon ceza üretmez.
     details = struct();
-    % Kuantizasyon: eval ve GA sonrasÃ„Â± aynÃ„Â± Ã„Â±zgara [mm, -, -] (bkz. quant_clamp_x)
+    % Kuantizasyon: eval ve GA sonrası aynı ızgara [mm, -, -] (bkz. quant_clamp_x)
     x = x(:)';
     x = quant_clamp_x(x);
 
@@ -204,8 +242,8 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
     O = struct();
     if nargin >= 4 && ~isempty(optsEval), O = optsEval; end
 
-    % QC thr [Pa, -, Ã‚Â°C, PaÃ‚Â·s] ve ceza ÃƒÂ§ekirdeÃ„Å¸i parametreleri (ÃÂ» [-]:, gÃƒÂ¼ÃƒÂ§ [-]:, W_i [-])
-    % tek kaynaktan okunur; compute_thr ile eksikler tamamlanÃ„Â±p alt yordamlarla paylaÃ…Å¸Ã„Â±lÃ„Â±r.
+    % QC thr [Pa, -, °C, Pa·s] ve ceza çekirdeği parametreleri (λ [-]:, güç [-]:, W_i [-])
+    % tek kaynaktan okunur; compute_thr ile eksikler tamamlanıp alt yordamlarla paylaşılır.
     thr_src = resolve_thr_base(O);
     thr = compute_thr(params_base, thr_src);
     O.thr = thr;
@@ -220,7 +258,7 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
     W.cav  = util_getfield_default(W,'cav',0.25);
     W.T    = util_getfield_default(W,'T',0.5);
     W.mu   = util_getfield_default(W,'mu',0.5);
-    cav_free = util_getfield_default(penopt,'cav_free',0.002);  % [-] Ã¢â€°Ë† %0.2 serbest bÃƒÂ¶lge
+    cav_free = util_getfield_default(penopt,'cav_free',0.002);  % [-] ≈ %0.2 serbest bölge
     penopt.lambda = lambda;
     penopt.power  = pwr;
     penopt.W      = W;
@@ -239,10 +277,10 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
 
     P = decode_params_from_x(params_base, x);
 
-    % GÃƒÂ¼venli deÃ„Å¸erlendirme (GA sÃ„Â±rasÃ„Â±nda IO yok)
+    % Güvenli değerlendirme (GA sırasında IO yok)
     S = run_batch_windowed(scaled, P, O);
 
-    % --- HARD-KILL (ham Qcap95 [-]:, cav_pct [-]: ve sÃƒÂ¼re eÃ…Å¸iÃ„Å¸i [-]) ---
+    % --- HARD-KILL (ham Qcap95 [-]:, cav_pct [-]: ve süre eşiği [-]) ---
     qcapv_raw = enforce_finite(S.table.Qcap95);
     cavv_raw  = enforce_finite(S.table.cav_pct);
 
@@ -273,7 +311,7 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
     dP95v   = enforce_finite(S.table.dP95);
     T_endv   = enforce_finite(S.table.T_end);
     mu_endv  = enforce_finite(S.table.mu_end);
-    % --- PENALTY (ÃÂ» [-]:, gÃƒÂ¼ÃƒÂ§ [-]:, W_i [-] ile boyutsuz ÃƒÂ§arpan) ---
+    % --- PENALTY (λ [-]:, güç [-]:, W_i [-] ile boyutsuz çarpan) ---
     rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
     rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
     pen_dP   = isfield(thr,'dP95_max')   * mean(rel(dP95v,  thr.dP95_max));
@@ -297,7 +335,7 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
         pen_total = 1e6;
     end
     pen_total = max(pen_total, 0);
-    % Ceza boyutsuzdur; lexicographic GA iÃƒÂ§in f = [f_pen, f1, f2].
+    % Ceza boyutsuzdur; lexicographic GA için f = [f_pen, f1, f2].
     f = [pen_total, f1, f2];
     pen_parts = struct('dP',pen_dP,'Qcap',pen_Qcap,'cav',pen_cav,'T',pen_T,'mu',pen_mu);
     pf = {'dP','Qcap','cav','T','mu'};
@@ -323,12 +361,12 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
                    'hard_kill',false,'hard_kill_reason','', ...
                    'qcap95_raw_max',max(qcapv_raw), 'cav_pct_max',max(cavv_raw), ...
                    'f_pen',f(1),'f1',f(2),'f2',f(3));
-    % === PenaltÃ„Â± sÃƒÂ¼rÃƒÂ¼cÃƒÂ¼leri ve diagnostikleri ekle (varsa) ===
+    % === Penaltı sürücüleri ve diagnostikleri ekle (varsa) ===
         if isfield(S,'table') && istable(S.table)
             candCols = {'dP95','Qcap95','cav_pct','T_end','mu_end', ...
                          'Q_q50','Q_q95','dP50','energy_tot_sum','E_orifice_sum','E_struct_sum','E_ratio','P_mech_sum', ...
                          'x10_max_damperli','a10abs_max_damperli','Re_max'};
-            % Gerekirse alan adlarÃ„Â± iÃƒÂ§in takma adlar saÃ„Å¸la
+            % Gerekirse alan adları için takma adlar sağla
                 if ismember('E_orifice_sum', S.table.Properties.VariableNames) && ...
                    ismember('E_struct_sum', S.table.Properties.VariableNames) && ...
                    ~ismember('energy_tot_sum', S.table.Properties.VariableNames)
@@ -354,6 +392,29 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
 end
 
 function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
+% PREPEND_BASELINE_ROW Pareto tablosunun başına referans satırı ekler.
+% Amaç ve Kapsam: GA ile bulunan çözümleri, başlangıç parametrelerinin
+%   yeniden değerlendirilmiş performansı ile kıyaslanabilir kılar.
+% Girdiler:
+%   T [-]: Pareto ön cephesinden gelen tablo; değişken adları sabit varsayılır.
+%   params [-]: Başlangıç parametre yapısı (SI birimleri).
+%   scaled [-]: Ölçekli yer hareketi kayıtları seti.
+%   Opost [-]: GA sonrası değerlendirme ayarları (thr, penalty).
+%   lambda [-]: Penalty ölçek katsayısı.
+%   pwr [-]: Penalty güç üssü.
+%   W [-]: Penalty ağırlıkları (Δp, Qcap, cav, T, μ bileşenleri).
+% Çıktılar:
+%   T [-]: İlk satırı baseline değerlendirmesi olan genişletilmiş tablo.
+% Varsayımlar ve Sınırlar:
+%   - T değişkenleri GA değerlendirmesi ile tutarlıdır.
+%   - penalty parametreleri GA sırasında kullanılan değerlerle aynıdır.
+%   - run_batch_windowed pencereleme politikaları Opost içinden okunur.
+% Ölçüler/Birimler: dP95 [Pa], Qcap95 [-]:, cav_pct [%], T_end [°C], μ_end [Pa·s],
+%   E_orifice_sum [J], E_struct_sum [J], energy_tot_sum [J], P_mech_sum [J].
+% Yöntem Özeti: params önce encode_params_to_x ile karar vektörüne çevrilir,
+%   quant_clamp_x ızgarasına kilitlenir, ardından eval_design_fast ile
+%   değerlendirilir. summarize_metrics_table metri̇kleri hesaplayarak baseline
+%   satırının hücrelerini doldurur.
     X0 = encode_params_to_x(params);
     X0 = quant_clamp_x(X0);
     [f0, ~, S0] = eval_design_fast(X0, scaled, params, Opost);
@@ -395,21 +456,56 @@ function T = prepend_baseline_row(T, params, scaled, Opost, lambda, pwr, W)
     T = [T0; T];
 end
 
+%% Çıktıların Yazılması ve Raporlama
+% Sonuçların dosyalanması ve raporlanması bu bölümde toplanır.
 function write_pareto_results(T, outdir)
+% WRITE_PARETO_RESULTS Pareto tablosunu kalıcı çıktıya yazar.
+% Amaç ve Kapsam: GA sonuçlarını CSV formatında dışa aktararak sürüm takibini
+%   ve post-processing adımlarını kolaylaştırır.
+% Girdiler:
+%   T [-]: Pareto ön cephesine ait tablo (array2table çıktısı).
+%   outdir [-]: Yazılacak dizin yolu.
+% Çıktılar: Yok; ga_front.csv dosyasını oluşturur.
+% Varsayımlar ve Sınırlar:
+%   - outdir dizini önceden mevcut olmalıdır.
+%   - Tablo sütun adları raporlama araçlarıyla uyumludur.
+% Ölçüler/Birimler: Tablo içinde dP95 [Pa], Qcap95 [-]:, cav_pct [%],
+%   P_mech_sum [J], energy_tot_sum [J], T_end [°C], μ_end [Pa·s] yer alır.
+% Yöntem Özeti: MATLAB writetable çağrısı ile UTF-8 uyumlu CSV üretir.
     writetable(T, fullfile(outdir,'ga_front.csv'));
 end
 
 
+%% Metriklerin Özetlenmesi ve QC
+% Enerji, güç ve QC bayrakları bu çekirdek üzerinden tek noktadan yönetilir.
 function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
-% summarize_metrics_table Ã¢â‚¬â€ CSV/MAT metrikleri iÃƒÂ§in tek kaynak (boyut kontrolÃƒÂ¼)
-% Pencereli metrikler: PFA [m/sÃ‚Â²], IDR [-]: yer deÃ„Å¸iÃ…Å¸tirme oranÃ„Â±,
-%   dP95 [Pa], Qcap95 [-]: doluluk oranÃ„Â±, cav_pct [-]: kavitasyon yÃƒÂ¼zdesi,
-%   T_end [Ã‚Â°C], ÃÂ¼_end [PaÃ‚Â·s], E_orifice_sum ve E_struct_sum [J],
-%   enerji toplamÃ„Â± energy_tot_sum [J], P_mech_sum [WÃ‚Â·s Ã¢â€°Ë† J].
-%   Kuantiller Q_q50, Q_q95 [mÃ‚Â³/s] ve dP50 [Pa] izlenir.
-%   Penalty: ÃÂ´_i = rel/ rev sapmalarÃ„Â±, pen_raw = ÃÂ£ W_iÃ‚Â·ÃÂ´_i, pen = ÃÂ»Ã‚Â·pen_raw.
-%   Kavitasyon iÃƒÂ§in dead-zone: cav_free Ã¢â€°Ë† %0.5 altÃ„Â±nda ceza ÃƒÂ¼retilmez.
-% Boyut analizi: Enerji alanlarÃ„Â± [J], gÃƒÂ¼ÃƒÂ§ = Ãâ€pÃ‚Â·q [W], pen boyutsuzdur.
+% SUMMARIZE_METRICS_TABLE pencere metriklerini ceza bileşenleriyle toplar.
+% Amaç ve Kapsam: run_batch_windowed çıktısındaki tabloyu okuyarak tasarım
+%   bazında performans metriklerini ve pen_raw = Σ W_i·δ_i terimini üretir.
+% Girdiler:
+%   tbl [-]: run_batch_windowed tarafından üretilen kayıt-tablosu.
+%   Opost [-]: QC eşikleri (thr) ve penalty opsiyonlarını içeren yapı.
+%   lambda [-]: Penalty ölçek katsayısı.
+%   pwr [-]: Penalty güç üssü.
+%   W [-]: Penalty ağırlıkları (Δp, Qcap, cav, T, μ bileşenleri).
+% Çıktılar:
+%   metrics [-]: PFA_mean [m/s²], IDR_mean [-]:, pen [-]:, enerji toplamları [J],
+%     P_mech_sum [J], Q kuantilleri [m³/s] ve QC bayraklarını içeren yapı.
+% Varsayımlar ve Sınırlar:
+%   - tbl sütunları yoksa enforce_finite sıfır doldurması yapılır.
+%   - QC eşikleri thr alanında bulunur; eksikse compute_thr ile türetilmiş olmalıdır.
+%   - Penalty hesapları boyutsuzdur ve yalnızca pencere bazlı ortalamalara dayanır.
+% Ölçüler/Birimler: PFA [m/s²], IDR [-]:, dP95 [Pa], Qcap95 [-]:, cav_pct [%],
+%   T_end [°C], μ_end [Pa·s], energy_tot_sum [J], E_orifice_sum [J], E_struct_sum [J],
+%   P_mech_sum [J] (Δp·q·Δt integrali ≙ [W·s]).
+% Yöntem Özeti: get_numeric_column eksik sütunları yakalar; enforce_finite NaN
+%   ve Inf değerlerini temizler. QC bayrakları ok_T, ok_mu, ok_dP, ok_Qcap,
+%   ok_cav thr eşikleriyle karşılaştırılır: T_end ≤ T_end_max, μ_end ≥ μ_end_min,
+%   dP95 ≤ dP95_max, Qcap95 < Qcap95_max, cav_pct = 0 şartları aranır. Bu bayraklar
+%   tasarımın QC başarısını belirler; cav_pct < cav_free olduğunda penalty cezası
+%   üretmez ancak ok_cav yalnızca tam sıfır kavitasyonda true olur. Penalty
+%   bileşenleri δ_i göreli sapma olarak hesaplanıp pen = λ·(Σ W_i·δ_i)^pwr
+%   formunda değerlendirilir.
     if nargin < 1 || isempty(tbl)
         tbl = table();
     end
@@ -456,9 +552,9 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
     v_E_struct   = enforce_finite(get_numeric_column(tbl,'E_struct_sum',0));
     v_P_mech     = enforce_finite(get_numeric_column(tbl,'P_mech_sum',0));
 
-    % Enerji [J] ve mekanik gÃƒÂ¼ÃƒÂ§ integrali [WÃ‚Â·sÃ¢â€°Ë†J] bÃƒÂ¼yÃƒÂ¼klÃƒÂ¼kleri disipatif/iÃ…Å¸
-    % girdisi olduÃ„Å¸u iÃƒÂ§in nÃƒÂ¼merik dalgalanmalarla negatif ÃƒÂ§Ã„Â±kmalarÃ„Â± fiziksel
-    % deÃ„Å¸ildir; taban dÃƒÂ¼zeltmesi ile Ã¢â€°Â¥0 garantilenir.
+    % Enerji [J] ve mekanik güç integrali [W·s≈J] büyüklükleri disipatif/iş
+    % girdisi olduğu için nümerik dalgalanmalarla negatif çıkmaları fiziksel
+    % değildir; taban düzeltmesi ile ≥0 garantilenir.
     v_E_orifice = max(v_E_orifice, 0);
     v_E_struct  = max(v_E_struct,  0);
     v_P_mech    = max(v_P_mech,    0);
@@ -510,6 +606,19 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
 end
 
 function sig = dataset_signature(scaled)
+% DATASET_SIGNATURE pencere değerlendirme cache'i için imza üretir.
+% Amaç ve Kapsam: scaled kayıt seti değiştiğinde memoize edilmiş sonuçları
+%   ayırt etmek; GA boyunca tutarlı veri kullanımını garanti etmek.
+% Girdiler:
+%   scaled [-]: Ölçekli kayıt yapısı dizisi (name, scale, SaT1 alanları beklenir).
+% Çıktılar:
+%   sig [-]: jsonencode ile uyumlu string imza.
+% Varsayımlar ve Sınırlar:
+%   - scaled elemanlarında 'name' ve 'scale' alanları bulunur.
+%   - İmza yalnızca temel alanları içerir; ayrıntılı dalga formları dahil edilmez.
+% Ölçüler/Birimler: scale [-]:, SaT1 [m/s²].
+% Yöntem Özeti: structfun ile alanlar çıkarılır, jsonencode ile deterministik
+%   imza oluşturulur.
     if nargin < 1 || isempty(scaled)
         sig = 0;
         return;
@@ -520,6 +629,16 @@ function sig = dataset_signature(scaled)
 end
 
 function vec = enforce_finite(vec)
+% ENFORCE_FINITE NaN veya Inf değerleri sıfırla değiştirir.
+% Amaç ve Kapsam: Penalty hesaplamalarında kararlı davranış sağlamak.
+% Girdiler:
+%   vec [-]: Sayısal vektör veya dizi.
+% Çıktılar:
+%   vec [-]: NaN/Inf yerine 0 atanmış dizi.
+% Varsayımlar ve Sınırlar:
+%   - Giriş realdir; kompleks değerler beklenmez.
+% Ölçüler/Birimler: Giriş hangi birimde ise çıktı da aynı birimdedir.
+% Yöntem Özeti: isfinite maskesi ile eleme yapılır, seçilen elemanlar 0 yapılır.
     if isempty(vec)
         vec = 0;
     end
@@ -531,6 +650,21 @@ function vec = enforce_finite(vec)
 end
 
 function arr = get_numeric_column(tbl, varName, defaultVal)
+% GET_NUMERIC_COLUMN Tablo sütunlarını güvenli şekilde çıkarır.
+% Amaç ve Kapsam: Eksik sütunları varsayılan değerle doldurarak ceza ve QC
+%   hesaplarında tutarlılık sağlar.
+% Girdiler:
+%   tbl [-]: MATLAB tablosu.
+%   varName [-]: Sütun adı (char veya string).
+%   defaultVal [-]: Varsayılan skaler değer.
+% Çıktılar:
+%   arr [-]: Sayısal sütun vektörü.
+% Varsayımlar ve Sınırlar:
+%   - defaultVal sayısal olmalıdır.
+%   - Sütun mevcut değilse sabit değer döndürülür.
+% Ölçüler/Birimler: Sütun birimleri korunur; defaultVal aynı birimde olmalıdır.
+% Yöntem Özeti: ismember ile sütun varlığı kontrol edilir, yoksa defaultVal
+%   ile dolu vektör üretilir.
     if nargin < 3
         defaultVal = 0;
     end
@@ -548,6 +682,18 @@ function arr = get_numeric_column(tbl, varName, defaultVal)
 end
 
 function Trow = set_field_safe(Trow, name, val)
+% SET_FIELD_SAFE Tablo satırında güvenli alan ataması yapar.
+% Amaç ve Kapsam: Tablo sütunu mevcutsa değer atamak, değilse sessizce geçmek.
+% Girdiler:
+%   Trow [-]: Tek satırlı tablo.
+%   name [-]: Sütun adı.
+%   val [-]: Atanacak değer.
+% Çıktılar:
+%   Trow [-]: Güncellenmiş tablo satırı.
+% Varsayımlar ve Sınırlar:
+%   - Trow tek satırlı olmalıdır.
+% Ölçüler/Birimler: Giriş değeri hangi birimde ise aynı kalır.
+% Yöntem Özeti: ismember ile sütun varlığını kontrol eder ve {} ataması kullanır.
     if ~istable(Trow)
         return;
     end
@@ -566,6 +712,19 @@ function Trow = set_field_safe(Trow, name, val)
 end
 
 function x = encode_params_to_x(params)
+% ENCODE_PARAMS_TO_X Parametre yapısını karar vektörüne dönüştürür.
+% Amaç ve Kapsam: GA karar uzayındaki sıralamayı koruyarak params alanlarını
+%   [d_o_mm, n_orf, Cd0, CdInf, p_exp, Lori_mm, hA_W_perK, Dp_mm, d_w_mm,
+%   D_m_mm, n_turn, mu_ref] vektörüne dönüştürmek.
+% Girdiler:
+%   params [-]: build_params tarafından oluşturulan yapı.
+% Çıktılar:
+%   x [-]: Karar vektörü; geometrik terimler [mm], katsayılar boyutsuz, mu_ref [-]:.
+% Varsayımlar ve Sınırlar:
+%   - params içinde gerekli alanlar mevcuttur.
+% Ölçüler/Birimler: mm değerleri orifis çapları ve uzunluklarına aittir.
+% Yöntem Özeti: util_getfield_default ile eksik alanlara NaN atanır ve vektör
+%   sıraya göre doldurulur.
     orf = util_getfield_default(params,'orf', struct());
     thermal = util_getfield_default(params,'thermal', struct());
 
@@ -591,12 +750,31 @@ end
 
 
 
+%% Tasarım Değişkenlerinin Izgaraya Kilitlenmesi
+% Karar vektörü bileşenleri belirlenmiş adımlara ve sınırlara sıkıştırılır.
 function xq = quant_clamp_x(x)
-    % quant_clamp_x Ã¢â‚¬â€ Karar vektÃƒÂ¶rÃƒÂ¼nÃƒÂ¼ GA/eval ile aynÃ„Â± Ã„Â±zgaraya kilitler
-    % Izgara adÃ„Â±mlarÃ„Â±: d_o_mm 0.05 [mm], Cd0/CdInf 0.01 [-]:, p_exp 0.05 [-]:
+% QUANT_CLAMP_X tasarım vektörünü ızgara adımlarına uyarlar.
+% Amaç ve Kapsam: GA popülasyonunda yapılandırılmış aramayı korumak için her
+%   bileşeni önceden tanımlı adımlarla kuantize eder.
+% Girdiler:
+%   x [-]: [d_o_mm, n_orf, Cd0, CdInf, p_exp, Lori_mm, hA_W_perK, Dp_mm,
+%        d_w_mm, D_m_mm, n_turn, mu_ref] karar vektörü.
+% Çıktılar:
+%   xq [-]: Aynı boyutta kuantize edilmiş vektör.
+% Varsayımlar ve Sınırlar:
+%   - x bileşenleri alt/üst sınırlar arasında olmalıdır.
+%   - Tamsayı bileşenler (n_orf, n_turn) en yakın tam değere yuvarlanır.
+% Ölçüler/Birimler: mm değerleri mm olarak kalır; katsayılar boyutsuz.
+% Yöntem Özeti: util_quantize_step adımları uygular ve clamp ile sınırlar.
+%   Izgara adımları tablo halinde: d_o_mm 0.05 [mm], Cd 0.01 [-]:, p_exp 0.05 [-]:,
+%   Lori_mm 1 [mm], hA_W_perK 25 [W/K], Dp_mm 1 [mm], d_w_mm 0.5 [mm],
+%   D_m_mm 5 [mm], mu_ref 0.05 [Pa·s (ref)]; n_orf ve n_turn tam sayı olarak
+%   yuvarlanır.
+    % quant_clamp_x — Karar vektörünü GA/eval ile aynı ızgaraya kilitler
+    % Izgara adımları: d_o_mm 0.05 [mm], Cd0/CdInf 0.01 [-]:, p_exp 0.05 [-]:
     %   Lori_mm 1 [mm], hA_W_perK 25 [W/K], Dp_mm 1 [mm], d_w_mm 0.5 [mm],
-    %   D_m_mm 5 [mm], mu_ref 0.05 [PaÃ‚Â·s referans]. n_orf, n_turn tam sayÃ„Â± Ã¢â€°Â¥1.
-    % Boyut analizi: [mm] Ã¢â€ â€™ karar uzayÃ„Â±, dÃƒÂ¶nÃƒÂ¼Ã…Å¸tÃƒÂ¼rme decode_params_from_x iÃƒÂ§inde m'ye yapÃ„Â±lÃ„Â±r.
+    %   D_m_mm 5 [mm], mu_ref 0.05 [Pa·s referans]. n_orf, n_turn tam sayı ≥1.
+    % Boyut analizi: [mm] → karar uzayı, dönüştürme decode_params_from_x içinde m'ye yapılır.
     xq = x;
     if isvector(x), xq = x(:)'; end
     xq(:,1) = util_quantize_step(xq(:,1),0.05);
@@ -616,10 +794,28 @@ function xq = quant_clamp_x(x)
 end
 
 
+%% Parametre Kod Çözümü (mm → m) ve Model Kurulumu
+% mm ile verilen ızgara değişkenlerini SI tabanlı modele geri yazar.
 function P = decode_params_from_x(params_base_, x_)
-    % decode_params_from_x Ã¢â‚¬â€ Karar vektÃƒÂ¶rÃƒÂ¼nden fiziksel parametreleri tÃƒÂ¼retir
-    % Birim dÃƒÂ¶nÃƒÂ¼Ã…Å¸ÃƒÂ¼mleri: [mm] Ã¢â€ â€™ [m], Cd [-]:, p_exp [-]:, hA_W_perK [W/K], ÃÂ¼_ref [PaÃ‚Â·s]
-    % Boyut kontrolÃƒÂ¼: Uzunluklar 1e-3 ÃƒÂ§arpanÃ„Â± ile metreye ÃƒÂ§evrilir.
+% DECODE_PARAMS_FROM_X karar vektörünü parametre yapısına çözer.
+% Amaç ve Kapsam: GA çıktısını build_params tarafından beklenen SI birimli
+%   yapı formatına döndürmek.
+% Girdiler:
+%   params_base_ [-]: Referans parametre yapısı.
+%   x_ [-]: [d_o_mm, n_orf, Cd0, CdInf, p_exp, Lori_mm, hA_W_perK, Dp_mm,
+%          d_w_mm, D_m_mm, n_turn, mu_ref] karar vektörü.
+% Çıktılar:
+%   P [-]: SI birimlerine dönüştürülmüş parametre yapısı.
+% Varsayımlar ve Sınırlar:
+%   - Geometri girişleri mm cinsindedir ve 1e-3 ile çarpılarak metreye çevrilir.
+%   - n_orf ve n_turn tamsayıya yuvarlanır.
+% Ölçüler/Birimler: d_o = d_o_mm·1e−3 [m], Lori = Lori_mm·1e−3 [m], Dp_mm·1e−3 [m],
+%   d_w_mm·1e−3 [m], D_m_mm·1e−3 [m], hA_W_perK [W/K], mu_ref [Pa·s].
+% Yöntem Özeti: params_base_ kopyalanır, 1e−3 faktörleri ile mm→m dönüşümü
+%   yapılır ve build_params çağrısı ile bağlı parametreler güncellenir.
+    % decode_params_from_x — Karar vektöründen fiziksel parametreleri türetir
+    % Birim dönüşümleri: [mm] → [m], Cd [-]:, p_exp [-]:, hA_W_perK [W/K], μ_ref [Pa·s]
+    % Boyut kontrolü: Uzunluklar 1e-3 çarpanı ile metreye çevrilir.
     d_o_mm = x_(1); n_orf = round(x_(2));
     Cd0 = x_(3); CdInf = x_(4); p_exp = x_(5);
     Lori_mm = x_(6); hA_W_perK = x_(7);
@@ -643,6 +839,25 @@ function P = decode_params_from_x(params_base_, x_)
     P = build_params(P);
 end
 function [state, options, optchanged] = ga_out_best_pen(options, state, flag, scaled, params, optsEval)
+% GA_OUT_BEST_PEN GA iterasyonlarında en iyi tasarımı raporlar.
+% Amaç ve Kapsam: Iteratif pen, f1, f2 değerlerini stdout'a yazmak ve
+%   meta veriyi güncel tutmak.
+% Girdiler:
+%   options [-]: GA seçenek yapısı.
+%   state [-]: GA durum yapısı (Population, Score vb.).
+%   flag [-]: GA callback bayrağı.
+%   scaled [-]: Ölçekli kayıt seti (memo cache için).
+%   params [-]: Parametre yapısı.
+%   optsEval [-]: Değerlendirme seçenekleri.
+% Çıktılar:
+%   state [-]: Değiştirilmeden geri döner.
+%   options [-]: Değiştirilmeden geri döner.
+%   optchanged [-]: false; callback ayarları değiştirmez.
+% Varsayımlar ve Sınırlar:
+%   - state.Score sütunu [f_pen, f1, f2] sıralamasını içerir.
+% Ölçüler/Birimler: f_pen [-]:, f1 [m/s²], f2 [-]:.
+% Yöntem Özeti: Score matrisini leksikografik olarak sıralar, en iyi bireyin
+%   eval_design_fast değerini hesaplar ve fprintf ile kaydeder.
     optchanged = false;
     if strcmp(flag,'iter') && ~isempty(state.Score)
         scores = state.Score;                 % [f_pen, f1, f2]
@@ -655,11 +870,20 @@ function [state, options, optchanged] = ga_out_best_pen(options, state, flag, sc
 end
 
 function [scaled, params, T1] = prepare_inputs(optsGA)
-%PREPARE_INPUTS Self-contained input assembly for the GA driver.
-%   [SCALED, PARAMS, T1] = PREPARE_INPUTS(OPTSGA) builds the baseline
-%   parameter struct and loads the ground-motion set using the options in
-%   OPTSGA. The helper uses the local PARAMETRELER_DEFAULTS and
-%   LOAD_GROUND_MOTIONS functions so no external scripts are required.
+% PREPARE_INPUTS GA sürücüsü için veri ve parametreleri toparlar.
+% Amaç ve Kapsam: Varsayılan parametreleri kurar ve yer hareketi kayıtlarını
+%   yükler.
+% Girdiler:
+%   optsGA [-]: Yükleme seçenekleri (load_opts alanı isteğe bağlı).
+% Çıktılar:
+%   scaled [-]: Ölçekli kayıt seti.
+%   params [-]: Parametre yapısı (SI birimleri).
+%   T1 [s]: Birinci mod periyodu.
+% Varsayımlar ve Sınırlar:
+%   - load_opts yoksa parametreler_defaults tarafından belirlenen kayıtlar kullanılır.
+% Ölçüler/Birimler: T1 [s], diğer alanlar build_params birimlerine uygundur.
+% Yöntem Özeti: parametreler_defaults çağrılır, load_opts varsa load_ground_motions
+%   ile veri seti okunur.
 
 if nargin < 1 || isempty(optsGA)
     optsGA = struct();
@@ -676,10 +900,21 @@ end
 end
 
 function [params, T1] = parametreler_defaults()
-%PARAMETRELER_DEFAULTS Baseline structural and damper parameters.
-%   [PARAMS, T1] = PARAMETRELER_DEFAULTS() reproduces the configuration from
-%   the original parametreler.m script and returns the assembled parameter
-%   struct together with the first-mode period T1.
+% PARAMETRELER_DEFAULTS yapı ve damper varsayılanlarını kurar.
+% Amaç ve Kapsam: 10 katlı kesme çerçevesi ve damper özelliklerini SI
+%   birimlerinde oluşturmak.
+% Girdiler: Yok.
+% Çıktılar:
+%   params [-]: Yapı ve damper parametrelerini içeren yapı.
+%   T1 [s]: Birinci mod periyodu.
+% Varsayımlar ve Sınırlar:
+%   - Kat sayısı n = 10 sabittir.
+%   - Kütle, rijitlik ve sönüm değerleri eş dağıtılmıştır.
+% Ölçüler/Birimler: m [kg], k [N/m], c [N·s/m], uzunluklar [m], sıcaklık [°C],
+%   viskozite [Pa·s], yoğunluk [kg/m³].
+% Yöntem Özeti: Kat kütleleri, rijitlik ve sönüm matrisleri oluşturulur,
+%   eig ile T1 hesaplanır, damper geometri verileri mm→m olarak tanımlanır,
+%   orifis ve termal parametreler eklenir.
 
 %% --- 1) Structure (10 story shear building) ---
 n  = 10;
@@ -780,20 +1015,34 @@ params = build_params(params);
 
 end
 
+%% Kayıtların Pencereli Analizi (Arias)
+% Arias yoğunluğu pencereleri (t5–t95) üzerinden toplu değerlendirme yapılır.
 function [summary, all_out] = run_batch_windowed(scaled, params, opts)
-%RUN_BATCH_WINDOWED Pencereli metriklerle birden fazla kaydÃ„Â± analiz eder.
-%   [SUMMARY, ALL_OUT] = RUN_BATCH_WINDOWED(SCALED, PARAMS, OPTS) fonksiyonu,
-%   SCALED yapÃ„Â± dizisindeki her yer hareketi kaydÃ„Â±nÃ„Â±
-%   RUN_ONE_RECORD_WINDOWED ile iÃ…Å¸ler ve temel metriklerin ÃƒÂ¶zet tablosunu
-%   dÃƒÂ¶ndÃƒÂ¼rÃƒÂ¼r. ALL_OUT hÃƒÂ¼cre dizisi her kayÃ„Â±t iÃƒÂ§in tam ÃƒÂ§Ã„Â±ktÃ„Â±larÃ„Â± iÃƒÂ§erir.
-%   PARAMS, yapÃ„Â±sal ve damper ÃƒÂ¶zelliklerini; OPTS ise
-%   RUN_ONE_RECORD_WINDOWED'e iletilen ayarlarÃ„Â± barÃ„Â±ndÃ„Â±rÃ„Â±r.
+% RUN_BATCH_WINDOWED pencere tabanlı çoklu kayıt çözümleyicisidir.
+% Amaç ve Kapsam: scaled kayıtlarının her biri için run_one_record_windowed
+%   çağırarak pencere metriklerini ve QC bayraklarını toparlar.
+% Girdiler:
+%   scaled [-]: Ölçekli kayıt dizisi.
+%   params [-]: Yapı ve damper parametreleri (build_params çıktısı).
+%   opts [-]: Pencere, termal politika ve QC eşiklerini içeren yapı.
+% Çıktılar:
+%   summary [-]: Tablo ve bayraklardan oluşan özet yapı.
+%   all_out [-]: Her kayıt için ayrıntılı çıktı hücre dizisi.
+% Varsayımlar ve Sınırlar:
+%   - params.thermal.hA_W_perK mevcut olmalıdır.
+%   - opts.thr eksikse compute_thr ile türetilir.
+% Ölçüler/Birimler: Zaman [s], PFA [m/s²], IDR [-]:, T_end [°C], μ_end [Pa·s],
+%   P_mech_sum [J], Q [m³/s].
+% Yöntem Özeti: rbw_prepare_inputs dizileri hazırlar; rbw_record_loop Arias
+%   yoğunluğu pencerelerini kullanarak run_one_record_windowed çağrılarını
+%   sıralar. Elde edilen vars yapısı rbw_build_summary_table ile QC ve ceza
+%   özetine dönüştürülür.
 
 if nargin < 3, opts = struct(); end
 if ~isfield(opts,'thr'), opts.thr = struct(); end
 opts.thr = compute_thr(params, opts.thr);
 
-% Ã„Â°stenirse kayÃ„Â±tlarÃ„Â±n yÃƒÂ¼rÃƒÂ¼tÃƒÂ¼lme sÃ„Â±rasÃ„Â± yeniden dÃƒÂ¼zenlenir
+% İstenirse kayıtların yürütülme sırası yeniden düzenlenir
 if isfield(opts,'order_perm')
     scaled = scaled(opts.order_perm);
 end
@@ -801,21 +1050,34 @@ end
 assert(isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), ...
     'run_batch_windowed: params.thermal.hA_W_perK eksik');
 
-%% Girdi HazÃ„Â±rlÃ„Â±Ã„Å¸Ã„Â±
+%% Girdi Hazırlığı
 n = numel(scaled);
 vars = rbw_prepare_inputs(n, params, opts);
 
-%% KayÃ„Â±t DÃƒÂ¶ngÃƒÂ¼sÃƒÂ¼
+%% Kayıt Döngüsü
 vars = rbw_record_loop(scaled, params, opts, vars);
 
-%% Ãƒâ€“zet Tablo
+%% Özet Tablo
 summary = rbw_build_summary_table(vars, opts);
 all_out = vars.all_out;
 
 end
 
 function vars = rbw_prepare_inputs(n, params, opts)
-%PREPARE_INPUTS Ãƒâ€¡alÃ„Â±Ã…Å¸ma iÃƒÂ§in gerekli dizileri hazÃ„Â±rla
+% RBW_PREPARE_INPUTS pencere analizi için veri kapsayıcılarını oluşturur.
+% Amaç ve Kapsam: run_batch_windowed içindeki kayıt döngüsüne giriş sağlayacak
+%   dizileri başlatır.
+% Girdiler:
+%   n [-]: Kayıt sayısı.
+%   params [-]: Parametre yapısı (termal politika bilgisi için).
+%   opts [-]: Termal ve sıralama politikası seçenekleri.
+% Çıktılar:
+%   vars [-]: Boş diziler ve meta bilgileri içeren yapı.
+% Varsayımlar ve Sınırlar:
+%   - opts.thermal_reset ∈ {'each','carry','cooldown'} olarak kullanılır.
+% Ölçüler/Birimler: Zaman [s], sıcaklık [°C], viskozite [Pa·s], basınç [Pa].
+% Yöntem Özeti: util_getfield_default ile politikalar okunur, her metrik için
+%   sıfır vektörler oluşturulur.
 vars = struct();
 vars.all_out = cell(n,1);
 vars.names    = cell(n,1);
@@ -867,7 +1129,22 @@ vars.mu_ref_col  = repmat(util_getfield_default(params,'mu_ref',NaN), n,1);
 end
 
 function vars = rbw_record_loop(scaled, params, opts, vars)
-%RECORD_LOOP Her kaydÃ„Â± pencere analizine tabi tutar
+% RBW_RECORD_LOOP her kaydı Arias penceresi ile işler.
+% Amaç ve Kapsam: run_one_record_windowed çağrıları yaparak vars yapılarını
+%   doldurur.
+% Girdiler:
+%   scaled [-]: Ölçekli kayıt dizisi.
+%   params [-]: Parametre yapısı.
+%   opts [-]: Termal ve pencere seçenekleri.
+%   vars [-]: rbw_prepare_inputs tarafından başlatılmış yapı.
+% Çıktılar:
+%   vars [-]: Metrikler ve meta bilgilerle güncellenmiş yapı.
+% Varsayımlar ve Sınırlar:
+%   - run_one_record_windowed termal politikayı prev_ts üzerinden takip eder.
+% Ölçüler/Birimler: Zaman [s], PFA [m/s²], IDR [-]:, dP95 [Pa], Qcap95 [-]:,
+%   cav_pct [%], T_end [°C], μ_end [Pa·s], P_mech_sum [J].
+% Yöntem Özeti: Önceki kaydın termal durumunu taşımak için prev_ts değişkeni
+%   saklanır; çıkış metrikleri vars alanlarına aktarılır.
 prev_ts = [];
 for k = 1:numel(scaled)
     rec = scaled(k);
@@ -911,7 +1188,22 @@ end
 end
 
 function summary = rbw_build_summary_table(vars, opts)
-%BUILD_SUMMARY_TABLE Hesaplanan metrikleri tabloya dÃƒÂ¶nÃƒÂ¼Ã…Å¸tÃƒÂ¼r ve QC uygula
+% RBW_BUILD_SUMMARY_TABLE kayıt bazlı metriklerden özet yapı oluşturur.
+% Amaç ve Kapsam: vars alanlarını tabloya çevirerek QC bayraklarını hesaplar.
+% Girdiler:
+%   vars [-]: rbw_record_loop tarafından doldurulan yapı.
+%   opts [-]: QC eşiklerini içeren yapı (thr alanı gereklidir).
+% Çıktılar:
+%   summary [-]: table ve all_out alanlarını içeren özet.
+% Varsayımlar ve Sınırlar:
+%   - opts.thr alanı T_end_max [°C], μ_end_min [Pa·s], dP95_max [Pa],
+%     Qcap95_max [-]: değerlerini sağlar.
+% Ölçüler/Birimler: Tablo sütunları PFA [m/s²], IDR [-]:, dP95 [Pa],
+%   Qcap95 [-]:, cav_pct [%], enerji [J], T_end [°C], μ_end [Pa·s].
+% Yöntem Özeti: QC bayrakları thr ile karşılaştırılır; ok_cav yalnızca cav_pct = 0
+%   olduğunda true olup sıfır kavitasyon şartını temsil eder. Ancak penalty
+%   tarafında cav_free ölü-bölgesi cav_pct < cav_free için ceza üretmez.
+%   qc_reason alanı başarısız eşikleri listeler, summary.table tabloya dönüştürür.
 summary = struct();
 
 thr = opts.thr;
@@ -944,29 +1236,32 @@ summary.table = table(vars.names, vars.scale, vars.SaT1, vars.t5, vars.t95, vars
 summary.all_out = vars.all_out;
 end
 
-%% KayÃ„Â±t Analiz Fonksiyonu
+%% Kayıt Analiz Fonksiyonu
 function out = run_one_record_windowed(rec, params, opts, prev_ts)
-%RUN_ONE_RECORD_WINDOWED Pencereli metriklerle tek yer hareketini analiz eder.
-%   OUT = RUN_ONE_RECORD_WINDOWED(REC, PARAMS, OPTS, PREV_TS) ÃƒÂ¶lÃƒÂ§ekli kayÃ„Â±t
-%   REC iÃƒÂ§in doÃ„Å¸rusal olmayan sÃƒÂ¶nÃƒÂ¼mleyici modeli ÃƒÂ§alÃ„Â±Ã…Å¸tÃ„Â±rÃ„Â±r ve Arias yoÃ„Å¸unluÃ„Å¸u
-%   tabanlÃ„Â± bir zaman penceresi iÃƒÂ§inde performans metriklerini hesaplar. PARAMS
-%   yapÃ„Â±sÃ„Â±, yapÃ„Â± ve sÃƒÂ¶nÃƒÂ¼mleyici ÃƒÂ¶zelliklerini (bkz. PARAMETRELER.M) iÃƒÂ§erir.
-%   OPTS davranÃ„Â±Ã…Å¸Ã„Â± kontrol eder:
-%       window        - MAKE_ARIAS_WINDOW fonksiyonuna iletilen ayarlar
-%       thermal_reset - 'each', 'carry' veya 'cooldown'
-%       cooldown_s    - 'cooldown' modu iÃƒÂ§in soÃ„Å¸uma sÃƒÂ¼resi [s]
-%   PREV_TS, kayÃ„Â±tlara arasÃ„Â±nda termal durumu taÃ…Å¸Ã„Â±mak iÃƒÂ§in isteÃ„Å¸e baÃ„Å¸lÃ„Â± bir
-%   zaman serisi yapÃ„Â±sÃ„Â±na sahiptir.
-%
-%   OUT yapÃ„Â±sÃ„Â±; name, scale, SaT1, win, metr, ts, qc_pass, T_start,
-%   T_end, mu_end, clamp_hits, PFA, IDR, dP95,
-%   Qcap95, cav_pct, t5, t95 ve coverage alanlarÃ„Â±nÃ„Â± iÃƒÂ§erir. TS
-%   yalnÃ„Â±zca COMPUTE_METRICS_WINDOWED iÃƒÂ§in gerekli zaman serilerini barÃ„Â±ndÃ„Â±rÃ„Â±r.
-%
-%   Bu fonksiyon MCK_WITH_DAMPER ve COMPUTE_METRICS_WINDOWED
-%   fonksiyonlarÃ„Â±nÃ„Â± kullanÃ„Â±r.
+% RUN_ONE_RECORD_WINDOWED tek bir kayıt için Arias pencereli analizi yürütür.
+% Amaç ve Kapsam: mck_with_damper çözümü ile zaman serilerini üretir ve
+%   compute_metrics_windowed üzerinden pencere metriklerini toplar.
+% Girdiler:
+%   rec [-]: Ölçekli yer hareketi kaydı (alanlar: name, scale, SaT1, ag, dt).
+%   params [-]: Yapı ve damper parametreleri.
+%   opts [-]: Pencere ayarları (window), termal politika (thermal_reset, cooldown_s)
+%          ve QC seçenekleri.
+%   prev_ts [-]: Önceki kayıt sonundan taşınan termal zaman serisi (opsiyonel).
+% Çıktılar:
+%   out [-]: name, scale, win, metr, ts, qc_pass, T_start [°C], T_end [°C],
+%         μ_end [Pa·s], clamp_hits [-], enerji ve akış metriklerini içeren yapı.
+% Varsayımlar ve Sınırlar:
+%   - rec.ag zaman serisi [m/s²] olarak sağlanır.
+%   - Termal reset politikası 'each', 'carry' veya 'cooldown' değerlerinden biridir.
+% Ölçüler/Birimler: Zaman [s], hız [m/s], ivme [m/s²], sıcaklık [°C],
+%   viskozite [Pa·s], basınç [Pa], akış [m³/s], enerji [J].
+% Yöntem Özeti: util_make_arias_window ile t5–t95 aralığı oluşturulur;
+%   mck_with_damper kayıt boyunca çözülür. P_mech ≈ Σ(Δp·q·Δt) ilişkisi üzerinden
+%   compute_metrics_windowed enerji ve güç metriklerini hesaplar. Termal modlar
+%   cooldown_s süresi kadar bekleme, doğrudan taşıma veya her kayıt sonrası reset
+%   seçenekleri ile uygulanır.
 
-% varsayÃ„Â±lan argÃƒÂ¼manlar
+% varsayılan argümanlar
 if nargin < 4, prev_ts = []; end
 if nargin < 3 || isempty(opts), opts = struct(); end
 
@@ -977,7 +1272,7 @@ if isfield(opts,'thermal_reset') && strcmpi(opts.thermal_reset,'cooldown')
     opts.cooldown_s = max(opts.cooldown_s,0);
 end
 
-% QC eÃ…Å¸ikleri (eksik alanlar varsayÃ„Â±lanlarla doldurulur)
+% QC eşikleri (eksik alanlar varsayılanlarla doldurulur)
 if ~isfield(opts,'thr'), opts.thr = struct(); end
 thr = compute_thr(params, opts.thr);
 
@@ -985,7 +1280,7 @@ assert(isfield(params,'thermal') && isfield(params.thermal,'hA_W_perK'), ...
     'run_one_record_windowed: params.thermal.hA_W_perK eksik');
 
 
-%% Pencere HazÃ„Â±rlÃ„Â±Ã„Å¸Ã„Â±
+%% Pencere Hazırlığı
 if isfield(opts,'window') && ~isempty(opts.window)
     wfields = fieldnames(opts.window);
     wargs = cell(1,2*numel(wfields));
@@ -999,9 +1294,9 @@ else
 end
 
 
-% ham ve ÃƒÂ¶lÃƒÂ§ekli kayÃ„Â±t karÃ…Å¸Ã„Â±laÃ…Å¸tÃ„Â±rmasÃ„Â± kaldÃ„Â±rÃ„Â±ldÃ„Â± (ÃƒÂ¼st seviyede kullanÃ„Â±lmÃ„Â±yor)
+% ham ve ölçekli kayıt karşılaştırması kaldırıldı (üst seviyede kullanılmıyor)
 
-%% Termal SÃ„Â±fÃ„Â±rlama
+%% Termal Sıfırlama
 Tinit = params.T0_C;
 if isfield(opts,'thermal_reset')
     mode = opts.thermal_reset;
@@ -1037,8 +1332,8 @@ switch mode
         Tinit = params.T0_C;
 end
 
-%% Damperli Ãƒâ€¡ÃƒÂ¶zÃƒÂ¼m
-% Damperli ÃƒÂ§ÃƒÂ¶zÃƒÂ¼m mck_with_damper fonksiyonu ÃƒÂ¼zerinden yÃƒÂ¼rÃƒÂ¼tÃƒÂ¼lÃƒÂ¼r.
+%% Damperli Çözüm
+% Damperli çözüm mck_with_damper fonksiyonu üzerinden yürütülür.
 
 mu_ref_eff   = params.mu_ref;
 c_lam0_eff   = params.c_lam0;
@@ -1064,7 +1359,7 @@ end
 
 metr = compute_metrics_windowed(rec.t, x, a_rel, rec.ag, ts, params.story_height, win, params);
 
-% Nominal koÃ…Å¸u iÃƒÂ§in son termal ve viskozite durumlarÃ„Â± kaydedilir
+% Nominal koşu için son termal ve viskozite durumları kaydedilir
 T_start = Tinit;
 if isfield(ts,'T_oil')
     T_end = ts.T_oil(end);
@@ -1086,7 +1381,7 @@ qc_pass = (metr.cav_pct <= thr.cav_pct_max) && ...
           (T_end <= thr.T_end_max) && ...
           (mu_end >= thr.mu_end_min);
 
-%% Ãƒâ€¡Ã„Â±ktÃ„Â±larÃ„Â±n Derlenmesi
+%% Çıktıların Derlenmesi
 out = struct('name', rec.name, ...
     'scale', util_getfield_default(rec,'scale',1), ...
     'SaT1', util_getfield_default(rec,'IM',NaN), ...
@@ -1096,7 +1391,7 @@ out = struct('name', rec.name, ...
     'PFA', metr.PFA, 'IDR', metr.IDR, 'dP95', metr.dP95, 'Qcap95', metr.Qcap95, ...
     'cav_pct', metr.cav_pct, 't5', win.t5, 't95', win.t95, 'coverage', win.coverage);
 
-% Yeni parametreleri isteÃ„Å¸e baÃ„Å¸lÃ„Â± olarak kaydet
+% Yeni parametreleri isteğe bağlı olarak kaydet
 param_fields = {'Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref'};
 for ii = 1:numel(param_fields)
     fn = param_fields{ii};
@@ -1107,42 +1402,58 @@ end
 end
 
 function metr = compute_metrics_windowed(t, x, a_rel, ag, ts, story_height, win, params)
-% compute_metrics_windowed Ã¢â‚¬â€ Zaman penceresi iÃƒÂ§inde tepkileri ve enerji dengelerini derler
-% Pencere iÃƒÂ§i metrikler: PFA [m/sÃ‚Â²], IDR [-], dP95 [Pa], Qcap95 [-], cav_pct [-],
-%   enerji toplamlarÃ„Â± [J], ortalama gÃƒÂ¼ÃƒÂ§ [W], Re_max [-].
-% Enerji oranÃ„Â±: E_ratio = E_orifice_sum / max(E_struct_sum, ÃÂµ) ile tanÃ„Â±mlanÃ„Â±r;
-%   ÃÂµ Ã¢â€°Ë† 1e-9 J alÃ„Â±narak boyut analizi korunur. Ãâ€pÃ‚Â·q ve c_lamÃ‚Â·Ãâ€vÃ‚Â² gÃƒÂ¼ÃƒÂ§ terimlerinin
-%   boyutu [W]; zaman integralleri [J] ÃƒÂ¼retir.
-% VarsayÃ„Â±mlar: WIN.idx mantÃ„Â±ksal pencere, story_height [m], ts.dvel [m/s].
-%   Termal durum ve viskozite [PaÃ‚Â·s] ts.mu iÃƒÂ§inde bulunur.
+% COMPUTE_METRICS_WINDOWED pencere içi performans metriklerini hesaplar.
+% Amaç ve Kapsam: Arias penceresiyle sınırlanan veri üzerinde hidrolik ve yapısal
+%   performans göstergelerini üretmek.
+% Girdiler:
+%   t [s]: Zaman vektörü.
+%   x [m]: Kat göreli yer değiştirmeleri matrisi.
+%   a_rel [m/s²]: Göreli ivmeler.
+%   ag [m/s²]: Taban ivmesi.
+%   ts [-]: Termal ve hidrolik zaman serileri (dP_orf [Pa], Q [m³/s], mu [Pa·s], dvel [m/s], cav_mask [-]:).
+%   story_height [m]: Kat yüksekliği.
+%   win [-]: Arias penceresi (idx mantıksal maskesi, t5, t95, coverage).
+%   params [-]: Model parametreleri (Qcap_big [m³/s], Ap [m²], Ao [m²], rho [kg/m³], orf bilgileri).
+% Çıktılar:
+%   metr [-]: PFA [m/s²], IDR [-]:, dP95 [Pa], Qcap95 [-]:, cav_pct [%], enerji
+%           bileşenleri [J], P_mech_sum [J], Re_max [-]: gibi alanları içeren yapı.
+% Varsayımlar ve Sınırlar:
+%   - win.idx pencere içinde true/false maskesidir.
+%   - ts alanları pencerede yeterli uzunluğa sahiptir.
+% Ölçüler/Birimler: Enerji terimleri [J], güç terimleri [W], kavite oranı [%],
+%   Reynolds sayısı [-]:, sıcaklık [°C] (ts içinde), viskozite [Pa·s].
+% Yöntem Özeti: Tepe ivme ve ötelenme hesaplanır; quantile ile dP ve Q
+%   istatistikleri türetilir. P_mech ≈ Σ(Δp·q·Δt) ilişkisi kullanılarak enerji
+%   bileşenleri elde edilir; yapısal enerjiye göre E_ratio hesaplanır. Kavitasyon
+%   maskesi ile cav_pct belirlenir.
 
 idx = win.idx;
 
 %% Temel Tepki
-% Bu bÃƒÂ¶lÃƒÂ¼m, tepe kat ivmesi ve katlar arasÃ„Â± gÃƒÂ¶reli hareketler gibi yapÃ„Â±sal
-% yanÃ„Â±tÃ„Â±n temel gÃƒÂ¶stergelerini hesaplar.
-% Tepe katÃ„Â±n mutlak ivmesi
+% Bu bölüm, tepe kat ivmesi ve katlar arası göreli hareketler gibi yapısal
+% yanıtın temel göstergelerini hesaplar.
+% Tepe katın mutlak ivmesi
 a_top_abs = a_rel(:,end) + ag(:);
 metr.PFA = max(abs(a_top_abs(idx)));
 
-% Pencere iÃƒÂ§indeki tepe kat mutlak yerdeÃ„Å¸iÃ…Å¸tirmesi ve ivmesi
+% Pencere içindeki tepe kat mutlak yerdeğiştirmesi ve ivmesi
 metr.x10_max_damperli    = max(abs(x(idx,end)));
 metr.a10abs_max_damperli = max(abs(a_top_abs(idx)));
 
-% Katlar arasÃ„Â± gÃƒÂ¶reli ÃƒÂ¶telenme oranÃ„Â±nÃ„Â±n maksimumu
+% Katlar arası göreli ötelenme oranının maksimumu
 drift = (x(:,2:end) - x(:,1:end-1)) / story_height;
 metr.IDR = max(max(abs(drift(idx,:))));
 
-%% Kat BazlÃ„Â± Ã„Â°statistikler
-% Her kat iÃƒÂ§in yÃƒÂ¼zde 50 ve yÃƒÂ¼zde 95'lik deÃ„Å¸erler ile kavitasyon oranÃ„Â±
-% gibi istatistikler hesaplanÃ„Â±r.
+%% Kat Bazlı İstatistikler
+% Her kat için yüzde 50 ve yüzde 95'lik değerler ile kavitasyon oranı
+% gibi istatistikler hesaplanır.
 
 abs_dP = abs(ts.dP_orf(idx,:));
 abs_Q  = abs(ts.Q(idx,:));
 Qcap_ratio = abs_Q ./ max(params.Qcap_big, eps);
 abs_story_force = abs(ts.story_force(idx,:));
 
-% Reynolds sayÃ„Â±sÃ„Â±nÃ„Â±n pencere iÃƒÂ§indeki maksimumu
+% Reynolds sayısının pencere içindeki maksimumu
 metr.Re_max = NaN;
 if all(isfield(params,{'Qcap_big','Ap','Ao','rho','orf'})) && isfield(ts,'mu') && isfield(ts,'dvel') && ...
         isstruct(params.orf) && all(isfield(params.orf,{'veps','d_o'}))
@@ -1158,7 +1469,7 @@ if all(isfield(params,{'Qcap_big','Ap','Ao','rho','orf'})) && isfield(ts,'mu') &
     metr.Re_max = max(Re,[],'all');
 end
 
-% 50. ve 95. yÃƒÂ¼zdelik deÃ„Å¸erler
+% 50. ve 95. yüzdelik değerler
 dP_q50         = quantile(abs_dP, 0.50);
 dP_q95         = quantile(abs_dP, 0.95);
 Q_q50          = quantile(abs_Q, 0.50);
@@ -1166,14 +1477,14 @@ Q_q95          = quantile(abs_Q, 0.95);
 Qcap95 = quantile(Qcap_ratio, 0.95);
 story_force_q95= quantile(abs_story_force, 0.95);
 
-% Her kat iÃƒÂ§in ortalama kavitasyon yÃƒÂ¼zdesi
+% Her kat için ortalama kavitasyon yüzdesi
 cav_mean = mean(ts.cav_mask(idx,:),1);
 
-% Hikaye kesme kuvvetine gÃƒÂ¶re kritik katÃ„Â±n belirlenmesi
+% Hikaye kesme kuvvetine göre kritik katın belirlenmesi
 [metr.story_force_q95, metr.which_story] = max(story_force_q95);
 ws = metr.which_story;
 
-% Kritik katÃ„Â±n istatistiklerinin saklanmasÃ„Â±
+% Kritik katın istatistiklerinin saklanması
 metr.dP95   = dP_q95(ws);
 metr.dP50   = dP_q50(ws);
 metr.Q_q95  = Q_q95(ws);
@@ -1181,37 +1492,37 @@ metr.Q_q50  = Q_q50(ws);
 metr.Qcap95 = Qcap95(ws);
 metr.cav_pct         = cav_mean(ws);
 
-%% Enerji HesaplarÃ„Â±
-% Pencerede ve tÃƒÂ¼m sÃƒÂ¼reÃƒÂ§te biriken enerji bileÃ…Å¸enleri deÃ„Å¸erlendirilir.
+%% Enerji Hesapları
+% Pencerede ve tüm süreçte biriken enerji bileşenleri değerlendirilir.
 w_first = find(idx,1,'first');
 w_last  = find(idx,1,'last');
 i0 = max(w_first-1,1);
 
-% Toplam sÃƒÂ¼reÃƒÂ§ sonundaki orifis ve yapÃ„Â± enerjileri
+% Toplam süreç sonundaki orifis ve yapı enerjileri
 metr.E_orifice_sum = ts.E_orf(end);
 metr.E_struct_sum  = ts.E_struct(end);
 metr.E_ratio   = metr.E_orifice_sum / max(metr.E_struct_sum, eps);
-% Toplam enerji ve ortalama mekanik gÃƒÂ¼ÃƒÂ§
+% Toplam enerji ve ortalama mekanik güç
 metr.energy_tot_sum = metr.E_orifice_sum + metr.E_struct_sum;
 metr.P_mech_sum = NaN;
 if isfield(ts,'P_sum') && ~isempty(ts.P_sum)
     metr.P_mech_sum = mean(ts.P_sum(idx));
 end
 
-% SeÃƒÂ§ilen pencere iÃƒÂ§indeki enerji birikimleri
+% Seçilen pencere içindeki enerji birikimleri
 metr.E_orifice_win = ts.E_orf(w_last) - ts.E_orf(i0);
 metr.E_struct_win  = ts.E_struct(w_last) - ts.E_struct(i0);
 metr.E_ratio_win   = metr.E_orifice_win / max(metr.E_struct_win, eps);
 
 %% Termal Metrikler
-% YaÃ„Å¸ viskozitesi gibi termal bÃƒÂ¼yÃƒÂ¼klÃƒÂ¼kler deÃ„Å¸erlendirilir.
+% Yağ viskozitesi gibi termal büyüklükler değerlendirilir.
 if isfield(ts,'mu')
     metr.mu_end = ts.mu(w_last);
 else
     metr.mu_end = NaN;
 end
 
-% ---------------- SÃ„Â±cak viskozite ile modal sÃƒÂ¶nÃƒÂ¼m -------------------
+% ---------------- Sıcak viskozite ile modal sönüm -------------------
 req_fields = {'M','K','C0','k_sd'};
 if all(isfield(params,req_fields)) && isfield(ts,'c_lam')
     M  = params.M;  K = params.K;  C0 = params.C0;
@@ -1223,7 +1534,7 @@ if all(isfield(params,req_fields)) && isfield(ts,'c_lam')
     Cadd = zeros(size(M));
     for i=1:nStories
         idx2 = [i i+1];
-        % R katsayÃ„Â±sÃ„Â± lineer olarak kullanÃ„Â±lÃ„Â±r (R), karesi (R^2) alÃ„Â±nmaz
+        % R katsayısı lineer olarak kullanılır (R), karesi (R^2) alınmaz
         k_eq = k_sd;
         c_eq = c_lam;
         kM = k_eq * [1 -1; -1 1];
@@ -1249,7 +1560,7 @@ else
 end
 
 
-% Parametrelerden gerekli alanlar kayÃ„Â±t altÃ„Â±na alÃ„Â±nÃ„Â±r
+% Parametrelerden gerekli alanlar kayıt altına alınır
 param_fields = {'Dp_mm','d_w_mm','D_m_mm','n_turn','mu_ref'};
 for ii = 1:numel(param_fields)
     fn = param_fields{ii};
@@ -1260,42 +1571,72 @@ end
 
 end
 
+% MCK_WITH_DAMPER damperli çok serbestlik dereceli sistemi çözer.
+% Amaç ve Kapsam: Yapısal M, C, K matrislerini viskoz damper modeliyle
+%   birleştirir, termal ve hidrolik durumları günceller ve zaman serilerini üretir.
+% Girdiler:
+%   t [s]: Zaman vektörü.
+%   ag [m/s²]: Taban ivmesi.
+%   M [kg]: Kütle matrisi.
+%   C [N·s/m]: Sönüm matrisi (pasif + laminer katkı).
+%   K [N/m]: Rijitlik matrisi.
+%   k_sd [N/m]: Seri yay rijitliği.
+%   c_lam0 [N·s/m]: Laminer sönüm referansı.
+%   Lori [m]: Çalışma uzunluğu.
+%   orf [-]: Orifis parametre yapısı (Cd0, CdInf, p_exp, vs.).
+%   rho [kg/m³], Ap [m²], Ao [m²], Qcap [m³/s], mu_ref [Pa·s]: Akış ve viskozite parametreleri.
+%   thermal [-]: Termal ayarlar (hA_W_perK [W/K], T_env_C [°C], vb.).
+%   T0_C [°C], T_ref_C [°C], b_mu [1/°C], c_lam_min [N·s/m], c_lam_cap [N·s/m], Lgap [m].
+%   cp_oil [J/(kg·K)], cp_steel [J/(kg·K)], steel_to_oil_mass_ratio [-]:, story_mask [-]:.
+%   n_dampers_per_story [-]: Damper adedi; resFactor [-]: çözünürlük ölçeği; cfg [-]: çözüm ayarları.
+% Çıktılar:
+%   x [m]: Kat göreli yer değiştirmeleri.
+%   a_rel [m/s²]: Kat göreli ivmeleri.
+%   ts [-]: Basınç, debi, enerji ve termal tarihçeleri içeren yapı.
+% Varsayımlar ve Sınırlar:
+%   - Laminer sönüm c_lam ≥ c_lam_min ve ≤ c_lam_cap ile sınırlandırılır.
+%   - Orifis modeli Cd(Re) bağıntısını ve kavitasyon sınırını uygular.
+% Ölçüler/Birimler: Δp [Pa], q [m³/s], enerji [J], sıcaklık [°C], viskozite [Pa·s].
+% Yöntem Özeti: Doğrusal MCK sistemi laminer ve seri yay katkılarıyla güncellenir,
+%   orifis basınç düşümü ve kavitasyon `util_softmin` ile harmanlanır, termal
+%   durum `util_compute_Cth_effective` ile izlenir ve zaman integrasyonu `ode15s`
+%   kullanılarak gerçekleştirilir.
 function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap,Ao,Qcap, mu_ref, ...
     thermal, T0_C,T_ref_C,b_mu, c_lam_min,c_lam_cap,Lgap, ...
     cp_oil,cp_steel, steel_to_oil_mass_ratio, story_mask, ...
     n_dampers_per_story, resFactor, cfg)
-% mck_with_damper Ã¢â‚¬â€ DoÃ„Å¸rusal MCK + doÃ„Å¸rusal-yay (k_sd) + laminer (c_lam) + orifis (Ãâ€p_orf) damper modeli
-% YÃƒÂ¶neten denklem:
-%   M * xÃŒË† + C0 * xÃŒâ€¡ + K * x + f_damper = - M * r * a_g
-% Kat i iÃƒÂ§in damper kuvveti:
-%   f_i = k_sd * Ãâ€x_i  +  c_lam * Ãâ€v_i  +  A_p * Ãâ€p_orf,i * sgn(Ãâ€v_i)
-%   [k_sd]: N/m  |  [c_lam]: NÃ‚Â·s/m  |  [Ãâ€x]: m  |  [Ãâ€v]: m/s  |  [A_p]: mÃ‚Â²  |  [Ãâ€p_orf]: Pa
-% Orifis akÃ„Â±Ã…Å¸Ã„Â± ve basÃ„Â±nÃƒÂ§ dÃƒÂ¼Ã…Å¸ÃƒÂ¼mÃƒÂ¼:
-%   q = Q_cap * tanh( (A_p / Q_cap) * sqrt(Ãâ€v^2 + ÃÂµ_v^2) )             [q]: mÃ‚Â³/s
-%   Re = (ÃÂ * q * d_o) / (A_o * ÃÂ¼)                                      [ÃÂ]: kg/mÃ‚Â³, [ÃÂ¼]: PaÃ‚Â·s, [d_o]: m, [A_o]: mÃ‚Â²
-%   C_d(Re) = C_d,Ã¢Ë†Â - (C_d,Ã¢Ë†Â - C_d,0) / (1 + (Re / Re_c)^p_exp)
-%   Ãâ€p_kv = Ã‚Â½ ÃÂ ( q / (C_d A_o) )Ã‚Â²
-%   Ãâ€p_cav = max( (p_up - p_cav,eff) * cav_sf, 0 ),   p_up = p_amb + |F_lin| / A_p
-%   Ãâ€p_orf = softmin(Ãâ€p_kv, Ãâ€p_cav; ÃÂµ)   (p-state yok, kararlÃ„Â± harmanlama)
-% Enerji denklik kontrolÃƒÂ¼ (pencere iÃƒÂ§i):
-%   ÃÂ£_i f_i Ãâ€v_i  =  ÃÂ£_i (c_lam Ãâ€v_iÃ‚Â²)  +  ÃÂ£_i (Ãâ€p_orf,i q_i)  +  d/dt(E_kin + E_pot)
-% Boyut kontrolÃƒÂ¼:
-%   [Ãâ€p q] = (Pa)(mÃ‚Â³/s) = NÃ‚Â·m/s = W,  [c_lam Ãâ€vÃ‚Â²] = (NÃ‚Â·s/m)(mÃ‚Â²/sÃ‚Â²) = NÃ‚Â·m/s = W
-% Ãƒâ€¡oklu damper ÃƒÂ¶lÃƒÂ§eÃ„Å¸i:
-%   multi = (#damper/story) Ã‚Â· (aktiflik maskesi); bu faktÃƒÂ¶r laminer ve orifis kuvvetlerine de uygulanÃ„Â±r.
-% Termo-viskozite geri beslemesi Ã…Å¸u an tanÃ„Â±sal; dinamiÃ„Å¸e baÃ„Å¸lanmadÃ„Â±.
+% mck_with_damper — Doğrusal MCK + doğrusal-yay (k_sd) + laminer (c_lam) + orifis (Δp_orf) damper modeli
+% Yöneten denklem:
+%   M * ẍ + C0 * ẋ + K * x + f_damper = - M * r * a_g
+% Kat i için damper kuvveti:
+%   f_i = k_sd * Δx_i  +  c_lam * Δv_i  +  A_p * Δp_orf,i * sgn(Δv_i)
+%   [k_sd]: N/m  |  [c_lam]: N·s/m  |  [Δx]: m  |  [Δv]: m/s  |  [A_p]: m²  |  [Δp_orf]: Pa
+% Orifis akışı ve basınç düşümü:
+%   q = Q_cap * tanh( (A_p / Q_cap) * sqrt(Δv^2 + ε_v^2) )             [q]: m³/s
+%   Re = (ρ * q * d_o) / (A_o * μ)                                      [ρ]: kg/m³, [μ]: Pa·s, [d_o]: m, [A_o]: m²
+%   C_d(Re) = C_d,∞ - (C_d,∞ - C_d,0) / (1 + (Re / Re_c)^p_exp)
+%   Δp_kv = ½ ρ ( q / (C_d A_o) )²
+%   Δp_cav = max( (p_up - p_cav,eff) * cav_sf, 0 ),   p_up = p_amb + |F_lin| / A_p
+%   Δp_orf = softmin(Δp_kv, Δp_cav; ε)   (p-state yok, kararlı harmanlama)
+% Enerji denklik kontrolü (pencere içi):
+%   Σ_i f_i Δv_i  =  Σ_i (c_lam Δv_i²)  +  Σ_i (Δp_orf,i q_i)  +  d/dt(E_kin + E_pot)
+% Boyut kontrolü:
+%   [Δp q] = (Pa)(m³/s) = N·m/s = W,  [c_lam Δv²] = (N·s/m)(m²/s²) = N·m/s = W
+% Çoklu damper ölçeği:
+%   multi = (#damper/story) · (aktiflik maskesi); bu faktör laminer ve orifis kuvvetlerine de uygulanır.
+% Termo-viskozite geri beslemesi şu an tanısal; dinamiğe bağlanmadı.
 %% Girdi Parametreleri
     n = size(M,1); r = ones(n,1);
     thermal_feedback_on = true;
     if isfield(cfg,'on') && isfield(cfg.on,'thermal_feedback')
         thermal_feedback_on = logical(cfg.on.thermal_feedback);
     end %#ok<NASGU>
-    % Termal geri besleme kancasÃ„Â±; ileride viskozite-dinamik baÃ„Å¸lamasÃ„Â± iÃƒÂ§in kullanÃ„Â±lacak.
+    % Termal geri besleme kancası; ileride viskozite-dinamik bağlaması için kullanılacak.
     agf = griddedInterpolant(t,ag,'linear','nearest');
     z0 = zeros(2*n,1);
     opts= odeset('RelTol',1e-3,'AbsTol',1e-6);
 
-    % Kat vektÃƒÂ¶rleri
+    % Kat vektörleri
     nStories = n-1;
     mask = story_mask(:);  if numel(mask)==1,  mask  = mask *ones(nStories,1); end
     ndps = n_dampers_per_story(:); if numel(ndps)==1, ndps = ndps*ones(nStories,1); end
@@ -1303,13 +1644,13 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     multi_row = multi(:).';
     Nvec = 1:nStories; Mvec = 2:n;
 
-    % BaÃ…Å¸langÃ„Â±ÃƒÂ§ sÃ„Â±caklÃ„Â±Ã„Å¸Ã„Â± ve viskozitesi
+    % Başlangıç sıcaklığı ve viskozitesi
     Tser = T0_C*ones(numel(t),1);
     mu_abs = mu_ref;
     c_lam = c_lam0;
 
-%% ODE Ãƒâ€¡ÃƒÂ¶zÃƒÂ¼mÃƒÂ¼
-    % Faz 6: dev_force iÃ¯Â¿Â½Ã¯Â¿Â½in Qcap ve softmin parametrelerini Ã¯Â¿Â½nceden ayarla
+%% ODE Çözümü
+    % Faz 6: dev_force i��in Qcap ve softmin parametrelerini �nceden ayarla
     Qcap_eff = Qcap;
     if isfield(cfg,'num') && isfield(cfg.num,'Qcap_scale') && isfinite(cfg.num.Qcap_scale)
         Qcap_eff = max(1e-9, Qcap * cfg.num.Qcap_scale);
@@ -1326,10 +1667,10 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
 
     drift = x(:,Mvec) - x(:,Nvec);
     dvel  = v(:,Mvec) - v(:,Nvec);
-    % Faz 3: Lineer parca sadece yay (laminer viskoz katkÃ„Â± tarafÃ„Â±nda)
+    % Faz 3: Lineer parca sadece yay (laminer viskoz katkı tarafında)
     F_lin = k_sd*drift;
 
-    % Faz 6: Qcap ÃƒÂ¶lÃƒÂ§eÃ„Å¸i ve softmin eps opsiyonu
+    % Faz 6: Qcap ölçeği ve softmin eps opsiyonu
     % NOTE: Qcap_eff and orf_loc are pre-initialized above for dev_force.
     params = struct('Ap',Ap,'Qcap',Qcap_eff,'orf',orf_loc,'rho',rho,...
                     'Ao',Ao,'mu',mu_abs,'F_lin',F_lin,'Lori',Lori);
@@ -1343,13 +1684,13 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     dP_kv_loc = 0.5*rho .* ( qmag_loc ./ max(Cd_loc.*Ao,1e-12) ).^2;
     p_up_loc  = orf.p_amb + abs(F_lin)./max(Ap,1e-12);
     dP_cav_loc= max( (p_up_loc - orf.p_cav_eff).*orf.cav_sf, 0 );
-    % --- Kavitasyon maskesi (fiziksel eÃ…Å¸iklere dayalÃ„Â±) ---
-    % Tolerans: ÃƒÂ¶lÃƒÂ§ÃƒÂ¼m/hesap dalgalanmalarÃ„Â±nÃ„Â± yutmak iÃƒÂ§in %5 dP_cav veya min 1e4 Pa
+    % --- Kavitasyon maskesi (fiziksel eşiklere dayalı) ---
+    % Tolerans: ölçüm/hesap dalgalanmalarını yutmak için %5 dP_cav veya min 1e4 Pa
     tol_loc = max(1e4, 0.05*max(dP_cav_loc,[],'all'));  % [Pa]
     Qcap_ratio_loc = abs(Q) ./ max(Qcap_eff, eps);       % [-]
     cav_mask_loc = (dP_kv_loc > (dP_cav_loc - tol_loc)) | (Qcap_ratio_loc > 0.98);
-    % Paketleme: cav_mask_loc [-] mantÃ„Â±ksal; Ãâ€p_kv Ã¢â€°Â³ Ãâ€p_cav veya Q/Qcap Ã¢â€ â€™ 1 bÃƒÂ¶lgeleri iÃ…Å¸aretlenir.
-    % ts.cav_mask = cav_mask_loc;   % boyut: [Nt x nStories], mantÃ„Â±ksal
+    % Paketleme: cav_mask_loc [-] mantıksal; Δp_kv ≳ Δp_cav veya Q/Qcap → 1 bölgeleri işaretlenir.
+    % ts.cav_mask = cav_mask_loc;   % boyut: [Nt x nStories], mantıksal
     F_p = F_lin + F_orf;
 
     multi_mat = repmat(multi_row, size(dvel,1), 1);
@@ -1358,19 +1699,19 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     F_orf_total = F_orf .* multi_mat;
 
 
-    % Geometri ÃƒÂ¶lÃƒÂ§eklendirmesi R sadece montajda uygulanÃ„Â±r
+    % Geometri ölçeklendirmesi R sadece montajda uygulanır
     F_story = F_lin + F_visc_total + F_orf_total;
-    % NOT: Enerji tarafÃ„Â±nda P_visc_per = c_lam .* (dvel.^2) [W] ve P_orf_per = Ãâ€p_orf .* |Q| [W],
-    % ve toplamlar multi_mat ile ÃƒÂ¶lÃƒÂ§eklendiÃ„Å¸inden, dinamik (FÃ‚Â·Ãâ€v) ile enerji (P_toplam) aynÃ„Â± ÃƒÂ¶lÃƒÂ§ekle tutarlÃ„Â± hale geldi.
+    % NOT: Enerji tarafında P_visc_per = c_lam .* (dvel.^2) [W] ve P_orf_per = Δp_orf .* |Q| [W],
+    % ve toplamlar multi_mat ile ölçeklendiğinden, dinamik (F·Δv) ile enerji (P_toplam) aynı ölçekle tutarlı hale geldi.
     P_visc_per = c_lam .* (dvel.^2);
     P_sum = sum( (P_visc_per + P_orf_per) .* multi_mat, 2 );
     P_orf_tot = sum(P_orf_per .* multi_mat, 2);
-    % YapÃ„Â±sal gÃƒÂ¼ÃƒÂ§ kat toplam kuvvetini kullanÃ„Â±r; ekstra ÃƒÂ§arpan kullanÃ„Â±lmaz
+    % Yapısal güç kat toplam kuvvetini kullanır; ekstra çarpan kullanılmaz
     P_struct_tot = sum(F_story .* dvel, 2);
     E_orf = cumtrapz(t, P_orf_tot);
     E_struct = cumtrapz(t, P_struct_tot);
 
-%% Termal Hesap (Phase 7: iki-dÃƒÂ¼Ã„Å¸ÃƒÂ¼m diagnostik; dinamiÃ„Å¸e geri besleme yok)
+%% Termal Hesap (Phase 7: iki-düğüm diagnostik; dinamiğe geri besleme yok)
     nDtot = sum(multi);
     V_oil_per = resFactor*(Ap*(2*Lgap));
     m_oil_tot = nDtot*(rho*V_oil_per);
@@ -1393,8 +1734,8 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     end
     mu = mu_ref*exp(b_mu*(T_o - T_ref_C));
 
-%% Ãƒâ€¡Ã„Â±ktÃ„Â± HesabÃ„Â±
-    % Ã„Â°vme iÃƒÂ§in dÃƒÂ¼Ã„Å¸ÃƒÂ¼m kuvvetleri
+%% Çıktı Hesabı
+    % İvme için düğüm kuvvetleri
     F = zeros(numel(t),n);
     F(:,Nvec) = F(:,Nvec) - F_story;
     F(:,Mvec) = F(:,Mvec) + F_story;
@@ -1404,14 +1745,14 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         'dP_orf', dP_orf, 'cav_mask', cav_mask_loc, 'P_sum', P_sum, ...
         'E_orf', E_orf, 'E_struct', E_struct, 'T_oil', T_o, 'mu', mu, 'c_lam', c_lam);
 
-%% Ã„Â°ÃƒÂ§ Fonksiyonlar
+%% İç Fonksiyonlar
     function Fd = dev_force(tt,x_,v_,c_lam_loc,mu_abs_loc)
         drift_ = x_(Mvec) - x_(Nvec);
         dvel_  = v_(Mvec) - v_(Nvec);
         multi_row   = multi(:).';              % [1 x nStories]
         multi_col   = multi_row(:);            % [nStories x 1]
-        % SÃƒÂ¼tun yÃƒÂ¶nelimli etkin parametreler
-        % Faz 3: Lineer parÃƒÂ§ada sadece yay
+        % Sütun yönelimli etkin parametreler
+        % Faz 3: Lineer parçada sadece yay
         F_lin_ = k_sd * drift_;
         F_lin_ = F_lin_(:);
         params = struct('Ap',Ap,'Qcap',Qcap_eff,'orf',orf_loc,'rho',rho,...
@@ -1430,13 +1771,13 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
         Fd(Mvec) = Fd(Mvec) + F_story_;
     end
     function [F_orf, dP_orf, Q, P_orf_per] = calc_orifice_force(dvel, params)
-        % calc_orifice_force Ã¢â‚¬â€ Orifis damper akÃ„Â±Ã…Å¸ ve basÃ„Â±nÃƒÂ§ dÃƒÂ¼Ã…Å¸ÃƒÂ¼mÃƒÂ¼ modeli
-        % TanÃ„Â±mlar: q [mÃ‚Â³/s], Ãâ€p_kv [Pa], Ãâ€p_cav [Pa], Ãâ€p_orf [Pa], F_orf [N], P_orf [W]
-        % P_orifis = Ãâ€p_orf Ã‚Â· |q| [W]  (laminer gÃƒÂ¼ÃƒÂ§ c_lam Ã‚Â· Ãâ€vÃ‚Â² ayrÃ„Â± tutulur; ÃƒÂ§ifte sayÃ„Â±m yok)
-        % C_d(Re) korelasyonu ve sÃ„Â±nÃ„Â±rlarÃ„Â± (0.2 Ã¢â€°Â¤ C_d Ã¢â€°Â¤ 1.2) ve Re Ã¢â€ â€™ 0/Ã¢Ë†Â limitleri
-        % Enerji denklik notu: Ãâ€p_orf Ã‚Â· q boyut kontrolÃƒÂ¼ ile NÃ‚Â·m/s = W saÃ„Å¸lar.
-        % Boyut analizi: Ãâ€p [Pa], q [mÃ‚Â³/s], F_orf [N], P_orf [W] Ã¢â€¡â€™ 1 Pa = 1 N/mÃ‚Â².
-        % VarsayÃ„Â±mlar: p-state yok, tanh saturasyonu (ÃÂµ_v) kÃƒÂ¼ÃƒÂ§ÃƒÂ¼k hÃ„Â±zlarda nÃƒÂ¼merik gÃƒÂ¼venlik saÃ„Å¸lar.
+        % calc_orifice_force — Orifis damper akış ve basınç düşümü modeli
+        % Tanımlar: q [m³/s], Δp_kv [Pa], Δp_cav [Pa], Δp_orf [Pa], F_orf [N], P_orf [W]
+        % P_orifis = Δp_orf · |q| [W]  (laminer güç c_lam · Δv² ayrı tutulur; çifte sayım yok)
+        % C_d(Re) korelasyonu ve sınırları (0.2 ≤ C_d ≤ 1.2) ve Re → 0/∞ limitleri
+        % Enerji denklik notu: Δp_orf · q boyut kontrolü ile N·m/s = W sağlar.
+        % Boyut analizi: Δp [Pa], q [m³/s], F_orf [N], P_orf [W] ⇒ 1 Pa = 1 N/m².
+        % Varsayımlar: p-state yok, tanh saturasyonu (ε_v) küçük hızlarda nümerik güvenlik sağlar.
 
         % Saturated volumetric flow magnitude (stability)
         qmag = params.Qcap * tanh( (params.Ap/params.Qcap) * sqrt(dvel.^2 + params.orf.veps^2) );
@@ -1472,6 +1813,18 @@ function [x,a_rel,ts] = mck_with_damper(t,ag,M,C,K, k_sd,c_lam0,Lori, orf,rho,Ap
     end
 end
 
+% LOAD_GROUND_MOTIONS fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   T1 [-]: SI uyumlu giriş parametresi.
+%   opts [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   records [-]: Hesaplanmış çıktı.
+%   scaled [-]: Hesaplanmış çıktı.
+%   meta [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function [records, scaled, meta] = load_ground_motions(T1, opts)
 %LOAD_GROUND_MOTIONS Zemin hareketi kayitlarini yukler, on isler ve olcekler.
 %   [RAW, SCALED, META] = LOAD_GROUND_MOTIONS(T1, OPTS) fonksiyonu
@@ -1505,12 +1858,12 @@ band_fac = util_getfield_default(opts,'band_fac',[0.8 1.2]);
 band_N   = util_getfield_default(opts,'band_N',21);
 s_bounds = util_getfield_default(opts,'s_bounds',[0.2 2.2]);
 
-%% MAT dosyasÃ„Â±nÃ„Â± YÃƒÂ¼kle
+%% MAT dosyasını Yükle
 raw = load('acc_matrix.mat');
 fn  = fieldnames(raw);
 records = struct('name',{},'t',{},'ag',{},'dt',{},'duration',{},'PGA',{},'PGV',{},'IM',{},'scale',{});
 
-%% Ãƒâ€“n Ã„Â°Ã…Å¸leme
+%% Ön İşleme
 for k = 1:numel(fn)
     A = raw.(fn{k});
     t  = A(:,1);   ag = A(:,2);
@@ -1518,12 +1871,12 @@ for k = 1:numel(fn)
     % 3A) Zaman vektorunu duzenle
     [t,iu] = unique(t,'stable'); ag = ag(iu);
     dt = median(diff(t));
-    assert(max(abs(diff(t) - dt)) < 1e-6, 'Zaman ÃƒÂ¶rnekleme aralÃ„Â±Ã„Å¸Ã„Â± dÃƒÂ¼zensiz');
+    assert(max(abs(diff(t) - dt)) < 1e-6, 'Zaman örnekleme aralığı düzensiz');
     t  = (t(1):dt:t(end)).';
     ag = interp1(A(:,1), A(:,2), t, 'linear');
 
     % 3B) Temel birim ve filtreleme kontrolleri
-    assert(max(abs(ag)) < 100, 'Ã„Â°vme bÃƒÂ¼yÃƒÂ¼klÃƒÂ¼Ã„Å¸ÃƒÂ¼ birim hatasÃ„Â±na iÃ…Å¸aret ediyor');
+    assert(max(abs(ag)) < 100, 'İvme büyüklüğü birim hatasına işaret ediyor');
     ag = detrend(ag,0);             % ortalama
     ag = detrend(ag,1);             % dogrusal trend
     try
@@ -1546,8 +1899,8 @@ for k = 1:numel(fn)
                              'IM',[],'scale',1); %#ok<AGROW>
 end
 
-%% YÃƒÂ¼kleme Ãƒâ€“zeti
-if opts.verbose, fprintf('Toplam %d zemin hareketi kaydÃ„Â± yÃƒÂ¼klendi\\n', numel(records)); end
+%% Yükleme Özeti
+if opts.verbose, fprintf('Toplam %d zemin hareketi kaydı yüklendi\\n', numel(records)); end
 for k = 1:numel(records)
     r = records(k);
     if opts.verbose, fprintf('%2d) %-12s dt=%6.4f s dur=%6.2f s PGA=%7.3f PGV=%7.3f\\n', ...
@@ -1557,14 +1910,14 @@ end
 scaled = [];
 meta = struct();
 
-%% IM HesabÃ„Â± ve Ãƒâ€“lÃƒÂ§ekleme (T1 saÃ„Å¸landÃ„Â±Ã„Å¸Ã„Â±nda)
+%% IM Hesabı ve Ölçekleme (T1 sağlandığında)
 if nargin >= 1 && ~isempty(T1)
-    %% IM HesabÃ„Â±
+    %% IM Hesabı
     for k = 1:numel(records)
         records(k).IM = compute_IM(records(k).t, records(k).ag, IM_mode, T1, band_fac, band_N);
     end
 
-    %% Hedef IM SeÃƒÂ§imi ve TRIM
+    %% Hedef IM Seçimi ve TRIM
     IM = [records.IM];
     IM_low  = max(s_bounds(1)*IM);
     IM_high = min(s_bounds(2)*IM);
@@ -1582,14 +1935,14 @@ if nargin >= 1 && ~isempty(T1)
         records(idx) = [];
         IM(idx) = [];
     end
-    if ~isempty(dropped) && opts.verbose, fprintf('TRIM: ayÃ„Â±klanan uÃƒÂ§ deÃ„Å¸erler = %s\\n', strjoin(dropped,', ')); end
+    if ~isempty(dropped) && opts.verbose, fprintf('TRIM: ayıklanan uç değerler = %s\n', strjoin(dropped,', ')); end
     IM_low  = max(s_bounds(1)*IM);
     IM_high = min(s_bounds(2)*IM);
     targetIM0 = median(IM);
     targetIM  = min(max(targetIM0, IM_low), IM_high);
     doClip = (IM_low > IM_high);
 
-    %% Ãƒâ€“lÃƒÂ§ekleme
+    %% Ölçekleme
     scaled = records; n_clipped = 0; s_all = zeros(1,numel(records));
     for k = 1:numel(records)
         s_raw = targetIM / records(k).IM;
@@ -1619,7 +1972,7 @@ if nargin >= 1 && ~isempty(T1)
         modeStr = 'PSA@T1';
     end
     clipCount = n_clipped * doClip;
-    if opts.verbose, fprintf('Hedef IM = %.3f (%s). Maks hata = %.2f%% | uygun aralÃ„Â±k=[%.3f, %.3f] | s_min=%.2f s_max=%.2f | KIRPILAN=%d\\n', ...
+    if opts.verbose, fprintf('Hedef IM = %.3f (%s). Maks hata = %.2f%% | uygun aralık=[%.3f, %.3f] | s_min=%.2f s_max=%.2f | KIRPILAN=%d\\n', ...
         targetIM, modeStr, max(err), IM_low, IM_high, min(s_all), max(s_all), clipCount); end
 
     meta = struct('IM_mode', IM_mode, 'band_fac', band_fac, 's_bounds', s_bounds);
@@ -1628,6 +1981,20 @@ end
 end
 
 %% ==== Yerel Fonksiyonlar ====
+% COMPUTE_IM fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   t [-]: SI uyumlu giriş parametresi.
+%   ag [-]: SI uyumlu giriş parametresi.
+%   mode [-]: SI uyumlu giriş parametresi.
+%   T1 [-]: SI uyumlu giriş parametresi.
+%   band_fac [-]: SI uyumlu giriş parametresi.
+%   band_N [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   IM [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function IM = compute_IM(t, ag, mode, T1, band_fac, band_N)
 %COMPUTE_IM Kayit icin hedef IM degerini hesaplar.
 %   IM = COMPUTE_IM(T, AG, MODE, T1, BAND_FAC, BAND_N) fonksiyonu,
@@ -1647,6 +2014,18 @@ else
 end
 end
 
+% CALC_PSA fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   t [-]: SI uyumlu giriş parametresi.
+%   ag [-]: SI uyumlu giriş parametresi.
+%   T [-]: SI uyumlu giriş parametresi.
+%   zeta [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   Sa [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function Sa = calc_psa(t, ag, T, zeta)
 %CALC_PSA Tek bir kayit icin yapay spektral ivme hesabi.
 %   Sa = CALC_PSA(t, ag, T, zeta) fonksiyonu, T periyotlu ve zeta
@@ -1669,15 +2048,24 @@ abs_acc = xdd + ag;
 Sa = max(abs(abs_acc));
 end
 
+% BUILD_PARAMS fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   params [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   params [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function params = build_params(params)
-% build_params Ã¢â‚¬â€ Hidrolik ve yapÃ„Â±sal tÃƒÂ¼retilmiÃ…Å¸ alanlarÃ„Â±n hesaplanmasÃ„Â±
-% Ap = Ãâ‚¬ D_pÃ‚Â²/4 [mÃ‚Â²], A_o = n_orf Ãâ‚¬ d_oÃ‚Â²/4 [mÃ‚Â²], k_sd [N/m], c_lam0 [NÃ‚Â·s/m]
-% c_lam0 Poiseuille laminer akÃ„Â±Ã…Å¸Ã„Â±ndan tÃƒÂ¼retilir: Ãâ€p = 128 ÃÂ¼ L q /(Ãâ‚¬ dÃ¢ÂÂ´) Ã¢â€¡â€™
-%   F_lam = c_lam0 Ãâ€v, c_lam0 Ã¢â€°Ë† 128 ÃÂ¼ L / (Ãâ‚¬ dÃ¢ÂÂ´) Ã‚Â· A_pÃ‚Â² / L_gap varsayÃ„Â±mÃ„Â±yla,
-%   paralel kanallarÃ„Â±n eÃ…Å¸deÃ„Å¸er uzunluÃ„Å¸u L_gap ve silindirik delik kabulÃƒÂ¼yle.
-% Qcap_big teorik orifis tavanÃ„Â± (Ãâ€p_cap [Pa]) ile belirlenir.
-% VarsayÃ„Â±mlar: Newtonyen yaÃ„Å¸ (ÃÂ¼ sabit referans), sabit sÃ„Â±caklÃ„Â±k T_ref, rijit piston.
-% Boyut analizi: Ap,Ao [mÃ‚Â²], Qcap_big [mÃ‚Â³/s], k_sd [N/m], c_lam0 [NÃ‚Â·s/m], Ãâ€p_cap [Pa].
+% build_params — Hidrolik ve yapısal türetilmiş alanların hesaplanması
+% Ap = π D_p²/4 [m²], A_o = n_orf π d_o²/4 [m²], k_sd [N/m], c_lam0 [N·s/m]
+% c_lam0 Poiseuille laminer akışından türetilir: Δp = 128 μ L q /(π d⁴) ⇒
+%   F_lam = c_lam0 Δv, c_lam0 ≈ 128 μ L / (π d⁴) · A_p² / L_gap varsayımıyla,
+%   paralel kanalların eşdeğer uzunluğu L_gap ve silindirik delik kabulüyle.
+% Qcap_big teorik orifis tavanı (Δp_cap [Pa]) ile belirlenir.
+% Varsayımlar: Newtonyen yağ (μ sabit referans), sabit sıcaklık T_ref, rijit piston.
+% Boyut analizi: Ap,Ao [m²], Qcap_big [m³/s], k_sd [N/m], c_lam0 [N·s/m], Δp_cap [Pa].
 
 if nargin < 1 || ~isstruct(params)
     params = struct();
@@ -1686,15 +2074,15 @@ end
 % Reuse existing utility for core damper quantities
 params = util_recompute_damper_params(params);
 
-    % Qcap_big Ã¢â‚¬â€ BÃƒÂ¼yÃƒÂ¼k basÃ„Â±nÃƒÂ§ farkÃ„Â± altÃ„Â±nda (Ãâ€p Ã¢â€°Â¤ dP_cap) teorik azami debi [mÃ‚Â³/s]
-    % FormÃƒÂ¼l: Qcap_big = C_d,Ã¢Ë†Â * A_o * sqrt( 2 Ãâ€p_cap / ÃÂ )
-    % Ãƒâ€“neri: Ãâ€p_cap ~ 5Ã¢â‚¬â€œ30 MPa aralÃ„Â±Ã„Å¸Ã„Â± (ÃƒÂ¼rÃƒÂ¼n ve gÃƒÂ¼venlik kÃ„Â±sÃ„Â±tlarÃ„Â±na gÃƒÂ¶re seÃƒÂ§ilir). VarsayÃ„Â±lan 20 MPa.
+    % Qcap_big — Büyük basınç farkı altında (Δp ≤ dP_cap) teorik azami debi [m³/s]
+    % Formül: Qcap_big = C_d,∞ * A_o * sqrt( 2 Δp_cap / ρ )
+    % Öneri: Δp_cap ~ 5–30 MPa aralığı (ürün ve güvenlik kısıtlarına göre seçilir). Varsayılan 20 MPa.
     if isfield(params,'orf') && isfield(params.orf,'CdInf') && ...
             isfield(params,'Ao') && isfield(params,'rho')
         dP_cap = util_getfield_default( ...
                      util_getfield_default(params,'cfg',struct()), ...
                      'num', struct());
-        dP_cap = util_getfield_default(dP_cap,'dP_cap', 2e7);  % [Pa], varsayÃ„Â±lan 20 MPa
+        dP_cap = util_getfield_default(dP_cap,'dP_cap', 2e7);  % [Pa], varsayılan 20 MPa
         params.Qcap_big = max(params.orf.CdInf * params.Ao, 1e-9) * ...
             sqrt(2*dP_cap / params.rho);
     end
@@ -1708,9 +2096,18 @@ end
 
 end
 
+% PARPOOL_HARD_RESET fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   nWorkers [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   status [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function status = parpool_hard_reset(nWorkers)
-% PARPOOL_HARD_RESET parpool'u sÃ„Â±fÃ„Â±rlayÃ„Â±p iÃ…Å¸ parÃƒÂ§acÃ„Â±klarÃ„Â±nÃ„Â± kÃ„Â±sÃ„Â±tlar.
-% Eski iÃ…Å¸leri temizleyerek gÃƒÂ¼venli bir havuz aÃƒÂ§Ã„Â±lÃ„Â±Ã…Å¸Ã„Â± saÃ„Å¸lar.
+% PARPOOL_HARD_RESET parpool'u sıfırlayıp iş parçacıklarını kısıtlar.
+% Eski işleri temizleyerek güvenli bir havuz açılışı sağlar.
 
 status = true;
 
@@ -1724,7 +2121,7 @@ try
     c = parcluster('Processes');
 
     if ~isempty(c.Jobs)
-        delete(c.Jobs);  % ÃƒÂ§ÃƒÂ¶kmÃƒÂ¼Ã…Å¸ iÃ…Å¸leri temizle
+        delete(c.Jobs);  % çökmüş işleri temizle
     end
 
     p = gcp('nocreate');
@@ -1737,18 +2134,38 @@ catch ME
     return;
 end
 
-pctRunOnAll maxNumCompThreads(1);          % CPU aÃ…Å¸Ã„Â±rÃ„Â± kullanÃ„Â±mÃ„Â±nÃ„Â± engelle
+pctRunOnAll maxNumCompThreads(1);          % CPU aşırı kullanımını engelle
 pctRunOnAll set(0,'DefaultFigureVisible','off');
 pctRunOnAll setenv('OMP_NUM_THREADS','1');
 pctRunOnAll setenv('MKL_NUM_THREADS','1');
 
 end
 
+% UTIL_SOFTMIN fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   a [-]: SI uyumlu giriş parametresi.
+%   b [-]: SI uyumlu giriş parametresi.
+%   epsm [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   y [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function y = util_softmin(a, b, epsm)
 %UTIL_SOFTMIN Smooth minimum used for cavitation blending.
 y = 0.5*(a + b - sqrt((a - b).^2 + epsm.^2));
 end
 
+% UTIL_RECOMPUTE_DAMPER_PARAMS fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   params [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   params [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function params = util_recompute_damper_params(params)
 %UTIL_RECOMPUTE_DAMPER_PARAMS Refresh derived damper quantities.
 if ~isstruct(params), return; end
@@ -1811,6 +2228,17 @@ params.k_sd = k_sd_adv;
 params.c_lam0 = c_lam0;
 end
 
+% UTIL_MAKE_ARIAS_WINDOW fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   t [-]: SI uyumlu giriş parametresi.
+%   ag [-]: SI uyumlu giriş parametresi.
+%   varargin [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   win [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function win = util_make_arias_window(t, ag, varargin)
 %UTIL_MAKE_ARIAS_WINDOW Arias-intensity-based window generator.
 p = inputParser;
@@ -1846,6 +2274,16 @@ win = struct('t5',t5,'t95',t95,'pad',pad, ...
              'coverage',coverage,'flag_low_arias',flag_low_arias);
 end
 
+% UTIL_QUANTIZE_STEP fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   x [-]: SI uyumlu giriş parametresi.
+%   step [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   y [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function y = util_quantize_step(x, step)
 %UTIL_QUANTIZE_STEP Snap values to a uniform grid.
 if nargin < 2 || isempty(step)
@@ -1855,6 +2293,17 @@ end
 y = step * round(x ./ step);
 end
 
+% UTIL_GETFIELD_DEFAULT fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   S [-]: SI uyumlu giriş parametresi.
+%   fname [-]: SI uyumlu giriş parametresi.
+%   defaultVal [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   v [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function v = util_getfield_default(S, fname, defaultVal)
 %UTIL_GETFIELD_DEFAULT Safe field accessor with defaults.
 if ~isstruct(S) || ~isfield(S, fname) || isempty(S.(fname))
@@ -1873,10 +2322,21 @@ else
 end
 end
 
+% UTIL_DEFAULT_PENALTY_OPTS fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   optsEval [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   lambda [-]: Hesaplanmış çıktı.
+%   pwr [-]: Hesaplanmış çıktı.
+%   W [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function [lambda,pwr,W] = util_default_penalty_opts(optsEval)
-% util_default_penalty_opts Ã¢â‚¬â€ Ceza ÃƒÂ§ekirdeÃ„Å¸ini tekleÃ…Å¸tirir.
-% VarsayÃ„Â±lanlar: ÃÂ»=3 [-]: ÃƒÂ¶lÃƒÂ§ek, pwr=2 [-]: ÃƒÂ¼stel, W={dP=1,Qcap=1,cav=1,T=0.5,ÃÂ¼=0.5} [-]: aÃ„Å¸Ã„Â±rlÃ„Â±klar.
-% KullanÃ„Â±cÃ„Â± optsEval.penalty.(lambda|power|W) veya eski alanlar (penalty_scale,
+% util_default_penalty_opts — Ceza çekirdeğini tekleştirir.
+% Varsayılanlar: λ=3 [-]: ölçek, pwr=2 [-]: üstel, W={dP=1,Qcap=1,cav=1,T=0.5,μ=0.5} [-]: ağırlıklar.
+% Kullanıcı optsEval.penalty.(lambda|power|W) veya eski alanlar (penalty_scale,
 %   penalty_power, penalty_weights) ile override edebilir.
     lambda = 3;
     pwr = 2;
@@ -1905,6 +2365,16 @@ function [lambda,pwr,W] = util_default_penalty_opts(optsEval)
     end
 end
 
+% MERGE_PENALTY_WEIGHTS fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   Wbase [-]: SI uyumlu giriş parametresi.
+%   Woverride [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   Wout [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function Wout = merge_penalty_weights(Wbase, Woverride)
     Wout = Wbase;
     if ~isstruct(Woverride)
@@ -1919,12 +2389,22 @@ function Wout = merge_penalty_weights(Wbase, Woverride)
     end
 end
 
+% COMPUTE_THR fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   params [-]: SI uyumlu giriş parametresi.
+%   thr_in [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   thr [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function thr = compute_thr(params, thr_in)
-% compute_thr Ã¢â‚¬â€ QC eÃ…Å¸iklerini tek kaynaktan ÃƒÂ¼retir (override destekli).
-% Hidrolik basÃ„Â±nÃƒÂ§ ÃƒÂ¼st sÃ„Â±nÃ„Â±rÃ„Â± Ãâ€p95_max [Pa], kapasite oranÃ„Â± Qcap95_max [-]:,
-% kavitasyon yÃƒÂ¼zdesi cav_pct_max [-]:, son sÃ„Â±caklÃ„Â±k T_end_max [Ã‚Â°C] ve son yaÃ„Å¸
-% viskozitesi ÃÂ¼_end_min [PaÃ‚Â·s] fiziksel kabullere dayanÃ„Â±r. KullanÃ„Â±cÃ„Â± thr_in
-% alanlarÃ„Â± ile override yapabilir; eksik alanlar varsayÃ„Â±lanla doldurulur.
+% compute_thr — QC eşiklerini tek kaynaktan üretir (override destekli).
+% Hidrolik basınç üst sınırı Δp95_max [Pa], kapasite oranı Qcap95_max [-]:,
+% kavitasyon yüzdesi cav_pct_max [-]:, son sıcaklık T_end_max [°C] ve son yağ
+% viskozitesi μ_end_min [Pa·s] fiziksel kabullere dayanır. Kullanıcı thr_in
+% alanları ile override yapabilir; eksik alanlar varsayılanla doldurulur.
     if nargin < 2 || ~isstruct(thr_in) || isempty(thr_in)
         thr_in = struct();
     end
@@ -1938,13 +2418,25 @@ function thr = compute_thr(params, thr_in)
     mu_phys_loc = util_getfield_default(num_loc,'mu_min_phys',0.05);
 
     thr = thr_in;
-    thr.dP95_max    = util_getfield_default(thr,'dP95_max',   40e6);  % [Pa] 40 MPa sÃ„Â±nÃ„Â±rÃ„Â±
-    thr.Qcap95_max  = util_getfield_default(thr,'Qcap95_max', 0.90);  % [-]: kapasite oranÃ„Â±
+    thr.dP95_max    = util_getfield_default(thr,'dP95_max',   40e6);  % [Pa] 40 MPa sınırı
+    thr.Qcap95_max  = util_getfield_default(thr,'Qcap95_max', 0.90);  % [-]: kapasite oranı
     thr.cav_pct_max = util_getfield_default(thr,'cav_pct_max',0.00);  % [-]: kavitasyon yok
-    thr.T_end_max   = util_getfield_default(thr,'T_end_max',  T0_C_loc + dT_max_loc); % [Ã‚Â°C]
-    thr.mu_end_min  = util_getfield_default(thr,'mu_end_min', max(mu_phys_loc, 0.6)); % [PaÃ‚Â·s]
+    thr.T_end_max   = util_getfield_default(thr,'T_end_max',  T0_C_loc + dT_max_loc); % [°C]
+    thr.mu_end_min  = util_getfield_default(thr,'mu_end_min', max(mu_phys_loc, 0.6)); % [Pa·s]
 end
 
+% UTIL_INITIAL_POP_GRID fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   lb [-]: SI uyumlu giriş parametresi.
+%   ub [-]: SI uyumlu giriş parametresi.
+%   N [-]: SI uyumlu giriş parametresi.
+%   steps [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   P [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function P = util_initial_pop_grid(lb, ub, N, steps)
 %UTIL_INITIAL_POP_GRID Generate a lattice-aligned initial GA population.
 d = numel(lb);
@@ -1969,6 +2461,15 @@ for i = 1:d
 end
 end
 
+% UTIL_COMPUTE_CTH_EFFECTIVE fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   params [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   Cth [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function Cth = util_compute_Cth_effective(params)
 %UTIL_COMPUTE_CTH_EFFECTIVE Effective combined thermal capacity.
 nStories = size(params.M,1) - 1;
@@ -1983,11 +2484,20 @@ m_steel_tot = params.steel_to_oil_mass_ratio * m_oil_tot;
 Cth = max(m_oil_tot*params.cp_oil + m_steel_tot*params.cp_steel, eps);
 end
 
+% RESOLVE_THR_BASE fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   optsEval [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   thr [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function thr = resolve_thr_base(optsEval)
-% resolve_thr_base Ã¢â‚¬â€ QC eÃ…Å¸iklerini [Pa, -, Ã‚Â°C, PaÃ‚Â·s] tek kaynaktan ÃƒÂ¼retir.
-% Ãƒâ€“ncelik sÃ„Â±rasÃ„Â±: optsEval.thr override, util_default_qc_thresholds() ÃƒÂ§Ã„Â±ktÃ„Â±sÃ„Â±,
+% resolve_thr_base — QC eşiklerini [Pa, -, °C, Pa·s] tek kaynaktan üretir.
+% Öncelik sırası: optsEval.thr override, util_default_qc_thresholds() çıktısı,
 % nihai fallback sabitleri (Qcap95_max [-]: 0.99, cav_pct_max [-]: 0.02,
-% T_end_max [Ã‚Â°C]: 75, ÃÂ¼_end_min [PaÃ‚Â·s]: 0.90, Ãâ€p95_max [Pa]: 30e6).
+% T_end_max [°C]: 75, μ_end_min [Pa·s]: 0.90, Δp95_max [Pa]: 30e6).
     if nargin < 1 || ~isstruct(optsEval)
         optsEval = struct();
     end
@@ -2016,7 +2526,18 @@ function thr = resolve_thr_base(optsEval)
     thr.mu_end_min = util_getfield_default(thr,'mu_end_min', 0.8);
     thr.dP95_max   = util_getfield_default(thr,'dP95_max',   40e6);
 end
-%% GA SonrasÄ± Grafikler
+%% GA Sonrası Grafikler
+% CIZ_GA_GRAFIKLERI fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   X [-]: SI uyumlu giriş parametresi.
+%   scaled [-]: SI uyumlu giriş parametresi.
+%   params [-]: SI uyumlu giriş parametresi.
+%   optsEval [-]: SI uyumlu giriş parametresi.
+% Çıktılar: Yok.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function ciz_ga_grafikleri(X, scaled, params, optsEval)
     if nargin < 1 || isempty(X) || isempty(scaled) || isempty(params)
         return;
@@ -2042,6 +2563,15 @@ function ciz_ga_grafikleri(X, scaled, params, optsEval)
     end
 end
 
+% PLOT_GA_SDOF_COMPARISONS fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   rec [-]: SI uyumlu giriş parametresi.
+%   params [-]: SI uyumlu giriş parametresi.
+% Çıktılar: Yok.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function plot_ga_sdof_comparisons(rec, params)
     if isempty(rec) || isempty(params)
         return;
@@ -2132,6 +2662,20 @@ function plot_ga_sdof_comparisons(rec, params)
     legend('Dampersiz', 'Damperli', 'Location', 'best');
 end
 
+% GA_UTIL_SOLVE_LINEAR_MCK fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   t [-]: SI uyumlu giriş parametresi.
+%   ag [-]: SI uyumlu giriş parametresi.
+%   M [-]: SI uyumlu giriş parametresi.
+%   C [-]: SI uyumlu giriş parametresi.
+%   K [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   x [-]: Hesaplanmış çıktı.
+%   a_rel [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function [x, a_rel] = ga_util_solve_linear_mck(t, ag, M, C, K)
     nloc = size(M, 1);
     r = ones(nloc, 1);
@@ -2147,12 +2691,31 @@ function [x, a_rel] = ga_util_solve_linear_mck(t, ag, M, C, K)
     a_rel = (-(M \ (C * v.' + K * x.')).' - ag(:) .* r.');
 end
 
+% GA_UTIL_COMPUTE_T1 fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   M [-]: SI uyumlu giriş parametresi.
+%   K [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   T1 [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function T1 = ga_util_compute_T1(M, K)
     [~, D] = eig(K, M);
     w = sqrt(sort(diag(D), 'ascend'));
     T1 = 2 * pi / w(1);
 end
 
+% SDOF_LIKE_DUMP_TO_BASE fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   rec [-]: SI uyumlu giriş parametresi.
+%   params [-]: SI uyumlu giriş parametresi.
+% Çıktılar: Yok.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function sdof_like_dump_to_base(rec, params)
     t  = rec.t(:);
     ag = rec.ag(:);
@@ -2249,15 +2812,47 @@ function sdof_like_dump_to_base(rec, params)
     assignin('base','IDR_max_damperli',IDR_max_damperli);
 end
 
+% UTIL_SOLVE_LINEAR_MCK fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   varargin [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   x [-]: Hesaplanmış çıktı.
+%   a_rel [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function [x, a_rel] = util_solve_linear_mck(varargin)
     [x, a_rel] = ga_util_solve_linear_mck(varargin{:});
 end
 
+% UTIL_COMPUTE_T1 fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   varargin [-]: SI uyumlu giriş parametresi.
+% Çıktılar:
+%   T1 [-]: Hesaplanmış çıktı.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function T1 = util_compute_T1(varargin)
     T1 = ga_util_compute_T1(varargin{:});
 end
 
 
+% RAPORLA_GA_SONUCLARI fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler:
+%   X [-]: SI uyumlu giriş parametresi.
+%   F [-]: SI uyumlu giriş parametresi.
+%   scaled [-]: SI uyumlu giriş parametresi.
+%   params [-]: SI uyumlu giriş parametresi.
+%   optsEval [-]: SI uyumlu giriş parametresi.
+%   gaout [-]: SI uyumlu giriş parametresi.
+% Çıktılar: Yok.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function raporla_ga_sonuclari(X, F, scaled, params, optsEval, gaout)
     if nargin < 1 || isempty(X)
         if nargin < 3 || isempty(scaled) || isempty(params)
@@ -2326,6 +2921,13 @@ function raporla_ga_sonuclari(X, F, scaled, params, optsEval, gaout)
     end
 end
 
+% RAPORLA_KAYITLI_GA_SONUCLARI fonksiyonu için otomatik dokümantasyon bloğu.
+% Amaç ve Kapsam: Bu yardımcı fonksiyon, viskoz damper GA akışındaki ilgili hesap adımını yürütür.
+% Girdiler: Yok.
+% Çıktılar: Yok.
+% Varsayımlar ve Sınırlar: - Girdi ve çıktılar tutarlı boyutlara sahip olmalıdır.
+% Ölçüler/Birimler: SI tabanlı varsayılır; özgül birimler kullanım bağlamında belirlenir.
+% Yöntem Özeti: Fonksiyonun iç mantığı mevcut yardımcılarla tanımlıdır.
 function raporla_kayitli_ga_sonuclari()
     ga_dirs = dir('out/ga_*');
     if isempty(ga_dirs)
