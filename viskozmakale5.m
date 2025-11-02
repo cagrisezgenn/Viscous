@@ -70,7 +70,7 @@ optsEval.thr = thr;
 % Penalty çekirdeği parametrelerini tek noktada toparla.
 [lambda, pwr, W] = util_default_penalty_opts(optsEval);
 penalty_src = util_getfield_default(optsEval,'penalty', struct());
-cav_free = util_getfield_default(penalty_src,'cav_free', 0.002);
+cav_free = util_getfield_default(penalty_src,'cav_free', 0.005);  % %0.5 serbest bölge
 penopts = struct('lambda',lambda,'power',pwr,'W',W,'cav_free',cav_free);
 
 %% Amaç Fonksiyonu ve Ceza Çekirdeği
@@ -81,9 +81,16 @@ penopts = struct('lambda',lambda,'power',pwr,'W',W,'cav_free',cav_free);
 %% GA Sürücüsü ve Kurulum — Optimizasyon Ayarları
 % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
     rng(42);
-tstamp = datestr(now,'yyyymmdd_HHMMSS_FFF');
-outdir = fullfile('out', ['ga_' tstamp]);
-if ~exist(outdir,'dir'), mkdir(outdir); end
+    % =================== [BÖLÜM: Çıktı Dizin Kurulumu] ===================
+    % Amaç: GA çıktıları için zaman damgalı klasörü önceden oluşturarak tüm
+    %        teşhis ve raporların tek kaynaktan yazılmasını sağlamak.
+    % Yöntem: datestr ile tstamp üretilir, out/ga_* dizini yoksa mkdir ile
+    %         oluşturulur ve tüm ara sonuçlar bu klasörde saklanır.
+    % Notlar (SCI): Milisaniye hassasiyetli tstamp runlar arası çakışmayı
+    %               önler; tstamp sonuç paketlerinde raporlanır.
+    tstamp = datestr(now,'yyyymmdd_HHMMSS_FFF');
+    outdir = fullfile('out', ['ga_' tstamp]);
+    if ~exist(outdir,'dir'), mkdir(outdir); end
 
  % [d_o_mm, n_orf, Cd0,  CdInf,  p_exp, Lori_mm, hA_W_perK, Dp_mm, d_w_mm, D_m_mm, n_turn, mu_ref]
 lb = [0.80,   3,    0.55, 0.70,  0.90,  100,     150,       110,    8,      80,     6,     0.60];
@@ -93,25 +100,31 @@ ub = [3.50,  12,    0.95, 1.00,  1.60,  240,     400,       260,   20,     200, 
 
     obj = @(x) eval_design_fast(x, scaled, params, optsEval); % içerde kuantize/clamplar
 
-  % --- HIZLI ÖN TARAMA AYARLARI ---
-POP_SIZE_QUICK = 300;   % Düşük popülasyon yeterli
-MAX_GEN_QUICK = 90;    % Çok az jenerasyon (Belki 15-20 de olabilir)
-
-options = optimoptions('gamultiobj', ...
-       'PopulationSize',    POP_SIZE_QUICK, ... % Düşük
-       'MaxGenerations',    MAX_GEN_QUICK, ...  % Düşük
-       'CrossoverFraction', 0.85, ...
-       'MutationFcn',       {@mutationadaptfeasible}, ...
-       'ParetoFraction',    0.65, ... % Çeşitliliği korumak önemli
-       'StallGenLimit',     90, ... % Düşük
-       'DistanceMeasureFcn','distancecrowding', ...
-       'OutputFcn', @(options,state,flag) ga_out_best_pen(options,state,flag, scaled, params, optsEval, outdir), ...
-       'UseParallel',       usePool, ...
-       'Display','iter', ...
-       'ConstraintTolerance',1e-6, ...
-       'FunctionTolerance', 1e-7, ... % Toleransı biraz gevşetebiliriz
-'PlotFcn', {@gaplotpareto, @gaplotparetodistance, @gaplotrankhist}, ...
-    'PlotInterval', 1);
+    % =================== [BÖLÜM: GA Optimizasyon Ayarları] ===================
+    % Amaç: Çok amaçlı GA parametrelerini tek blokta tanımlayarak nüfus
+    %        büyüklüğü ve konverjans kriterlerini SCI standardında
+    %        raporlanabilir kılmak.
+    % Yöntem: optimoptions çağrısı tek noktadan yapılır; OutputFcn ile GA
+    %         teşhis PDF’leri için outdir aktarılır, Display seçeneği iter
+    %         seviyesinde tutulur.
+    % Notlar (SCI): CrossoverFraction=0.85 ve ParetoFraction=0.65 değerleri
+    %               viskoz damper tasarımında pareto sıkışmasını azaltmak
+    %               için literatürde önerilen aralıklardadır.
+    options = optimoptions('gamultiobj', ...
+        'PopulationSize',    300, ...
+        'MaxGenerations',    90,  ...
+        'CrossoverFraction', 0.85, ...
+        'MutationFcn',       {@mutationadaptfeasible}, ...
+        'ParetoFraction',    0.65, ...
+        'StallGenLimit',     90, ...
+        'DistanceMeasureFcn','distancecrowding', ...
+        'OutputFcn',         @(options,state,flag) ga_out_best_pen(options,state,flag, scaled, params, optsEval, outdir), ...
+        'UseParallel',       usePool, ...
+        'ConstraintTolerance',1e-6, ...
+        'FunctionTolerance',  1e-7, ...
+        'PlotFcn', {@gaplotpareto, @gaplotparetodistance, @gaplotrankhist}, ...
+        'PlotInterval', 1, ...
+        'Display','iter');
 
         [X,F,exitflag,output] = gamultiobj(obj, numel(lb), [],[],[],[], lb, ub, [], IntCon, options);
     gaout = struct('exitflag',exitflag,'output',output);
@@ -269,7 +282,7 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
     W.cav  = util_getfield_default(W,'cav',0.25);
     W.T    = util_getfield_default(W,'T',0.5);
     W.mu   = util_getfield_default(W,'mu',0.5);
-    cav_free = util_getfield_default(penopt,'cav_free',0.002);  % [-] ≈ %0.2 serbest bölge
+    cav_free = util_getfield_default(penopt,'cav_free',0.005);  % [-] ≈ %0.5 serbest bölge
     penopt.lambda = lambda;
     penopt.power  = pwr;
     penopt.W      = W;
@@ -291,9 +304,16 @@ function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
     % Güvenli değerlendirme (GA sırasında IO yok)
     S = run_batch_windowed(scaled, P, O);
 
-%% HARD-KILL
-thr_qcap_soft = 0.90;  thr_qcap_kill = 1.10;
-thr_cav_soft  = 0.01;  thr_cav_kill  = 0.08;
+% =================== [HARD-KILL — BASİT VE YUMUŞAK] ===================
+% Amaç: Qcap95 ve cav_pct aşımında GA'yı erken sonlandırırken soft eşikler
+%        üzerinden pareto sıkışmasını azaltmak.
+% Yöntem: Ham vektörlerin maksimumu alınır, yumuşak/kill eşikleri ile OR
+%         koşulu değerlendirilir; aşımda f = 1e6 vektörü döndürülür.
+% Notlar (SCI): Hard-kill durumunda ceza bileşenleri 0 atanarak raporlamada
+%               sapma önlenir; meta yapı Pareto teşhisi için sınır değerleri
+%               içerir.
+thr_qcap_soft = 0.90;   thr_qcap_kill = 1.10;   % Qcap95 soft/kill
+thr_cav_soft  = 0.01;   thr_cav_kill  = 0.08;   % cav_pct soft/kill
 
 qcapv_raw = enforce_finite(S.table.Qcap95);
 cavv_raw  = enforce_finite(S.table.cav_pct);
@@ -301,15 +321,16 @@ cavv_raw  = enforce_finite(S.table.cav_pct);
 qcap95 = max(qcapv_raw);
 cavpct = max(cavv_raw);
 
-% Tek satırlık OR hard-kill:
 if (qcap95 > thr_qcap_kill) || (cavpct > thr_cav_kill)
     f = [1e6, 1e6, 1e6];
     meta = struct('x',x,'f',f,'hard_kill',true, ...
         'hard_kill_reason', sprintf('Qcap95=%.3f>(%.2f) | cav=%.3f>(%.2f)', ...
                                     qcap95,thr_qcap_kill,cavpct,thr_cav_kill), ...
         'pen',0,'pen_raw',0,'pen_dP',0,'pen_Qcap',0,'pen_cav',0,'pen_T',0,'pen_mu',0, ...
-        'qcap95_raw_max',qcap95, 'cav_pct_max',cavpct, 'f_pen',1e6,'f1',1e6,'f2',1e6);
-    memo(key) = meta; if nargout>2, details=S; end; return;
+        'qcap95_raw_max',qcap95,'cav_pct_max',cavpct,'f_pen',1e6,'f1',1e6,'f2',1e6);
+    memo(key) = meta;
+    if nargout > 2, details = S; end
+    return;
 end
 
     f1 = mean(S.table.PFA);
@@ -333,14 +354,20 @@ end
     pen_T    = isfield(thr,'T_end_max')  * mean(rel(T_endv,  thr.T_end_max));
     pen_mu   = isfield(thr,'mu_end_min') * mean(rev(mu_endv, thr.mu_end_min));
 
-    % --- YUMUŞAK CEZA: lineer ramp (kare alarak yumuşak ama hissedilir) ---
-ramp01 = @(v,a,b) max(0, (v - a) / max(b - a, eps));   % [a,b] → [0,1]
-p_qcap = ramp01(qcap95, thr_qcap_soft, thr_qcap_kill).^2;
-p_cav  = ramp01(cavpct,  thr_cav_soft,  thr_cav_kill ).^2;
+% =================== [YUMUŞAK CEZA — RAMP EKLEMESİ] ===================
+% Amaç: Hard-kill altındaki yumuşak eşiklere yaklaşıldığında ceza terimlerini
+%        kademeli olarak artırıp GA'nın hassasiyetini korumak.
+% Yöntem: ramp01 fonksiyonu ile [soft, kill] aralığında normalize artış
+%         hesaplanır ve kare alarak ceza katkısı yumuşatılır.
+% Notlar (SCI): pen_Qcap ve pen_cav temel terimlerden sonra genişletilir;
+%               değişkenlerin varlığı kontrol edilerek ramp katkısı güvenle
+%               uygulanır.
+ramp01 = @(v,a,b) max(0, (v - a) ./ max(b - a, eps));
+if ~exist('pen_Qcap','var'), pen_Qcap = 0; end
+if ~exist('pen_cav','var'),  pen_cav  = 0; end
 
-% Var olan ceza terimlerine ekle (isimler korunuyor)
-pen_Qcap = pen_Qcap + p_qcap;
-pen_cav  = pen_cav  + p_cav;
+pen_Qcap = pen_Qcap + (ramp01(qcap95, thr_qcap_soft, thr_qcap_kill)).^2;
+pen_cav  = pen_cav  + (ramp01(cavpct,  thr_cav_soft,  thr_cav_kill )).^2;
 
     pen_core = W.dP*pen_dP + W.Qcap*pen_Qcap + W.cav*pen_cav + W.T*pen_T + W.mu*pen_mu;
     if ~isfinite(pen_core)
@@ -554,7 +581,7 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
         Opost = struct();
     end
     penopt = util_getfield_default(Opost,'penalty', struct());
-    cav_free = util_getfield_default(penopt,'cav_free',0.002);
+    cav_free = util_getfield_default(penopt,'cav_free',0.005);   % %0.5
     if nargin < 3 || isempty(lambda)
         lambda = util_getfield_default(penopt,'lambda',10);
     end
@@ -573,6 +600,20 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
     if ~isstruct(W)
         W = struct();
     end
+
+    % --------- [Varsayılan Eşikler (Tanımsızsa)] ---------
+    thr = util_getfield_default(Opost,'thr', struct());
+    dP95_max    = util_getfield_default(thr,'dP95_max',    4.0e7);  % Pa
+    Qcap95_max  = util_getfield_default(thr,'Qcap95_max',  0.90);   % -
+    cav_pct_max = util_getfield_default(thr,'cav_pct_max', 0.01);   % -
+    T_end_max   = util_getfield_default(thr,'T_end_max',   75);     % °C
+    mu_end_min  = util_getfield_default(thr,'mu_end_min',  0.8);    % Pa·s
+
+    qcap_soft = util_getfield_default(thr,'Qcap95_soft',0.90);
+    qcap_kill = util_getfield_default(thr,'Qcap95_kill',1.10);
+    cav_soft  = util_getfield_default(thr,'cav_pct_soft',0.01);
+    cav_kill  = util_getfield_default(thr,'cav_pct_kill',0.08);
+    % -----------------------------------------------------
 
     rel = @(v,lim) max(0,(v - lim)./max(lim,eps)).^pwr;
     rev = @(v,lim) max(0,(lim - v)./max(lim,eps)).^pwr;
@@ -622,24 +663,40 @@ function metrics = summarize_metrics_table(tbl, Opost, lambda, pwr, W)
     end
     metrics.P_mech_sum          = sum(v_P_mech(:));
 
-    thr = util_getfield_default(Opost, 'thr', struct());
     W.dP   = util_getfield_default(W,'dP',2);
     W.Qcap = util_getfield_default(W,'Qcap',3);
     W.cav  = util_getfield_default(W,'cav',1);
     W.T    = util_getfield_default(W,'T',0.5);
     W.mu   = util_getfield_default(W,'mu',0.5);
-    metrics.pen_dP   = mean(rel(v_dP95(:), util_getfield_default(thr,'dP95_max',inf)));
-    metrics.pen_Qcap = mean(rel(v_Qcap(:), util_getfield_default(thr,'Qcap95_max',inf)));
-    cav_lim = util_getfield_default(thr,'cav_pct_max',0);
-    cav_eff = max(0, v_cav(:) - cav_free);
-    if cav_lim <= 0
-        metrics.pen_cav = mean(cav_eff.^pwr);
+    metrics.pen_dP   = mean(rel(v_dP95(:), dP95_max));
+    pen_Qcap_base    = mean(rel(v_Qcap(:), Qcap95_max));
+
+    cav_eff_vec = max(0, v_cav(:) - cav_free);
+    if cav_pct_max <= 0
+        pen_cav_base = mean(cav_eff_vec.^pwr);
     else
-        cav_lim_eff = max(cav_lim - cav_free, eps);
-        metrics.pen_cav = mean((cav_eff ./ max(cav_lim_eff, eps)).^pwr);
+        cav_lim_eff = max(cav_pct_max - cav_free, eps);
+        pen_cav_base = mean((cav_eff_vec ./ max(cav_lim_eff, eps)).^pwr);
     end
-    metrics.pen_T    = mean(rel(v_T_end(:), util_getfield_default(thr,'T_end_max',inf)));
-    metrics.pen_mu   = mean(rev(v_mu(:), util_getfield_default(thr,'mu_end_min',0)));
+    metrics.pen_T    = mean(rel(v_T_end(:), T_end_max));
+    metrics.pen_mu   = mean(rev(v_mu(:), mu_end_min));
+
+    % --------- [Özet Tarafı Penaltı Uyumlaştırma] ---------
+    r01 = @(v,a,b) max(0, (v - a)./max(b - a, eps));
+    Qcap95 = metrics.Qcap95;
+    cav_pct = metrics.cav_pct;
+    cav_eff_summary = max(0, cav_pct - cav_free);
+    cav_allow = max(cav_pct_max - cav_free, eps);
+    pen_Qcap_headroom = max(0, (Qcap95 - Qcap95_max)./max(Qcap95_max,eps)).^pwr;
+    pen_cav_headroom  = max(0, (cav_eff_summary - cav_allow)./max(cav_allow,eps)).^pwr;
+    pen_Qcap_summary = max(pen_Qcap_base, pen_Qcap_headroom) ...
+                       + (r01(Qcap95, qcap_soft, qcap_kill)).^2;
+    pen_cav_summary  = max(pen_cav_base, pen_cav_headroom) ...
+                       + (r01(cav_pct,  cav_soft,  cav_kill)).^2;
+    metrics.pen_Qcap = pen_Qcap_summary;
+    metrics.pen_cav  = pen_cav_summary;
+    % ------------------------------------------------------
+
     pen_raw          = W.dP*metrics.pen_dP + W.Qcap*metrics.pen_Qcap + ...
                        W.cav*metrics.pen_cav + W.T*metrics.pen_T + W.mu*metrics.pen_mu;
     metrics.pen_raw  = pen_raw;
@@ -972,6 +1029,7 @@ function [state, options, optchanged] = ga_out_best_pen(options, state, flag, sc
 %   scaled [-]: Ölçekli kayıt seti (memo cache bütünlüğü için).
 %   params [-]: Parametre yapısı.
 %   optsEval [-]: Değerlendirme seçenekleri.
+%   outdir [-]: GA çıktılarının yazıldığı dizin (PDF teşhisleri için).
 %
 % Çıktılar:
 %   state [-]: Değiştirilmeden geri döner.
@@ -1001,13 +1059,20 @@ function [state, options, optchanged] = ga_out_best_pen(options, state, flag, sc
         [f_curr, ~] = eval_design_fast(bestx, scaled, params, optsEval);
         fprintf('Gen %d: pen=%g f1=%g f2=%g\\n', state.Generation, f_curr(1), f_curr(2), f_curr(3));
     end
+    % -------------- [GA Bittiğinde PDF Teşhis] --------------
     if strcmp(flag,'done')
-    try
-        save_ga_diagnostics_as_pdf(state, fullfile(outdir,'ga_full'));  % ga_full_*.pdf
-    catch ME
-        warning('PDF export failed: %s', ME.message);
+        try
+            if exist('save_ga_diagnostics_as_pdf','file')
+                % Not: Klasör yoksa fonksiyon içinde oluşturulacak.
+                save_ga_diagnostics_as_pdf(state, fullfile(outdir,'ga_full'));  % ga_full_*.pdf
+            else
+                warning('save_ga_diagnostics_as_pdf bulunamadı; PDF üretimi atlandı.');
+            end
+        catch ME
+            warning('PDF export failed: %s', ME.message);
+        end
     end
-end
+    % --------------------------------------------------------
 
 end
 
@@ -3117,6 +3182,11 @@ function raporla_ga_sonuclari(X, F, scaled, params, optsEval, gaout)
     end
 end
 
+% =================== [BÖLÜM: Kaydedilmiş GA Sonucu Raporu] ===================
+% Amaç: Önceden kaydedilmiş GA sonuçlarını yükleyerek hızlı özet sunmak.
+% Yöntem: out/ga_* dizinlerinden en güncelini seçer, ga_front.mat dosyasını
+%         okur ve raporla_ga_sonuclari ile standart raporu üretir.
+% Notlar (SCI): Elle çağrı içindir; otomatik akışta kullanılmaz.
 function raporla_kayitli_ga_sonuclari()
     ga_dirs = dir('out/ga_*');
     if isempty(ga_dirs)
@@ -3145,6 +3215,20 @@ function raporla_kayitli_ga_sonuclari()
     raporla_ga_sonuclari(ga_data.X, storedF, scaled, params, struct(), struct());
 end
 function save_ga_diagnostics_as_pdf(state, tagOrPath)
+% --------- [Boş/NaN veri koruması ve klasör güvenliği] ---------
+if nargin >= 2
+    folder = fileparts(tagOrPath);
+    if ~isempty(folder) && ~exist(folder,'dir')
+        mkdir(folder);
+    end
+end
+if ~isfield(state,'Score') || isempty(state.Score) || ~any(isfinite(state.Score(:)))
+    warning('No finite scores to plot. Skipping GA diagnostics.');
+    return;
+end
+if ~isfield(state,'Distance') || isempty(state.Distance), state.Distance = 0; end
+if ~isfield(state,'Rank')     || isempty(state.Rank),     state.Rank     = 0; end
+% ---------------------------------------------------------------
 % tagOrPath: 'out/ga_2025.../ga_full' gibi prefix (uzantısız)
 % Pareto (Rank==1), Distance, Rank histogram PDF’leri üretir.
 
