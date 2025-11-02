@@ -3005,6 +3005,43 @@ function plot_ga_sdof_comparisons(rec, params)
     ylabel('Maksimum IDR [\Delta x / h]');
     title(sprintf('Katlar Arasi Maksimum Otelenme Orani | %s', rec.name), 'Interpreter', 'none');
     legend('Dampersiz', 'Damperli', 'Location', 'best');
+
+    x10_0 = x_top_linear; %#ok<NASGU>
+    x10_d = x_top_damper; %#ok<NASGU>
+    a10_0 = a_abs_linear; %#ok<NASGU>
+    a10_d = a_abs_damper; %#ok<NASGU>
+    idr0 = IDR_linear; %#ok<NASGU>
+    idrD = IDR_damper; %#ok<NASGU>
+
+    outdir = '';
+    try
+        outdir = evalin('caller','outdir');
+    catch
+        outdir = '';
+    end
+
+    if exist('outdir','var') && ~isempty(outdir)
+        % Üst Kat Yer Değiştirme
+        fig1 = figure('Name','Üst Kat Yer Değiştirme','Color','w');
+        plot(t, x10_0,'-k','LineWidth',1.2); hold on; plot(t, x10_d,'-r','LineWidth',1.0); grid on; box on;
+        xlabel('Zaman [s]'); ylabel('x_{10}(t) [m]'); legend('Dampersiz','Damperli','Location','best');
+        exportgraphics(fig1, fullfile(outdir,'record_x10.pdf'), 'ContentType','image','Resolution',300,'BackgroundColor','white'); close(fig1);
+
+        % Üst Kat Mutlak İvme
+        fig2 = figure('Name','Üst Kat Mutlak İvme','Color','w');
+        plot(t, a10_0,'-k','LineWidth',1.2); hold on; plot(t, a10_d,'-r','LineWidth',1.0); grid on; box on;
+        xlabel('Zaman [s]'); ylabel('a_{abs}(t) [m/s^2]'); legend('Dampersiz','Damperli','Location','best');
+        exportgraphics(fig2, fullfile(outdir,'record_a10_abs.pdf'), 'ContentType','image','Resolution',300,'BackgroundColor','white'); close(fig2);
+
+        % Maksimum IDR (kat bazlı)
+        if exist('idr0','var') && exist('idrD','var')
+            fig3 = figure('Name','Maksimum IDR','Color','w');
+            plot(1:numel(idr0), idr0,'-ok','MarkerFaceColor','k'); hold on;
+            plot(1:numel(idrD), idrD,'-dr','MarkerFaceColor','r'); grid on; box on;
+            xlabel('Kat'); ylabel('Maksimum IDR [\Delta x / h]'); legend('Dampersiz','Damperli','Location','best');
+            exportgraphics(fig3, fullfile(outdir,'record_max_IDR.pdf'), 'ContentType','image','Resolution',300,'BackgroundColor','white'); close(fig3);
+        end
+    end
 end
 
 function [x, a_rel] = ga_util_solve_linear_mck(t, ag, M, C, K)
@@ -3233,93 +3270,104 @@ function raporla_kayitli_ga_sonuclari()
 
     raporla_ga_sonuclari(ga_data.X, storedF, scaled, params, struct(), struct());
 end
-function save_ga_diagnostics_as_pdf(state, prefix)
-    % prefix: fullfile(outdir,'ga_full') already provided by caller
-    if nargin < 2 || isempty(prefix), prefix = 'ga_diag'; end
+function save_ga_diagnostics_as_pdf(state, prefixPath)
+    % prefixPath örn: fullfile(outdir,'ga_full') (uzantısız)
 
-    % ---- Common figure defaults (UTF-8 & readable) ----
-    set(0,'DefaultAxesFontName','DejaVu Sans');
-    set(0,'DefaultTextFontName','DejaVu Sans');
-    set(0,'DefaultAxesFontSize',10);
-    set(0,'DefaultTextInterpreter','tex');  % allow m/s^2, subscripts
+    % ---- Genel tipografi/çıktı tercihleri (SCI uyumlu) ----
+    set(groot,'defaultAxesFontName','Arial');
+    set(groot,'defaultAxesFontSize',10);
+    set(groot,'defaultTextInterpreter','tex');
+    set(groot,'defaultLegendInterpreter','tex');
+    set(groot,'defaultFigureRenderer','opengl');
+    set(groot,'defaultFigureColor','w');
 
-    % Data guards
-    if isempty(state) || ~isfield(state,'Score') || isempty(state.Score)
-        return;
+    % ---- Güvenli PDF export yardımcısı (RASTER) ----
+    function export_pdf(fig, filename_no_ext)
+        set(fig,'Renderer','opengl');
+        drawnow;
+        exportgraphics(fig, [filename_no_ext '.pdf'], ...
+            'ContentType','image', ...   % raster → uyarı yok, tutarlı görünüm
+            'Resolution', 300, ...
+            'BackgroundColor','white');
+        close(fig);
     end
-    F = state.Score;             % [f_pen, f1, f2]
+
+    % ---- Skor tablosu (f_pen, PFA_mean, IDR_mean) ----
+    if ~isfield(state,'Score') || isempty(state.Score), return; end
+    F = state.Score;                            % [N x 3]
     if size(F,2) < 3, return; end
-    fpen = F(:,1); f1 = F(:,2); f2 = F(:,3);
 
-    %% (D1) Pareto 3D: color by f_pen (or f3 if you prefer)
-    fig1 = figure('Color','w','Position',[100 100 900 650]);
-    ax1 = axes(fig1); hold(ax1,'on'); grid(ax1,'on'); box(ax1,'on');
-    sc = scatter3(ax1, f1, fpen, f2, 18, fpen, 'filled', ...
-                  'MarkerFaceAlpha',0.6, 'MarkerEdgeAlpha',0.4);
-    view(ax1, [48 20]); axis(ax1,'tight'); daspect(ax1,[1 1 0.6]);
-    xlabel(ax1, 'Objective 2 — PFA_{mean}  [m/s^2]');
-    ylabel(ax1, 'Objective 1 — f_{pen}  [-]');
-    zlabel(ax1, 'Objective 3 — IDR_{mean}  [-]');
-    title(ax1, 'Pareto Front (Rank = 1)', 'FontWeight','bold');
+    % ---- Rank=1 belirle ----
+    if isfield(state,'Rank') && ~isempty(state.Rank)
+        isR1 = (state.Rank == 1);
+    else
+        isR1 = paretofront(F);
+    end
 
-    cb = colorbar(ax1); cb.Label.String = 'f_{pen}';
-    % compact caption (bottom-left, no overlap)
-    txt = sprintf('seed=%d, Pop=%d, Gen=%d', 42, numel(state.Population(:,1)), state.Generation);
-    annotation(fig1,'textbox',[0.12 0.01 0.4 0.05],'String',txt,'EdgeColor','none','HorizontalAlignment','left');
+    % ===================== (D1) 3B PARETO FRONT ============================
+    fig = figure('Name','Pareto Front (Rank=1)','Color','w');
+    tl = tiledlayout(fig,1,1,'TileSpacing','compact','Padding','compact');
+    ax = nexttile(tl); grid(ax,'on'); box(ax,'on'); hold(ax,'on');
+    scatter3(ax, F(isR1,1), F(isR1,2), F(isR1,3), 24, ...
+        'filled','MarkerFaceAlpha',0.6,'MarkerEdgeAlpha',0.6);
+    xlabel(ax, 'Objective 1 — f_{pen} [-]');
+    ylabel(ax, 'Objective 2 — PFA_{mean} [m/s^2]');
+    zlabel(ax, 'Objective 3 — IDR_{mean} [-]');
+    title(ax, 'Pareto Front (Rank=1)','FontWeight','bold');
+    view(ax, 44, 28);
+    % Dipnot: taşma olmadan sayfa altına
+    seedStr = 'seed: n/a';
+    if isfield(state,'RandState') && ~isempty(state.RandState), seedStr = sprintf('seed=%d',state.RandState); end
+    popStr  = sprintf('Pop=%d', size(state.Population,1));
+    genStr  = sprintf('Gen=%d', state.Generation);
+    annotation(fig,'textbox',[0,0,1,0.04], ...
+        'String', sprintf('%s, %s, %s', seedStr, popStr, genStr), ...
+        'HorizontalAlignment','center','VerticalAlignment','middle', ...
+        'EdgeColor','none','FontSize',8,'Interpreter','none');
+    export_pdf(fig, [prefixPath '_pareto_front']);   % <<< İSTENEN ÇIKTI
 
-    exportgraphics(fig1, [prefix '_f2_vs_f1_color_f3.pdf'], 'ContentType','vector', 'BackgroundColor','white');
-    close(fig1);
+    % = (D2) 2B f2 vs f1 (renk=f3) — kısa başlık, temiz eksen etiketleri ===
+    fig = figure('Name','f2 vs f1 (color=f3)','Color','w');
+    tl = tiledlayout(fig,1,1,'TileSpacing','compact','Padding','compact');
+    ax = nexttile(tl); grid(ax,'on'); box(ax,'on'); hold(ax,'on');
+    sc = scatter(ax, F(:,1), F(:,2), 20, F(:,3), 'filled', ...
+        'MarkerFaceAlpha',0.6,'MarkerEdgeAlpha',0.6);
+    cb = colorbar(ax); cb.Label.String = 'Objective 3 — IDR_{mean} [-]';
+    xlabel(ax, 'Objective 1 — f_{pen} [-]');
+    ylabel(ax, 'Objective 2 — PFA_{mean} [m/s^2]');
+    title(ax, 'f_2 vs f_1 (renk = f_3)');
+    export_pdf(fig, [prefixPath '_f2_vs_f1_color_f3']);
 
-    %% (D2) Hypervolume vs Generation (if available)
+    % = (D3) Distance & Rank — taşmasız iki panel ===========================
+    fig = figure('Name','Distance & Rank','Color','w');
+    tl = tiledlayout(fig,2,1,'TileSpacing','compact','Padding','compact');
+
+    ax2 = nexttile(tl); grid(ax2,'on'); box(ax2,'on'); hold(ax2,'on');
+    dist = zeros(size(F,1),1);
+    if isfield(state,'Distance') && ~isempty(state.Distance), dist = state.Distance(:); end
+    stem(ax2, dist,'.'); ylabel(ax2,'Distance'); title(ax2,'Distance Of Individuals');
+
+    ax3 = nexttile(tl); grid(ax3,'on'); box(ax3,'on'); hold(ax3,'on');
+    rk = ones(size(F,1),1);
+    if isfield(state,'Rank') && ~isempty(state.Rank), rk = state.Rank(:); end
+    histogram(ax3, rk,'BinMethod','integers'); xlabel(ax3,'Rank'); ylabel(ax3,'Number of individuals'); title(ax3,'Rank Histogram');
+
+    export_pdf(fig, [prefixPath '_distance_rank']);
+
+    % = (D4) Hypervolume vs Generation (proxy; varsa) =======================
     hv = [];
-    if isfield(state,'Rank') && ~isempty(state.Rank)
-        % compute a simple hypervolume proxy relative to min(F)
-        try
-            Fmin = min(F,[],1) - eps;
-            hv = arrayfun(@(g) sum(prod(max(0, (Fmin - state.ScoreHistory{g} )),2)), 1:numel(state.ScoreHistory));
-        catch
-            hv = [];  %#ok<NASGU>
-        end
+    if isfield(state,'private') && isfield(state.private,'hv_hist') && ~isempty(state.private.hv_hist)
+        hv = state.private.hv_hist(:);
     end
-    fig2 = figure('Color','w','Position',[100 100 900 350]);
-    ax2 = axes(fig2); hold(ax2,'on'); grid(ax2,'on'); box(ax2,'on');
     if ~isempty(hv)
-        plot(ax2, 1:numel(hv), hv, 'LineWidth',1.5);
-    else
-        % fallback: plot min(f_pen) over generations if HV not available
-        if isfield(state,'Best') && isfield(state.Best,'score')
-            plot(ax2, state.Best.score(:,1), 'LineWidth',1.5);
-        end
+        fig = figure('Name','HV vs Gen','Color','w');
+        tl = tiledlayout(fig,1,1,'TileSpacing','compact','Padding','compact');
+        ax = nexttile(tl); grid(ax,'on'); box(ax,'on'); hold(ax,'on');
+        plot(ax, 0:numel(hv)-1, hv,'-','LineWidth',1.2);
+        xlabel(ax,'Generation'); ylabel(ax,'Hypervolume (proxy)');
+        title(ax,'Hypervolume vs Generation');
+        export_pdf(fig, [prefixPath '_hv_vs_gen']);
     end
-    xlabel(ax2,'Generation'); ylabel(ax2,'Hypervolume (proxy)');
-    title(ax2,'Hypervolume vs Generation');
-    exportgraphics(fig2, [prefix '_hv_vs_gen.pdf'], 'ContentType','vector', 'BackgroundColor','white');
-    close(fig2);
-
-    %% (D3) Distance & Rank — two stacked axes in one PDF (clean)
-    fig3 = figure('Color','w','Position',[100 100 900 650]);
-    t = tiledlayout(fig3, 2, 1, 'TileSpacing','compact','Padding','compact');
-
-    % Distance of individuals
-    nexttile(t,1);
-    if isfield(state,'Distance') && ~isempty(state.Distance)
-        stem(state.Distance,'Marker','none','LineWidth',1.0); grid on; box on;
-    else
-        plot(0,0,'.'); axis off;
-    end
-    xlabel('Individual'); ylabel('Distance'); title('Distance of Individuals');
-
-    % Rank histogram
-    nexttile(t,2);
-    if isfield(state,'Rank') && ~isempty(state.Rank)
-        histogram(state.Rank, 'BinMethod','integers'); grid on; box on;
-    else
-        plot(0,0,'.'); axis off;
-    end
-    xlabel('Rank'); ylabel('Number of individuals'); title('Rank Histogram');
-
-    exportgraphics(fig3, [prefix '_distance_rank.pdf'], 'ContentType','vector', 'BackgroundColor','white');
-    close(fig3);
 end
 
 function local_draw_caption(figHandle, captionText)
