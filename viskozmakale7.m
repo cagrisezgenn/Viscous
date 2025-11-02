@@ -101,23 +101,39 @@ ub = [3.50,  12,    0.95, 1.00,  1.60,  240,     400,       260,   20,     200, 
     % Amaç (SCI): Çok amaçlı GA parametrelerini tek blokta tanımlayarak nüfus dinamiklerini şeffaf raporlamayı kolaylaştırmak.
     % Yöntem: optimoptions çağrısı tek noktadan yapılarak OutputFcn üzerinden outdir aktarılır ve Display seçeneği iter seviyesinde tutulur.
     % Notlar: CrossoverFraction=0.85 ve ParetoFraction=0.65 literatürde viskoz damper tasarımında Pareto sıkışmasını azaltan aralıklardadır.
-    options = optimoptions('gamultiobj', ...
-        'PopulationSize',    300, ...
-        'MaxGenerations',    90,  ...
-        'CrossoverFraction', 0.85, ...
-        'MutationFcn',       {@mutationadaptfeasible}, ...
-        'ParetoFraction',    0.65, ...
-        'StallGenLimit',     90, ...
-        'DistanceMeasureFcn','distancecrowding', ...
-        'OutputFcn',         @(options,state,flag) ga_out_best_pen(options,state,flag, scaled, params, optsEval, outdir), ...
-        'UseParallel',       usePool, ...
-        'ConstraintTolerance',1e-6, ...
-        'FunctionTolerance',  1e-7, ...
-        'PlotFcn', {@gaplotpareto, @gaplotparetodistance, @gaplotrankhist}, ...
-        'PlotInterval', 1, ...
-        'Display','iter');
+    GAdef = struct('PopulationSize', 300, ...
+                   'MaxGenerations', 90, ...
+                   'ParetoFraction', 0.65, ...
+                   'StallGenLimit', 90, ...
+                   'CrossoverFraction', 0.85, ...
+                   'FunctionTolerance', 1e-7, ...
+                   'ConstraintTolerance', 1e-6, ...
+                   'PlotInterval', 1);
+    fn = fieldnames(GAdef);
+    for k = 1:numel(fn)
+        if ~isfield(optsGA, fn{k}) || isempty(optsGA.(fn{k}))
+            optsGA.(fn{k}) = GAdef.(fn{k});
+        end
+    end
 
-        [X,F,exitflag,output] = gamultiobj(obj, numel(lb), [],[],[],[], lb, ub, [], IntCon, options);
+    options = optimoptions('gamultiobj', ...
+        'PopulationSize',     optsGA.PopulationSize, ...
+        'MaxGenerations',     optsGA.MaxGenerations, ...
+        'CrossoverFraction',  optsGA.CrossoverFraction, ...
+        'MutationFcn',        {@mutationadaptfeasible}, ...
+        'ParetoFraction',     optsGA.ParetoFraction, ...
+        'StallGenLimit',      optsGA.StallGenLimit, ...
+        'DistanceMeasureFcn', 'distancecrowding', ...
+        'OutputFcn',          @(options,state,flag) ga_out_best_pen(options,state,flag, scaled, params, optsEval, outdir), ...
+        'UseParallel',        usePool, ...
+        'ConstraintTolerance',optsGA.ConstraintTolerance, ...
+        'FunctionTolerance',  optsGA.FunctionTolerance, ...
+        'PlotFcn',            {@gaplotpareto, @gaplotparetodistance, @gaplotrankhist}, ...
+        'PlotInterval',       optsGA.PlotInterval, ...
+        'Display',            'iter');
+
+    nonlcon = @(x) nlcon_spring_index(x);
+    [X,F,exitflag,output] = gamultiobj(obj, numel(lb), [],[],[],[], lb, ub, nonlcon, IntCon, options);
     gaout = struct('exitflag',exitflag,'output',output);
     assignin('base','X',X);
 assignin('base','F',F);
@@ -207,6 +223,22 @@ save(fullfile(outdir,'ga_front.mat'), '-struct', 'front', '-v7.3');
         save(fullfile(outdir,'ga_front.mat'), '-struct', 'tmp_struct', '-append');
     end
 
+end
+
+function [c,ceq] = nlcon_spring_index(x)
+    % Nonlinear inequality: c(x) <= 0 ; Equality: ceq = []
+    % x = [ ..., d_w_mm, D_m_mm, ... ] = indices 9 and 10 in your vector
+    d_w = x(9)  * 1e-3;   % [m]
+    D_m = x(10) * 1e-3;   % [m]
+    if d_w <= 0
+        C = inf;
+    else
+        C = D_m / d_w;
+    end
+    Cmin = 5; Cmax = 12;
+    c   = [Cmin - C;    % C >= 5  -> Cmin - C <= 0
+           C - Cmax];   % C <= 12 -> C - Cmax <= 0
+    ceq = [];
 end
 
 function [f, meta, details] = eval_design_fast(x, scaled, params_base, optsEval)
@@ -353,10 +385,9 @@ end
 % Notlar (SCI): pen_Qcap ve pen_cav temel terimlerden sonra genişletilir;
 %               değişkenlerin varlığı kontrol edilerek ramp katkısı güvenle
 %               uygulanır.
-ramp01 = @(v,a,b) max(0, (v - a) ./ max(b - a, eps));
 if ~exist('pen_Qcap','var'), pen_Qcap = 0; end
 if ~exist('pen_cav','var'),  pen_cav  = 0; end
-
+ramp01 = @(v,a,b) max(0, (v - a) ./ max(b - a, eps));
 pen_Qcap = pen_Qcap + (ramp01(qcap95, thr_qcap_soft, thr_qcap_kill)).^2;
 pen_cav  = pen_cav  + (ramp01(cavpct,  thr_cav_soft,  thr_cav_kill )).^2;
 
@@ -3202,278 +3233,93 @@ function raporla_kayitli_ga_sonuclari()
 
     raporla_ga_sonuclari(ga_data.X, storedF, scaled, params, struct(), struct());
 end
-function save_ga_diagnostics_as_pdf(state, tagOrPath)
-persistent HV_hist Fpen_best_hist Gen_hist
+function save_ga_diagnostics_as_pdf(state, prefix)
+    % prefix: fullfile(outdir,'ga_full') already provided by caller
+    if nargin < 2 || isempty(prefix), prefix = 'ga_diag'; end
 
-if isempty(HV_hist),          HV_hist = []; end
-if isempty(Fpen_best_hist),   Fpen_best_hist = []; end
-if isempty(Gen_hist),         Gen_hist = []; end
+    % ---- Common figure defaults (UTF-8 & readable) ----
+    set(0,'DefaultAxesFontName','DejaVu Sans');
+    set(0,'DefaultTextFontName','DejaVu Sans');
+    set(0,'DefaultAxesFontSize',10);
+    set(0,'DefaultTextInterpreter','tex');  % allow m/s^2, subscripts
 
-% --------- [Boş/NaN veri koruması ve klasör güvenliği] ---------
-if nargin >= 2 && ~isempty(tagOrPath)
-    folder = fileparts(tagOrPath);
-    if ~isempty(folder) && ~exist(folder,'dir')
-        mkdir(folder);
+    % Data guards
+    if isempty(state) || ~isfield(state,'Score') || isempty(state.Score)
+        return;
     end
-end
-if ~isfield(state,'Score') || isempty(state.Score) || ~any(isfinite(state.Score(:)))
-    warning('No finite scores to plot. Skipping GA diagnostics.');
-    return;
-end
+    F = state.Score;             % [f_pen, f1, f2]
+    if size(F,2) < 3, return; end
+    fpen = F(:,1); f1 = F(:,2); f2 = F(:,3);
 
-nIndividuals = size(state.Score,1);
+    %% (D1) Pareto 3D: color by f_pen (or f3 if you prefer)
+    fig1 = figure('Color','w','Position',[100 100 900 650]);
+    ax1 = axes(fig1); hold(ax1,'on'); grid(ax1,'on'); box(ax1,'on');
+    sc = scatter3(ax1, f1, fpen, f2, 18, fpen, 'filled', ...
+                  'MarkerFaceAlpha',0.6, 'MarkerEdgeAlpha',0.4);
+    view(ax1, [48 20]); axis(ax1,'tight'); daspect(ax1,[1 1 0.6]);
+    xlabel(ax1, 'Objective 2 — PFA_{mean}  [m/s^2]');
+    ylabel(ax1, 'Objective 1 — f_{pen}  [-]');
+    zlabel(ax1, 'Objective 3 — IDR_{mean}  [-]');
+    title(ax1, 'Pareto Front (Rank = 1)', 'FontWeight','bold');
 
-if ~isfield(state,'Distance') || isempty(state.Distance)
-    distVecFull = zeros(nIndividuals,1);
-else
-    distVecFull = state.Distance(:);
-    if numel(distVecFull) < nIndividuals
-        distVecFull(nIndividuals) = 0; %#ok<AGROW>
-    elseif numel(distVecFull) > nIndividuals
-        distVecFull = distVecFull(1:nIndividuals);
-    end
-end
+    cb = colorbar(ax1); cb.Label.String = 'f_{pen}';
+    % compact caption (bottom-left, no overlap)
+    txt = sprintf('seed=%d, Pop=%d, Gen=%d', 42, numel(state.Population(:,1)), state.Generation);
+    annotation(fig1,'textbox',[0.12 0.01 0.4 0.05],'String',txt,'EdgeColor','none','HorizontalAlignment','left');
 
-if ~isfield(state,'Rank') || isempty(state.Rank)
-    rankVecFull = zeros(nIndividuals,1);
-else
-    rankVecFull = state.Rank(:);
-    if numel(rankVecFull) < nIndividuals
-        rankVecFull(nIndividuals) = 0; %#ok<AGROW>
-    elseif numel(rankVecFull) > nIndividuals
-        rankVecFull = rankVecFull(1:nIndividuals);
-    end
-end
-% ---------------------------------------------------------------
-% tagOrPath: 'out/ga_2025.../ga_full' gibi prefix (uzantısız)
-% Pareto (Rank==1), Distance, Rank histogram PDF’leri üretir.
+    exportgraphics(fig1, [prefix '_f2_vs_f1_color_f3.pdf'], 'ContentType','vector', 'BackgroundColor','white');
+    close(fig1);
 
-F_all = state.Score;
-if size(F_all,2) < 3
-    warning('save_ga_diagnostics_as_pdf: Score requires en az üç amaç sütunu.');
-    return;
-end
-
-F_all = F_all(:,1:3);
-validRows = all(isfinite(F_all),2);
-F = F_all(validRows,:);
-if isempty(F)
-    warning('No finite scores after filtering. Skipping GA diagnostics.');
-    return;
-end
-
-Fmin = min(F,[],1);
-Fmax = max(F,[],1);
-Fnorm = (F - Fmin) ./ max(Fmax - Fmin, eps);
-FnormFull = nan(size(F_all));
-FnormFull(validRows,:) = Fnorm;
-
-paretoMask = (rankVecFull == 1) & validRows;
-F_pareto = F_all(paretoMask,:);
-Fnorm_pareto = FnormFull(paretoMask,:);
-distPareto = distVecFull(paretoMask);
-
-metaCaption = local_build_caption(state);
-
-% ===================== [FIGURE: Pareto Front (Original Scale)] =====================
-% Amaç: Pareto cephesini orijinal birimleriyle göstererek mühendislik sezgisini
-%       destekler (f_pen [–], PFA_mean [m/s^2], IDR_mean [–]).
-% Yöntem: Rank==1 bireylerin 3B saçılımı; eksenlerde bilimsel birimlendirme.
-% Notlar (SCI): f_pen boyutsuz ceza; PFA_mean m/s^2 olarak raporlanır (g değil);
-%               IDR_mean katlar arası rölatif deplasman oranıdır (boyutsuz).
-% Kaydetme: print(fig, [tagOrPath '_pareto_front.pdf'], '-dpdf', '-bestfit');
-if ~isempty(F_pareto)
-    figPareto = figure('Color','w','Units','centimeters','Position',[1 1 22 18]);
-    scatter3(F_pareto(:,1), F_pareto(:,2), F_pareto(:,3), 48, ...
-        'filled', 'MarkerFaceAlpha',0.45, 'MarkerEdgeAlpha',0.45);
-    grid on; box on;
-    xlabel('Objective 1 — f_{pen} [–]','FontWeight','bold','Interpreter','tex');
-    ylabel('Objective 2 — PFA_{mean} [m/s^2]','FontWeight','bold','Interpreter','tex');
-    zlabel('Objective 3 — IDR_{mean} [–]','FontWeight','bold','Interpreter','tex');
-    set(gca,'FontSize',11,'LineWidth',1);
-    view(30,25);
-    title({'Pareto Front (Rank=1)', ...
-        'Amaçlar normalleştirildi; f_{pen} lexicographic birinci amaçtır; PFA_{mean} m/s^2; IDR_{mean} boyutsuz. Nokta saydamlığı yoğunluk algısını güçlendirir; crowding distance ile çeşitlilik vurgulanır.'}, ...
-        'Interpreter','tex','FontSize',11);
-    local_draw_caption(figPareto, metaCaption);
-    print(figPareto, [tagOrPath '_pareto_front.pdf'], '-dpdf', '-bestfit');
-    close(figPareto);
-end
-
-% ===================== [FIGURE: Pareto Front (Normalized)] =====================
-% Amaç: Farklı ölçekli amaçları karşılaştırılabilir hale getirerek Pareto cephesinin
-%       geometrisini (knee point, çeşitlilik) açıkça göstermeye çalışır.
-% Yöntem: Min-max normalizasyon (kolon bazlı), 3B saçılım, crowding distance vurgusu.
-% Notlar (SCI): f_pen boyutsuz ceza; PFA_mean, yapısal performansın ivme ölçütü (m/s^2);
-%               IDR_mean, katlar arası rölatif yer değiştirme oranı (boyutsuz).
-% Kaydetme: print(fig, [tagOrPath '_pareto_norm.pdf'], '-dpdf', '-bestfit');
-if ~isempty(Fnorm_pareto)
-    figParetoNorm = figure('Color','w','Units','centimeters','Position',[1 1 22 18]);
-    axParetoNorm = axes(figParetoNorm); %#ok<LAXES>
-    hold(axParetoNorm,'on');
-    scatter3(axParetoNorm, Fnorm_pareto(:,1), Fnorm_pareto(:,2), Fnorm_pareto(:,3), ...
-        48, 'filled', 'MarkerFaceColor',[0 0.4470 0.7410], 'MarkerFaceAlpha',0.35, ...
-        'MarkerEdgeColor',[0 0.4470 0.7410], 'MarkerEdgeAlpha',0.35);
-
-    if ~isempty(distPareto)
-        finiteIdx = find(isfinite(distPareto));
-        if ~isempty(finiteIdx)
-            [~, localOrder] = sort(distPareto(finiteIdx),'descend');
-            finiteIdx = finiteIdx(localOrder);
-            nHighlight = min(20, numel(finiteIdx));
-            highlightIdx = finiteIdx(1:nHighlight);
-            scatter3(axParetoNorm, Fnorm_pareto(highlightIdx,1), Fnorm_pareto(highlightIdx,2), ...
-                Fnorm_pareto(highlightIdx,3), 64, 's', ...
-                'MarkerFaceColor',[0.8500 0.3250 0.0980], 'MarkerEdgeColor',[0.5 0.2 0.1], ...
-                'MarkerFaceAlpha',0.8, 'MarkerEdgeAlpha',0.8, 'LineWidth',1.2);
+    %% (D2) Hypervolume vs Generation (if available)
+    hv = [];
+    if isfield(state,'Rank') && ~isempty(state.Rank)
+        % compute a simple hypervolume proxy relative to min(F)
+        try
+            Fmin = min(F,[],1) - eps;
+            hv = arrayfun(@(g) sum(prod(max(0, (Fmin - state.ScoreHistory{g} )),2)), 1:numel(state.ScoreHistory));
+        catch
+            hv = [];  %#ok<NASGU>
         end
     end
-
-    grid(axParetoNorm,'on'); box(axParetoNorm,'on');
-    xlabel(axParetoNorm,'Objective 1 — f_{pen} [–]','FontWeight','bold','Interpreter','tex');
-    ylabel(axParetoNorm,'Objective 2 — PFA_{mean} [m/s^2]','FontWeight','bold','Interpreter','tex');
-    zlabel(axParetoNorm,'Objective 3 — IDR_{mean} [–]','FontWeight','bold','Interpreter','tex');
-    set(axParetoNorm,'FontSize',11,'LineWidth',1);
-    view(axParetoNorm, [30 25]);
-    title(axParetoNorm, {'Pareto Front (Normalized)', ...
-        'Amaçlar normalleştirildi; f_{pen} lexicographic birinci amaçtır; PFA_{mean} m/s^2; IDR_{mean} boyutsuz. Nokta saydamlığı yoğunluk algısını güçlendirir; crowding distance ile çeşitlilik vurgulanır.'}, ...
-        'Interpreter','tex','FontSize',11);
-    local_draw_caption(figParetoNorm, metaCaption);
-    print(figParetoNorm, [tagOrPath '_pareto_norm.pdf'], '-dpdf', '-bestfit');
-    close(figParetoNorm);
-end
-
-% ===================== [FIGURE: f2 vs f1, Color=f3 (Normalized)] =====================
-% Amaç: Pareto üzerindeki amaç çiftini (f_pen, PFA_mean) ve üçüncü amacı renk
-%       haritalaması ile ilişkilendirip knee point analizi yapmaktır.
-% Yöntem: Min-max normalizasyon, 2B saçılım, uçtan uca çizgiye maksimum mesafe.
-% Notlar (SCI): Renk haritası IDR_{mean} [0–1]; knee point, çözüm uzayının en
-%               yüksek eğrilik noktasıdır ve karar vericiler için kritik önemdedir.
-% Kaydetme: print(fig, [tagOrPath '_f2_vs_f1_color_f3.pdf'], '-dpdf', '-bestfit');
-if ~isempty(Fnorm_pareto)
-    fig2D = figure('Color','w','Units','centimeters','Position',[1 1 22 18]);
-    ax2D = axes(fig2D); %#ok<LAXES>
-    scatter(ax2D, Fnorm_pareto(:,1), Fnorm_pareto(:,2), 64, Fnorm_pareto(:,3), 'filled', ...
-        'MarkerFaceAlpha',0.6, 'MarkerEdgeAlpha',0.6);
-    hold(ax2D,'on');
-    colormap(ax2D,'turbo');
-    caxis(ax2D,[0 1]);
-    cb = colorbar(ax2D);
-    cb.Label.String = 'Renk: IDR_{mean} [0–1]';
-    cb.Label.Interpreter = 'tex';
-    cb.Label.FontSize = 11;
-    xlabel(ax2D,'Objective 1 — f_{pen} [–]','FontWeight','bold','Interpreter','tex');
-    ylabel(ax2D,'Objective 2 — PFA_{mean} [m/s^2]','FontWeight','bold','Interpreter','tex');
-    set(ax2D,'FontSize',11,'LineWidth',1);
-    grid(ax2D,'on'); box(ax2D,'on');
-
-    kneeIdx = local_find_knee_point(Fnorm_pareto(:,1:2));
-    if ~isempty(kneeIdx)
-        plot(ax2D, Fnorm_pareto(kneeIdx,1), Fnorm_pareto(kneeIdx,2), 'k*', ...
-            'MarkerSize',10, 'LineWidth',1.5);
+    fig2 = figure('Color','w','Position',[100 100 900 350]);
+    ax2 = axes(fig2); hold(ax2,'on'); grid(ax2,'on'); box(ax2,'on');
+    if ~isempty(hv)
+        plot(ax2, 1:numel(hv), hv, 'LineWidth',1.5);
+    else
+        % fallback: plot min(f_pen) over generations if HV not available
+        if isfield(state,'Best') && isfield(state.Best,'score')
+            plot(ax2, state.Best.score(:,1), 'LineWidth',1.5);
+        end
     end
+    xlabel(ax2,'Generation'); ylabel(ax2,'Hypervolume (proxy)');
+    title(ax2,'Hypervolume vs Generation');
+    exportgraphics(fig2, [prefix '_hv_vs_gen.pdf'], 'ContentType','vector', 'BackgroundColor','white');
+    close(fig2);
 
-    title(ax2D, {'f2 vs f1, Color=f3 (Normalized)', ...
-        'Amaçlar normalleştirildi; f_{pen} lexicographic birinci amaçtır; PFA_{mean} m/s^2; IDR_{mean} boyutsuz. Nokta saydamlığı yoğunluk algısını güçlendirir; crowding distance ile çeşitlilik vurgulanır.'}, ...
-        'Interpreter','tex','FontSize',11);
-    local_draw_caption(fig2D, metaCaption);
-    print(fig2D, [tagOrPath '_f2_vs_f1_color_f3.pdf'], '-dpdf', '-bestfit');
-    close(fig2D);
-end
+    %% (D3) Distance & Rank — two stacked axes in one PDF (clean)
+    fig3 = figure('Color','w','Position',[100 100 900 650]);
+    t = tiledlayout(fig3, 2, 1, 'TileSpacing','compact','Padding','compact');
 
-% ================= [FIGURE: Crowding Distance & Rank Histogram] =================
-% Amaç: Popülasyonun çeşitliliğini (crowding distance) ve çözüm kalitesini (rank)
-%       eşzamanlı gözlemleyerek GA davranışını yorumlamak.
-% Yöntem: Çubuk grafik (distance) ve histogram (rank) tek PDF içerisinde.
-% Notlar (SCI): NaN veya eksik değerler sıfıra çekildi; histogram bin yöntemi auto.
-% Kaydetme: print(fig, [tagOrPath '_distance_rank.pdf'], '-dpdf', '-bestfit');
-figDistRank = figure('Color','w','Units','centimeters','Position',[1 1 22 18]);
-t = tiledlayout(figDistRank,2,1,'TileSpacing','compact','Padding','compact');
+    % Distance of individuals
+    nexttile(t,1);
+    if isfield(state,'Distance') && ~isempty(state.Distance)
+        stem(state.Distance,'Marker','none','LineWidth',1.0); grid on; box on;
+    else
+        plot(0,0,'.'); axis off;
+    end
+    xlabel('Individual'); ylabel('Distance'); title('Distance of Individuals');
 
-nexttile(t);
-bar(distVecFull, 'FaceColor',[0 0.4470 0.7410], 'EdgeColor','none');
-grid on; box on;
-xlabel('Birey İndeksi [–]','FontWeight','bold','Interpreter','tex');
-ylabel('Crowding Distance [–]','FontWeight','bold','Interpreter','tex');
-set(gca,'FontSize',11,'LineWidth',1);
-title({'Crowding Distance Dağılımı', ...
-    'Amaçlar normalleştirildi; f_{pen} lexicographic birinci amaçtır; PFA_{mean} m/s^2; IDR_{mean} boyutsuz. Nokta saydamlığı yoğunluk algısını güçlendirir; crowding distance ile çeşitlilik vurgulanır.'}, ...
-    'Interpreter','tex','FontSize',11);
+    % Rank histogram
+    nexttile(t,2);
+    if isfield(state,'Rank') && ~isempty(state.Rank)
+        histogram(state.Rank, 'BinMethod','integers'); grid on; box on;
+    else
+        plot(0,0,'.'); axis off;
+    end
+    xlabel('Rank'); ylabel('Number of individuals'); title('Rank Histogram');
 
-nexttile(t);
-histogram(rankVecFull, 'BinMethod','auto', 'FaceColor',[0.8500 0.3250 0.0980], 'EdgeColor','none');
-grid on; box on;
-xlabel('Rank [–]','FontWeight','bold','Interpreter','tex');
-ylabel('Adet [–]','FontWeight','bold','Interpreter','tex');
-set(gca,'FontSize',11,'LineWidth',1);
-title('Rank Histogramı','Interpreter','tex','FontSize',11);
-
-sgtitle(t, {'Crowding Distance & Rank Histogramı', metaCaption}, 'Interpreter','tex','FontSize',11);
-print(figDistRank, [tagOrPath '_distance_rank.pdf'], '-dpdf', '-bestfit');
-close(figDistRank);
-
-% ----------------------- [Hiperyüzey ve f_pen İzleme] -----------------------
-Fnorm_forHV = Fnorm_pareto;
-if isempty(Fnorm_forHV)
-    hvVal = 0;
-else
-    hvVal = calc_hv_unitcube(Fnorm_forHV);
-end
-fpen_best = min(F(:,1));
-
-HV_hist = [HV_hist(:); hvVal];
-Fpen_best_hist = [Fpen_best_hist(:); fpen_best];
-
-if isfield(state,'Generation') && ~isempty(state.Generation)
-    genVal = state.Generation;
-else
-    genVal = numel(HV_hist);
-end
-Gen_hist = [Gen_hist(:); genVal];
-
-% ===================== [FIGURE: Hypervolume vs Generation] =====================
-% Amaç: Normalleştirilmiş Pareto cephesinin hiperyüzey gelişimini takip etmek.
-% Yöntem: Referans nokta r=[1 1 1], kutu hiperyüzeyi hesaplanıp jenerasyon bazında çizilir.
-% Notlar (SCI): Hiperyüzey değeri 0–1 aralığındadır; daha yüksek değer Pareto
-%               cephesinin genişlediğini gösterir.
-% Kaydetme: print(fig, [tagOrPath '_hv_vs_gen.pdf'], '-dpdf', '-bestfit');
-if ~isempty(HV_hist)
-    figHV = figure('Color','w','Units','centimeters','Position',[1 1 22 18]);
-    plot(Gen_hist, HV_hist, '-o', 'LineWidth',1.5, 'MarkerSize',6, ...
-        'MarkerFaceColor',[0 0.4470 0.7410]);
-    grid on; box on;
-    xlabel('Jenerasyon [–]','FontWeight','bold','Interpreter','tex');
-    ylabel('Hiperyüzey (r=[1 1 1]) [–]','FontWeight','bold','Interpreter','tex');
-    set(gca,'FontSize',11,'LineWidth',1);
-    title({'Hypervolume vs Generation', ...
-        'Amaçlar normalleştirildi; f_{pen} lexicographic birinci amaçtır; PFA_{mean} m/s^2; IDR_{mean} boyutsuz. Nokta saydamlığı yoğunluk algısını güçlendirir; crowding distance ile çeşitlilik vurgulanır.'}, ...
-        'Interpreter','tex','FontSize',11);
-    local_draw_caption(figHV, metaCaption);
-    print(figHV, [tagOrPath '_hv_vs_gen.pdf'], '-dpdf', '-bestfit');
-    close(figHV);
-end
-
-% ================== [FIGURE: Best f_{pen} vs Generation] ==================
-% Amaç: Her jenerasyonda elde edilen en iyi f_pen değerinin azalımını izlemek.
-% Yöntem: Min f_pen (orijinal ölçek) jenerasyon tarihçesi çizimi.
-% Notlar (SCI): f_pen boyutsuz ceza olup, değer azaldıkça kısıt ihlalleri azalır.
-% Kaydetme: print(fig, [tagOrPath '_fpen_best_vs_gen.pdf'], '-dpdf', '-bestfit');
-if ~isempty(Fpen_best_hist)
-    figBestPen = figure('Color','w','Units','centimeters','Position',[1 1 22 18]);
-    plot(Gen_hist, Fpen_best_hist, '-s', 'LineWidth',1.5, 'MarkerSize',6, ...
-        'MarkerFaceColor',[0.8500 0.3250 0.0980]);
-    grid on; box on;
-    xlabel('Jenerasyon [–]','FontWeight','bold','Interpreter','tex');
-    ylabel('En İyi f_{pen} [–]','FontWeight','bold','Interpreter','tex');
-    set(gca,'FontSize',11,'LineWidth',1);
-    title({'Best f_{pen} vs Generation', ...
-        'Amaçlar normalleştirildi; f_{pen} lexicographic birinci amaçtır; PFA_{mean} m/s^2; IDR_{mean} boyutsuz. Nokta saydamlığı yoğunluk algısını güçlendirir; crowding distance ile çeşitlilik vurgulanır.'}, ...
-        'Interpreter','tex','FontSize',11);
-    local_draw_caption(figBestPen, metaCaption);
-    print(figBestPen, [tagOrPath '_fpen_best_vs_gen.pdf'], '-dpdf', '-bestfit');
-    close(figBestPen);
-end
-
+    exportgraphics(fig3, [prefix '_distance_rank.pdf'], 'ContentType','vector', 'BackgroundColor','white');
+    close(fig3);
 end
 
 function local_draw_caption(figHandle, captionText)
