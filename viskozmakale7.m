@@ -81,13 +81,10 @@ penopts = struct('lambda',lambda,'power',pwr,'W',W,'cav_free',cav_free);
 %% GA Sürücüsü ve Kurulum — Optimizasyon Ayarları
 % GA amaç fonksiyonu ve optimizasyon seçeneklerini hazırla.
     rng(42);
-    % =================== [BÖLÜM: Çıktı Dizin Kurulumu] ===================
-    % Amaç: GA çıktıları için zaman damgalı klasörü önceden oluşturarak tüm
-    %        teşhis ve raporların tek kaynaktan yazılmasını sağlamak.
-    % Yöntem: datestr ile tstamp üretilir, out/ga_* dizini yoksa mkdir ile
-    %         oluşturulur ve tüm ara sonuçlar bu klasörde saklanır.
-    % Notlar (SCI): Milisaniye hassasiyetli tstamp runlar arası çakışmayı
-    %               önler; tstamp sonuç paketlerinde raporlanır.
+    % ================= [BÖLÜM: Çıktı Dizin Kurulumu] =================
+    % Amaç (SCI): GA çıktılarının tekil ve izlenebilir klasörlerde arşivlenmesini sağlamak.
+    % Yöntem: datestr ile tstamp oluşturulur, out/ga_* dizini mkdir ile hazırlanır ve tüm raporlar bu dizine yönlendirilir.
+    % Notlar: Milisaniye çözünürlüklü tstamp paralel oturum çakışmalarını önler ve sonuç paketlerinde raporlanır.
     tstamp = datestr(now,'yyyymmdd_HHMMSS_FFF');
     outdir = fullfile('out', ['ga_' tstamp]);
     if ~exist(outdir,'dir'), mkdir(outdir); end
@@ -100,16 +97,10 @@ ub = [3.50,  12,    0.95, 1.00,  1.60,  240,     400,       260,   20,     200, 
 
     obj = @(x) eval_design_fast(x, scaled, params, optsEval); % içerde kuantize/clamplar
 
-    % =================== [BÖLÜM: GA Optimizasyon Ayarları] ===================
-    % Amaç: Çok amaçlı GA parametrelerini tek blokta tanımlayarak nüfus
-    %        büyüklüğü ve konverjans kriterlerini SCI standardında
-    %        raporlanabilir kılmak.
-    % Yöntem: optimoptions çağrısı tek noktadan yapılır; OutputFcn ile GA
-    %         teşhis PDF’leri için outdir aktarılır, Display seçeneği iter
-    %         seviyesinde tutulur.
-    % Notlar (SCI): CrossoverFraction=0.85 ve ParetoFraction=0.65 değerleri
-    %               viskoz damper tasarımında pareto sıkışmasını azaltmak
-    %               için literatürde önerilen aralıklardadır.
+    % ================= [BÖLÜM: GA Optimizasyon Ayarları] =================
+    % Amaç (SCI): Çok amaçlı GA parametrelerini tek blokta tanımlayarak nüfus dinamiklerini şeffaf raporlamayı kolaylaştırmak.
+    % Yöntem: optimoptions çağrısı tek noktadan yapılarak OutputFcn üzerinden outdir aktarılır ve Display seçeneği iter seviyesinde tutulur.
+    % Notlar: CrossoverFraction=0.85 ve ParetoFraction=0.65 literatürde viskoz damper tasarımında Pareto sıkışmasını azaltan aralıklardadır.
     options = optimoptions('gamultiobj', ...
         'PopulationSize',    300, ...
         'MaxGenerations',    90,  ...
@@ -1059,20 +1050,17 @@ function [state, options, optchanged] = ga_out_best_pen(options, state, flag, sc
         [f_curr, ~] = eval_design_fast(bestx, scaled, params, optsEval);
         fprintf('Gen %d: pen=%g f1=%g f2=%g\\n', state.Generation, f_curr(1), f_curr(2), f_curr(3));
     end
-    % -------------- [GA Bittiğinde PDF Teşhis] --------------
+    % ================= [BÖLÜM: GA Bitişinde PDF Teşhisi] =================
+    % Amaç (SCI): Optimizasyonun son anındaki Pareto çözümlerini nesnelleştirerek tekrar üretilebilirliği güvence altına almak.
+    % Yöntem: flag == 'done' olduğunda save_ga_diagnostics_as_pdf çağrısı ile tanısal grafikler outdir altına PDF olarak yazdırılır.
+    % Notlar: PDF üretilmesi sırasında hata oluşursa kullanıcıya uyarı mesajı gösterilir ve GA akışı kesintiye uğramaz.
     if strcmp(flag,'done')
         try
-            if exist('save_ga_diagnostics_as_pdf','file')
-                % Not: Klasör yoksa fonksiyon içinde oluşturulacak.
-                save_ga_diagnostics_as_pdf(state, fullfile(outdir,'ga_full'));  % ga_full_*.pdf
-            else
-                warning('save_ga_diagnostics_as_pdf bulunamadı; PDF üretimi atlandı.');
-            end
+            save_ga_diagnostics_as_pdf(state, fullfile(outdir,'ga_full'));  % ga_full_*.pdf
         catch ME
             warning('PDF export failed: %s', ME.message);
         end
     end
-    % --------------------------------------------------------
 
 end
 
@@ -3653,4 +3641,3 @@ area = max(min(area,1),0);
 
 end
 
-end
