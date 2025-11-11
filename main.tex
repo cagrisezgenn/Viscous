@@ -48,8 +48,8 @@
 \makeatother
 \newcolumntype{L}{>{\raggedright\arraybackslash}X}
 
-
 \begin{document}
+\pagenumbering{roman}
 \begin{frontmatter}
 
 \title{Hydro--thermal high-fidelity modelling and multi-objective design of fluid viscous dampers}
@@ -401,11 +401,10 @@ The feasible region $\mathcal{X}$ is a box-constrained domain (Table~\ref{tab:op
 
 \begin{table}[htbp]
   \centering\footnotesize
-  \setlength{\tabcolsep}{4pt}
+  \setlength{\tabcolsep}{3pt}
   \caption{Optimization decision variables and bounds.}
   \label{tab:opt-vars}
-  \resizebox{\linewidth}{!}{%
-  \begin{tabular}{@{}l>{\raggedright\arraybackslash}p{0.38\linewidth} S[table-format=1.5] S[table-format=1.5] l@{}}
+  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X S[table-format=1.5] S[table-format=1.5] >{\raggedright\arraybackslash}l@{}}
   \toprule
   Symbol & Description & {Lower} & {Upper} & Units \\
   \midrule
@@ -422,7 +421,7 @@ The feasible region $\mathcal{X}$ is a box-constrained domain (Table~\ref{tab:op
   $n_{\mathrm{turn}}$ & Active spring turns \textit{(integer)} & 6       & 15      & -- \\
   $\mu_{\mathrm{ref}}$ & Reference viscosity at $T_{\mathrm{ref}}$ & 0.60 & 2.00    & \si{Pa\,s} \\
   \bottomrule
-  \end{tabular}}
+  \end{tabularx}
 \end{table}
 
 \paragraph{Search strategy and audit.}
@@ -462,16 +461,16 @@ The visual trends above are quantified in Table~\ref{tab:perf-summary}. Record-a
 
 \begin{table}[htbp]
 \centering\small
-\caption{Record–averaged performance: Bare Frame vs. knee–selected Optimized FVD (from audit).}
+\caption{Record-averaged performance: Bare Frame vs. knee-selected Optimized FVD (from audit).}
 \label{tab:perf-summary}
-\begin{tabular}{l S[table-format=2.2] S[table-format=1.3] S[table-format=2.1] S[table-format=2.1]}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X*{4}{>{\centering\arraybackslash}X}@{}}
 \toprule
-Design & {PFA\_mean [\si{m/s^2}]} & {IDR\_mean [\%]} & {\% Gain (PFA)} & {\% Gain (IDR)}\\
+Design & $\overline{\mathrm{PFA}}$ [\si{m/s^2}] & $\overline{\mathrm{IDR}}$ [\%] & $\Delta\mathrm{PFA}$ [\%] & $\Delta\mathrm{IDR}$ [\%]\\
 \midrule
-Baseline (Bare Frame) & 13.27 & 0.880 & {-} & {-}\\
-Optimized (Knee–FVD)  & 5.05  & 0.300 & 61.9 & 65.9\\
+Baseline (Bare Frame) & \num{13.27} & \num{0.880} & -- & --\\
+Optimized (Knee--FVD)  & \num{5.05}  & \num{0.300} & \num{61.9} & \num{65.9}\\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 \subsection{Multi-Objective Trade-off Analysis and Safety Verification}
@@ -574,10 +573,10 @@ The safety-first lexicographic search produced a dense, feasible front ($f_{\mat
 \renewcommand{\thetable}{A.\arabic{table}}
 \renewcommand{\theHtable}{A\arabic{table}}
 
-% --- TABLO A.1 (Değişmedi) ---
+% --- TABLO A.1 ---
 \begin{table}[htbp]
 \centering\small
-\caption{Core symbols used in the paper (definitions and SI units).}
+\caption{Core structural and coupling symbols (definitions and SI units).}
 \label{tab:symbols}
 \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.18\linewidth}>{\raggedright\arraybackslash}p{0.23\linewidth}>{\raggedright\arraybackslash}p{0.17\linewidth}>{\raggedright\arraybackslash}X@{}}
 \toprule
@@ -588,15 +587,27 @@ $\boldsymbol{x},\boldsymbol{v}$ & rel. disp., vel. & m; m\,s$^{-1}$ & Floor DOFs
 $\boldsymbol{B}$ & incidence operator & -- & Forms story drifts: $\Delta\boldsymbol{x}=\boldsymbol{B}\boldsymbol{x}$. \\
 $\boldsymbol{r}$, $a_g$ & base influence, ground acc. & --; m\,s$^{-2}$ & Base excitation term $-\boldsymbol{M}\boldsymbol{r}a_g$. \\
 $A_p, A_o$ & piston, total orifice area & m$^2$ & $A_p=\pi D_p^2/4$, $A_o=n_{\mathrm{orf}}\pi d_o^2/4$. \\
-$d_o, n_{\mathrm{orf}}, L_{\mathrm{ori}}, D_p$ & orifice \& piston geometry & m; --; m; m & Design variables in Table~\ref{tab:opt-vars}. \\
+$\shortstack{$d_o$, $n_{\mathrm{orf}}$,\\ $L_{\mathrm{ori}}$, $D_p$}$ & orifice \& piston geometry & m; --; m; m & Design variables in Table~\ref{tab:opt-vars}. \\
 $C_d^0, C_d^\infty, p_{\exp}$ & discharge law params & -- & In $C_d(\mathrm{Re})$. \\
 $\mathrm{Re}$ & Reynolds number & -- & $\mathrm{Re}=\rho |Q| d_o/(\mu A_o)$. \\
 $k_{sd}$ & elastic branch stiffness & N\,m$^{-1}$ & Series(hydraulic, cylinder) $+$ spring. \\
 $c_{\mathrm{lam}}(T)$ & laminar eq. coeff. & N\,s\,m$^{-1}$ & Laminar branch (viscous term). \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{table}[htbp]
+\centering\small
+\caption{Core damper and performance symbols (definitions and SI units).}
+\label{tab:symbols-damper}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.18\linewidth}>{\raggedright\arraybackslash}p{0.23\linewidth}>{\raggedright\arraybackslash}p{0.17\linewidth}>{\raggedright\arraybackslash}X@{}}
+\toprule
+Symbol & Name & Units & Brief definition \\
+\midrule
 $\Delta p_{\mathrm{kv}}$, $\Delta p_{\mathrm{cav}}$, $\Delta p_{\mathrm{eff}}$ & jet, cavitation, effective drop & Pa & Jet candidate, cavitation cap, soft-min. \\
 $Q_{\mathrm{sat}}$, $Q_{\mathrm{cap}}$ & saturated flow, capacity & m$^3$\,s$^{-1}$ & $\tanh$ limiter and capacity. \\
 $v_\varepsilon$, $\varepsilon_{\text{softmin}}$ & smoothers & m\,s$^{-1}$; Pa & Sign smooth; soft-min sharpness. \\
-$T_o, T_s$, $hA$ & oil/steel temps., conductance & $^\circ$C; W\,K$^{-1}$ & Two-node thermal block. \\
+$\shortstack{$T_o$, $T_s$,\\ $hA$}$ & oil/steel temps., conductance & $^\circ$C; W\,K$^{-1}$ & Two-node thermal block. \\
 $\mu(T)$, $\rho(T)$ & viscosity, density & Pa\,s; kg\,m$^{-3}$ & Temperature-dependent properties. \\
 $\mathrm{PFA}$, $\mathrm{IDR}$ & peak floor acc., drift ratio & m\,s$^{-2}$; -- & Main performance metrics. \\
 $t_5,t_{95}$ & Arias window bounds & s & Significant duration window for metrics. \\
