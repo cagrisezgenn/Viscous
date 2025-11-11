@@ -8,6 +8,7 @@
 \usepackage{graphicx}
 \usepackage{siunitx}
 \usepackage{microtype}
+\microtypecontext{showhyphens=false} % lineno uyumluluğu için \showhyphens yaması devre dışı
 \usepackage{lineno}
 \usepackage{booktabs}
 \usepackage{tabularx}
@@ -159,7 +160,7 @@ For uniform storey height $h$, the maximum inter-storey drift ratio (IDR) is
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.9\linewidth]{ViscousDamper_CAD.pdf}
-  \caption{Schematic of the high-fidelity fluid viscous damper (FVD) model . Key components include the Piston Head containing Orifices [cite: 1512, 1513] which separates Chamber 1 and Chamber 2 [cite: 1511, 1514], the compressible Silicon Fluid [cite: 1508], and the parallel Spring [cite: 1510] (representing $k_{sd}$).}
+  \caption{Schematic of the high-fidelity fluid viscous damper (FVD) model. Key components include the piston head containing orifices [cite: 1512, 1513] which separates Chamber~1 and Chamber~2 [cite: 1511, 1514], the compressible silicon fluid [cite: 1508], and the parallel spring [cite: 1510] (representing $k_{sd}$).}
   \label{fig:damper_schematic}
 \end{figure}
 
@@ -707,7 +708,7 @@ $c_p$ (steel) & 500 & J(kg K)$^{-1}$ & Specific heat capacity (steel).\\
 \setlength{\tabcolsep}{4.5pt}
 \caption{Derived quantities used internally (definitions).}
 \label{tab:derived}
-\begin{tabularx}{\linewidth}{@{}l>{\RaggedRight\arraybackslash}p{0.28\linewidth}>{\RaggedRight\arraybackslash}p{0.56\linewidth}@{}}
+\begin{tabularx}{\linewidth}{@{}l>{\RaggedRight\arraybackslash}p{0.32\linewidth}>{\RaggedRight\arraybackslash}X@{}}
 \toprule
 Quantity & Definition & Role \\
 \midrule
