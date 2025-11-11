@@ -86,6 +86,9 @@ Fluid viscous damper \sep seismic optimization \sep Cd(Re) \sep cavitation \sep 
 \end{keyword}
 \end{frontmatter}
 
+\clearpage
+\pagenumbering{arabic}
+
 \linenumbers % satır numarası (review için önerilir)
 
 %% ---------------- Main text ----------------
@@ -397,28 +400,29 @@ where $d_o$ is the orifice diameter, $n_{\mathrm{orf}}$ the number of parallel o
 The feasible region $\mathcal{X}$ is a box-constrained domain (Table~\ref{tab:opt-vars}) with integrality enforced on $n_{\mathrm{orf}}$ and $n_{\mathrm{turn}}$. Bounds are chosen to enforce manufacturability (e.g., minimal drillable $d_o$, feasible spring index $D_m/d_w$) and consistency with the physical models.
 
 \begin{table}[htbp]
-\centering\footnotesize
-\setlength{\tabcolsep}{4pt}
-\caption{Optimization decision variables and bounds.}
-\label{tab:opt-vars}
-\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X S[table-format=1.5] S[table-format=1.5] l@{}}
-\toprule
-Symbol & Description & {Lower} & {Upper} & Units \\
-\midrule
-$d_o$           & Orifice diameter (per orifice)        & 0.00080 & 0.00350 & \si{m} \\
-$n_{\mathrm{orf}}$ & Parallel orifices \textit{(integer)}  & 3       & 12      & -- \\
-$C_d^{0}$       & Discharge coefficient: laminar limit   & 0.55    & 0.95    & -- \\
-$C_d^{\infty}$  & Discharge coefficient: turbulent limit & 0.70    & 1.00    & -- \\
-$p_{\exp}$      & $C_d(\mathrm{Re})$ transition exponent & 0.90    & 1.60    & -- \\
-$L_{\mathrm{ori}}$ & Orifice length                      & 0.10    & 0.24    & \si{m} \\
-$hA$            & Total thermal conductance              & 150     & 400     & \si{W\,K^{-1}} \\
-$D_p$           & Piston diameter                        & 0.110   & 0.260   & \si{m} \\
-$d_w$           & Spring wire diameter                   & 0.008   & 0.020   & \si{m} \\
-$D_m$           & Spring mean diameter                   & 0.080   & 0.200   & \si{m} \\
-$n_{\mathrm{turn}}$ & Active spring turns \textit{(integer)} & 6       & 15      & -- \\
-$\mu_{\mathrm{ref}}$ & Reference viscosity at $T_{\mathrm{ref}}$ & 0.60 & 2.00    & \si{Pa\,s} \\
-\bottomrule
-\end{tabularx}
+  \centering\footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \caption{Optimization decision variables and bounds.}
+  \label{tab:opt-vars}
+  \resizebox{\linewidth}{!}{%
+  \begin{tabular}{@{}l>{\raggedright\arraybackslash}p{0.38\linewidth} S[table-format=1.5] S[table-format=1.5] l@{}}
+  \toprule
+  Symbol & Description & {Lower} & {Upper} & Units \\
+  \midrule
+  $d_o$           & Orifice diameter (per orifice)        & 0.00080 & 0.00350 & \si{m} \\
+  $n_{\mathrm{orf}}$ & Parallel orifices \textit{(integer)}  & 3       & 12      & -- \\
+  $C_d^{0}$       & Discharge coefficient: laminar limit   & 0.55    & 0.95    & -- \\
+  $C_d^{\infty}$  & Discharge coefficient: turbulent limit & 0.70    & 1.00    & -- \\
+  $p_{\exp}$      & $C_d(\mathrm{Re})$ transition exponent & 0.90    & 1.60    & -- \\
+  $L_{\mathrm{ori}}$ & Orifice length                      & 0.10    & 0.24    & \si{m} \\
+  $hA$            & Total thermal conductance              & 150     & 400     & \si{W\,K^{-1}} \\
+  $D_p$           & Piston diameter                        & 0.110   & 0.260   & \si{m} \\
+  $d_w$           & Spring wire diameter                   & 0.008   & 0.020   & \si{m} \\
+  $D_m$           & Spring mean diameter                   & 0.080   & 0.200   & \si{m} \\
+  $n_{\mathrm{turn}}$ & Active spring turns \textit{(integer)} & 6       & 15      & -- \\
+  $\mu_{\mathrm{ref}}$ & Reference viscosity at $T_{\mathrm{ref}}$ & 0.60 & 2.00    & \si{Pa\,s} \\
+  \bottomrule
+  \end{tabular}}
 \end{table}
 
 \paragraph{Search strategy and audit.}
@@ -481,34 +485,35 @@ Figure~\ref{fig:pareto} displays the final non-dominated set in the objective sp
 \end{figure}
 
 \begin{table}[htbp]
-\centering\small
-\caption{Knee–selected design: safety and energy indicators (re–evaluated; from audit).}
-\label{tab:safety-verification}
-\begin{tabular}{
- l
- S[table-format=1.3]  % f_pen
- S[table-format=2.2]  % PFA_mean
- S[table-format=1.4]  % IDR_mean (ratio)
- S[table-format=2.2e1] % dP95
- S[table-format=1.3]  % Qcap95
- S[table-format=1.2]  % cav_%
- S[table-format=2.1]  % T_end
- S[table-format=1.2]  % mu_end
- S[table-format=2.2e1] % E_orifice_sum
- S[table-format=2.2e1] % E_struct_sum
- S[table-format=2.2e1] % P_mech_sum
- S[table-format=1.2]  % E_ratio
-}
-\toprule
-Design & {$f_{\mathrm{pen}}$} & {$\mathrm{PFA}_{\mathrm{mean}}$} & {$\mathrm{IDR}_{\mathrm{mean}}$} & {dP95 [\si{Pa}]} & {Qcap95} & {cav\_\%} & {$T_{\mathrm{end}}$ [\si{\celsius}]} & {$\mu_{\mathrm{end}}$ [\si{Pa.s}]} & {$E_{\mathrm{orifice\_sum}}$ [\si{J}]} & {$E_{\mathrm{struct\_sum}}$ [\si{J}]} & {$P_{\mathrm{mech\_sum}}$ [\si{W}]} & {$E_{\mathrm{ratio}}$}\\
-\midrule
-Knee–FVD (Xbest) &
-0.055 & 4.59 & 0.0014 &
-5.98e6 & 0.634 & 0.00 &
-74.1 & 0.70 &
-3.52e7 & 2.15e7 & 1.48e6 & 1.63\\
-\bottomrule
-\end{tabular}
+  \centering\small
+  \caption{Knee–selected design: safety and energy indicators (re–evaluated; from audit).}
+  \label{tab:safety-verification}
+  \resizebox{\linewidth}{!}{%
+  \begin{tabular}{
+   l
+   S[table-format=1.3]
+   S[table-format=2.2]
+   S[table-format=1.4]
+   S[table-format=2.2e1]
+   S[table-format=1.3]
+   S[table-format=1.2]
+   S[table-format=2.1]
+   S[table-format=1.2]
+   S[table-format=2.2e1]
+   S[table-format=2.2e1]
+   S[table-format=2.2e1]
+   S[table-format=1.2]
+  }
+  \toprule
+  Design & {$f_{\mathrm{pen}}$} & {$\mathrm{PFA}_{\mathrm{mean}}$} & {$\mathrm{IDR}_{\mathrm{mean}}$} & {dP95 [\si{Pa}]} & {Qcap95} & {cav\_\%} & {$T_{\mathrm{end}}$ [\si{\celsius}]} & {$\mu_{\mathrm{end}}$ [\si{Pa.s}]} & {$E_{\mathrm{orifice\_sum}}$ [\si{J}]} & {$E_{\mathrm{struct\_sum}}$ [\si{J}]} & {$P_{\mathrm{mech\_sum}}$ [\si{W}]} & {$E_{\mathrm{ratio}}$}\\
+  \midrule
+  Knee–FVD (Xbest) &
+  0.055 & 4.59 & 0.0014 &
+  5.98e6 & 0.634 & 0.00 &
+  74.1 & 0.70 &
+  3.52e7 & 2.15e7 & 1.48e6 & 1.63\\
+  \bottomrule
+  \end{tabular}}
 \end{table}
 
 % --- REVİZYON #5: YENİ TABLO (DEĞERLERİNİZ GİRİLDİ VE METREYE DÖNÜŞTÜRÜLDÜ) ---
@@ -618,10 +623,11 @@ $h$   & storey height              & \num{3.0}          & \si{m}         & Used 
 \end{table}
 
 \begin{table}[htbp]
-\centering\small
-\caption{Fixed numeric settings used in this study (QC and model constants).}
-\label{tab:fixed-values}
-\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.24\linewidth}>{\raggedright\arraybackslash}p{0.22\linewidth}>{\raggedright\arraybackslash}p{0.18\linewidth}>{\raggedright\arraybackslash}X@{}}
+\centering\scriptsize
+\caption{Fixed numeric settings used in this study: optimization QC thresholds and ground-motion parameters.}
+\label{tab:fixed-values-qc}
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.27\linewidth}>{\raggedright\arraybackslash}p{0.20\linewidth}>{\raggedright\arraybackslash}p{0.16\linewidth}>{\raggedright\arraybackslash}X@{}}
 \toprule
 Symbol & Value & Units & Notes \\
 \midrule
@@ -637,8 +643,19 @@ hp\_cut & 0.05 & \si{Hz} & High-pass filter cutoff[cite: 1151]. \\
 band\_fac & [0.8, 1.2] & -- & $T_1$ band factor for IM . \\
 band\_N & 21 & -- & Periods in band . \\
 s\_bounds & [0.2, 2.2] & -- & Scale factor bounds . \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{table}[htbp]
+\centering\scriptsize
+\caption{Fixed numeric settings used in this study: physical constants for the damper model.}
+\label{tab:fixed-values-phys}
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.27\linewidth}>{\raggedright\arraybackslash}p{0.20\linewidth}>{\raggedright\arraybackslash}p{0.16\linewidth}>{\raggedright\arraybackslash}X@{}}
+\toprule
+Symbol & Value & Units & Notes \\
 \midrule
-\multicolumn{4}{@{}l}{\textit{Fixed Physical Constants (Damper Physics, Section 2.2)}} \\
 $p_{\mathrm{cav,eff}}$ & $2.0\times 10^{3}$ & Pa & Cavitation cap (from \texttt{sade.tex}) . \\
 $\mathrm{cav\_sf}$ & 0.90 & -- & Safety factor for cavitation limit . \\
 $v_\varepsilon$ & 0.10 & m\,s$^{-1}$ & Sign/flow smoothing[cite: 839]. \\
@@ -688,6 +705,13 @@ $L_h$        & $\rho L_{\mathrm{ori}}/A_o^2$ & Hydraulic inertia (if enabled). \
 \end{table}
 
 \bibliographystyle{elsarticle-num}
-\bibliography{refs}
+\IfFileExists{refs.bib}{%
+  \bibliography{refs}%
+}{%
+  \begin{thebibliography}{00}
+  \bibitem[{Placeholder(2025)}]{placeholder2025}
+  Placeholder Author, ``Provide bibliographic entries in \texttt{refs.bib} before submission,'' (2025).
+  \end{thebibliography}%
+}
 
 \end{document}
