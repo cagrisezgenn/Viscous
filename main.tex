@@ -409,22 +409,26 @@ The feasible region $\mathcal{X}$ is a box-constrained domain (Table~\ref{tab:op
   \setlength{\tabcolsep}{2pt}
   \caption{Optimization decision variables and bounds.}
   \label{tab:opt-vars}
-  \begin{tabularx}{\linewidth}{@{}l>{\RaggedRight\arraybackslash}X S[table-format=1.5] S[table-format=1.5] >{\RaggedRight\arraybackslash}X@{}}
+  \begin{tabularx}{\linewidth}{@{}>{\RaggedRight\arraybackslash}p{0.16\linewidth}%
+    >{\RaggedRight\arraybackslash}X%
+    >{\centering\arraybackslash}p{0.14\linewidth}%
+    >{\centering\arraybackslash}p{0.14\linewidth}%
+    >{\RaggedRight\arraybackslash}p{0.18\linewidth}@{}}
   \toprule
   Symbol & Description & {Lower} & {Upper} & Units \\
   \midrule
-  $d_o$           & Orifice diameter (per orifice)        & 0.00080 & 0.00350 & \si{m} \\
-  $n_{\mathrm{orf}}$ & Parallel orifices \textit{(integer)}  & 3       & 12      & -- \\
-  $C_d^{0}$       & Discharge coefficient: laminar limit   & 0.55    & 0.95    & -- \\
-  $C_d^{\infty}$  & Discharge coefficient: turbulent limit & 0.70    & 1.00    & -- \\
-  $p_{\exp}$      & $C_d(\mathrm{Re})$ transition exponent & 0.90    & 1.60    & -- \\
-  $L_{\mathrm{ori}}$ & Orifice length                      & 0.10    & 0.24    & \si{m} \\
-  $hA$            & Total thermal conductance              & 150     & 400     & \si{W\,K^{-1}} \\
-  $D_p$           & Piston diameter                        & 0.110   & 0.260   & \si{m} \\
-  $d_w$           & Spring wire diameter                   & 0.008   & 0.020   & \si{m} \\
-  $D_m$           & Spring mean diameter                   & 0.080   & 0.200   & \si{m} \\
-  $n_{\mathrm{turn}}$ & Active spring turns \textit{(integer)} & 6       & 15      & -- \\
-  $\mu_{\mathrm{ref}}$ & Reference viscosity at $T_{\mathrm{ref}}$ & 0.60 & 2.00    & \si{Pa\,s} \\
+  $d_o$           & Orifice diameter (per orifice)        & \num{0.00080} & \num{0.00350} & \si{m} \\
+  $n_{\mathrm{orf}}$ & Parallel orifices \textit{(integer)}  & \num{3} & \num{12} & -- \\
+  $C_d^{0}$       & Discharge coefficient: laminar limit   & \num{0.55} & \num{0.95} & -- \\
+  $C_d^{\infty}$  & Discharge coefficient: turbulent limit & \num{0.70} & \num{1.00} & -- \\
+  $p_{\exp}$      & $C_d(\mathrm{Re})$ transition exponent & \num{0.90} & \num{1.60} & -- \\
+  $L_{\mathrm{ori}}$ & Orifice length                      & \num{0.10} & \num{0.24} & \si{m} \\
+  $hA$            & Total thermal conductance              & \num{150} & \num{400} & \si{W\,K^{-1}} \\
+  $D_p$           & Piston diameter                        & \num{0.110} & \num{0.260} & \si{m} \\
+  $d_w$           & Spring wire diameter                   & \num{0.008} & \num{0.020} & \si{m} \\
+  $D_m$           & Spring mean diameter                   & \num{0.080} & \num{0.200} & \si{m} \\
+  $n_{\mathrm{turn}}$ & Active spring turns \textit{(integer)} & \num{6} & \num{15} & -- \\
+  $\mu_{\mathrm{ref}}$ & Reference viscosity at $T_{\mathrm{ref}}$ & \num{0.60} & \num{2.00} & \si{Pa\,s} \\
   \bottomrule
   \end{tabularx}
   \setlength{\tabcolsep}{6pt}% restore default spacing
