@@ -8,7 +8,18 @@
 \usepackage{graphicx}
 \usepackage{siunitx}
 \usepackage{microtype}
-\microtypecontext{showhyphens=false} % lineno uyumluluğu için \showhyphens yaması devre dışı
+% Microtype'ın 2025 sürümünde \microtypecontext için "showhyphens" anahtarı
+% kaldırıldığından, yamayı kapatmak için yeni yaklaşıma geçiyoruz.
+% lineno ile uyumluluk adına \showhyphens düzeltmesini yalnızca devre dışı bırakıyoruz.
+\makeatletter
+\AtBeginDocument{%% yeni microtype yamalarını koşullu olarak kapat
+  \@ifundefined{MT@patch@showhyphens}{}{%% yama mevcutsa
+    \@ifundefined{DisableMicrotypePatch}{}{%% komut tanımlıysa uygula
+      \DisableMicrotypePatch{showhyphens}%
+    }%
+  }%
+}
+\makeatother
 \usepackage{lineno}
 \usepackage{booktabs}
 \usepackage{tabularx}
