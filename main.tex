@@ -47,6 +47,7 @@
 }
 \makeatother
 \newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\providecommand*{\theHpage}{\thepage}
 
 \begin{document}
 \pagenumbering{roman}
@@ -408,7 +409,7 @@ The feasible region $\mathcal{X}$ is a box-constrained domain (Table~\ref{tab:op
   \setlength{\tabcolsep}{2pt}
   \caption{Optimization decision variables and bounds.}
   \label{tab:opt-vars}
-  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X S[table-format=1.5] S[table-format=1.5] >{\raggedright\arraybackslash}l@{}}
+  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X S[table-format=1.5] S[table-format=1.5] >{\raggedright\arraybackslash}X@{}}
   \toprule
   Symbol & Description & {Lower} & {Upper} & Units \\
   \midrule
