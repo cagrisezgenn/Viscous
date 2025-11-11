@@ -1,4 +1,5 @@
 %% Elsevier 'elsarticle' template — Structures (review mode)
+\pdfminorversion=7 % allow inclusion of up to PDF 1.7 graphics
 \documentclass[review,12pt]{elsarticle} % ilk gönderimde review + tek sütun
 \journal{Structures}
 
@@ -16,12 +17,18 @@
 
 %% siunitx
 \sisetup{
-  detect-all,
+  mode = match,
+  propagate-math-font = true,
+  reset-math-version = false,
+  reset-text-family = false,
+  reset-text-series = false,
+  reset-text-shape = false,
+  text-family-to-math = true,
+  text-series-to-math = true,
   per-mode = symbol,
   range-units = single,
   range-phrase = --,
-  exponent-product = \times,
-  output-product = \cdot
+  exponent-product = \times
 }
 
 %% Microtype
@@ -31,6 +38,14 @@
 
 % --- HYPERREF EN SONDA ---
 \usepackage{hyperref}
+\makeatletter
+\pdfstringdefDisableCommands{%% disable front-matter commands in PDF strings
+  \def\corref#1{}
+  \def\cortext#1{}
+  \def\cnotenum#1{}
+  \def\@corref#1{}
+}
+\makeatother
 \newcolumntype{L}{>{\raggedright\arraybackslash}X}
 
 
@@ -317,8 +332,9 @@ CH07 & Chuetsu & 2007 & Joetsu Kakizaki / 65010EW      & 6.8 & 9.43  & 0.580 \\
 \end{tabularx}
 
 \vspace{2pt}
-\raggedright\footnotesize
+{\raggedright\footnotesize
 Notes: Distances are closest-to-fault (R\textsubscript{rup}) where available. PGA values are in $g$; Chi--Chi and Maras are converted from cm/s$^2$ using $1\,g=980.665$ cm/s$^2$ (433.6 $\rightarrow$ 0.442 $g$; 2166.435 $\rightarrow$ 2.209 $g$).
+\par}
 \end{table}
 \FloatBarrier  % <- tablonun bu bölümden aşağı kaymasını engeller
 
@@ -354,7 +370,7 @@ Hydraulic and thermal safety is enforced using a two-tier policy. First, a \emph
 This strategy ensures safety is the primary objective. The penalty function $f_{\mathrm{pen}}$ is a smooth aggregate of normalized safety excesses, which equals zero if all checks are passed and increases monotonically with any near-violation, preserving differentiability for the solver.
 
 \noindent\fbox{%
-\parbox{\linewidth}{%
+\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{%
 \textbf{Fixed QC Thresholds (per-record, on Arias window).}
 \begin{itemize}
     \item Max. 95th percentile pressure: $\Delta p_{95}\le \SI{4.0e7}{Pa}$
@@ -380,7 +396,7 @@ where $d_o$ is the orifice diameter, $n_{\mathrm{orf}}$ the number of parallel o
 
 The feasible region $\mathcal{X}$ is a box-constrained domain (Table~\ref{tab:opt-vars}) with integrality enforced on $n_{\mathrm{orf}}$ and $n_{\mathrm{turn}}$. Bounds are chosen to enforce manufacturability (e.g., minimal drillable $d_o$, feasible spring index $D_m/d_w$) and consistency with the physical models.
 
-\begin{table}[h!]
+\begin{table}[htbp]
 \centering\footnotesize
 \setlength{\tabcolsep}{4pt}
 \caption{Optimization decision variables and bounds.}
@@ -440,7 +456,7 @@ Figures~\ref{fig:top-acc}–\ref{fig:max-idr} compare key Arias-window responses
 
 The visual trends above are quantified in Table~\ref{tab:perf-summary}. Record-averaged performance is extracted from the post-optimization audit (Section~\ref{sec:opt_ga}): the Baseline row comes from the bare-frame entry, and the Optimized row from the knee-selected design. Relative gains are computed as $100 \times (B-O)/B$.
 
-\begin{table}[h!]
+\begin{table}[htbp]
 \centering\small
 \caption{Record–averaged performance: Bare Frame vs. knee–selected Optimized FVD (from audit).}
 \label{tab:perf-summary}
@@ -464,7 +480,7 @@ Figure~\ref{fig:pareto} displays the final non-dominated set in the objective sp
  \label{fig:pareto}
 \end{figure}
 
-\begin{table}[h!]
+\begin{table}[htbp]
 \centering\small
 \caption{Knee–selected design: safety and energy indicators (re–evaluated; from audit).}
 \label{tab:safety-verification}
@@ -496,7 +512,7 @@ Knee–FVD (Xbest) &
 \end{table}
 
 % --- REVİZYON #5: YENİ TABLO (DEĞERLERİNİZ GİRİLDİ VE METREYE DÖNÜŞTÜRÜLDÜ) ---
-\begin{table}[h!]
+\begin{table}[htbp]
 \centering\small
 \caption{Optimized design parameters for the knee-selected FVD (corresponds to Table~\ref{tab:safety-verification}).}
 \label{tab:optimized-params}
@@ -551,13 +567,14 @@ The safety-first lexicographic search produced a dense, feasible front ($f_{\mat
 \section{Supplementary symbols and derived quantities}\label{app:derived}
 \setcounter{table}{0}
 \renewcommand{\thetable}{A.\arabic{table}}
+\renewcommand{\theHtable}{A\arabic{table}}
 
 % --- TABLO A.1 (Değişmedi) ---
-\begin{table}[h!]
+\begin{table}[htbp]
 \centering\small
 \caption{Core symbols used in the paper (definitions and SI units).}
 \label{tab:symbols}
-\begin{tabularx}{\linewidth}{@{}l l l X@{}}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.18\linewidth}>{\raggedright\arraybackslash}p{0.23\linewidth}>{\raggedright\arraybackslash}p{0.17\linewidth}>{\raggedright\arraybackslash}X@{}}
 \toprule
 Symbol & Name & Units & Brief definition \\
 \midrule
@@ -583,11 +600,11 @@ $P_{\mathrm{loss}}, E_{\mathrm{mech}}$ & mech. power, energy & W; J & Loss split
 \end{tabularx}
 \end{table}
 
-\begin{table}[h!]
+\begin{table}[htbp]
 \centering\small
 \caption{Structural model parameters (10-DOF shear frame).}
 \label{tab:struct-params-appendix}
-\begin{tabularx}{\linewidth}{@{}l l l l X@{}}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.14\linewidth}>{\raggedright\arraybackslash}p{0.25\linewidth}>{\raggedright\arraybackslash}p{0.18\linewidth}>{\raggedright\arraybackslash}p{0.12\linewidth}>{\raggedright\arraybackslash}X@{}}
 \toprule
 Symbol & Name & Value & Units & Notes \\
 \midrule
@@ -600,11 +617,11 @@ $h$   & storey height              & \num{3.0}          & \si{m}         & Used 
 \end{tabularx}
 \end{table}
 
-\begin{table}[h!]
+\begin{table}[htbp]
 \centering\small
 \caption{Fixed numeric settings used in this study (QC and model constants).}
 \label{tab:fixed-values}
-\begin{tabularx}{\linewidth}{@{}l l l X@{}}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.24\linewidth}>{\raggedright\arraybackslash}p{0.22\linewidth}>{\raggedright\arraybackslash}p{0.18\linewidth}>{\raggedright\arraybackslash}X@{}}
 \toprule
 Symbol & Value & Units & Notes \\
 \midrule
@@ -647,7 +664,7 @@ $c_p$ (steel) & 500 & J(kg K)$^{-1}$ & Specific heat capacity (steel).\\
 \end{table}
 
 % --- TABLO A.4 (Yeniden numaralandırıldı) ---
-\begin{table}[h!]
+\begin{table}[htbp]
 \centering\footnotesize
 \setlength{\tabcolsep}{4.5pt}
 \caption{Derived quantities used internally (definitions).}
