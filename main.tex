@@ -7,11 +7,11 @@
 \usepackage{amsmath,amssymb,mathtools}
 \usepackage{graphicx}
 \usepackage{siunitx}
+\usepackage{microtype}
 \usepackage{lineno}
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{array}
-\usepackage{microtype}
 \usepackage{ragged2e} % daha iyi satır sonu için (opsiyonel)
 \usepackage{placeins}
 
@@ -50,6 +50,7 @@
 
 \begin{document}
 \pagenumbering{roman}
+\renewcommand*{\theHpage}{FR\roman{page}}
 \begin{frontmatter}
 
 \title{Hydro--thermal high-fidelity modelling and multi-objective design of fluid viscous dampers}
@@ -86,8 +87,11 @@ Fluid viscous damper \sep seismic optimization \sep Cd(Re) \sep cavitation \sep 
 \end{keyword}
 \end{frontmatter}
 
+\hypersetup{pageanchor=false}
 \clearpage
 \pagenumbering{arabic}
+\renewcommand*{\theHpage}{MA\arabic{page}}
+\hypersetup{pageanchor=true}
 
 \linenumbers % satır numarası (review için önerilir)
 
@@ -401,7 +405,7 @@ The feasible region $\mathcal{X}$ is a box-constrained domain (Table~\ref{tab:op
 
 \begin{table}[htbp]
   \centering\footnotesize
-  \setlength{\tabcolsep}{3pt}
+  \setlength{\tabcolsep}{2pt}
   \caption{Optimization decision variables and bounds.}
   \label{tab:opt-vars}
   \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X S[table-format=1.5] S[table-format=1.5] >{\raggedright\arraybackslash}l@{}}
@@ -422,6 +426,7 @@ The feasible region $\mathcal{X}$ is a box-constrained domain (Table~\ref{tab:op
   $\mu_{\mathrm{ref}}$ & Reference viscosity at $T_{\mathrm{ref}}$ & 0.60 & 2.00    & \si{Pa\,s} \\
   \bottomrule
   \end{tabularx}
+  \setlength{\tabcolsep}{6pt}% restore default spacing
 \end{table}
 
 \paragraph{Search strategy and audit.}
