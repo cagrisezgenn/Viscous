@@ -4,6 +4,8 @@
 \journal{Structures}
 
 %% Packages
+\usepackage[english]{babel}
+\usepackage[square,numbers]{natbib}
 \usepackage{amsmath,amssymb,mathtools}
 \usepackage{graphicx}
 \usepackage{siunitx}
@@ -13,11 +15,11 @@
 % lineno ile uyumluluk adına \showhyphens düzeltmesini yalnızca devre dışı bırakıyoruz.
 \makeatletter
 \AtBeginDocument{%% yeni microtype yamalarını koşullu olarak kapat
-  \@ifundefined{MT@patch@showhyphens}{}{%% yama mevcutsa
-    \@ifundefined{DisableMicrotypePatch}{}{%% komut tanımlıysa uygula
-      \DisableMicrotypePatch{showhyphens}%
-    }%
-  }%
+\@ifundefined{MT@patch@showhyphens}{}{%% yama mevcutsa
+\@ifundefined{DisableMicrotypePatch}{}{%% komut tanımlıysa uygula
+\DisableMicrotypePatch{showhyphens}%
+}%
+}%
 }
 \makeatother
 \usepackage{lineno}
@@ -27,20 +29,22 @@
 \usepackage{ragged2e} % daha iyi satır sonu için (opsiyonel)
 \usepackage{placeins}
 
+
+
 %% siunitx
 \sisetup{
-  mode = match,
-  propagate-math-font = true,
-  reset-math-version = false,
-  reset-text-family = false,
-  reset-text-series = false,
-  reset-text-shape = false,
-  text-family-to-math = true,
-  text-series-to-math = true,
-  per-mode = symbol,
-  range-units = single,
-  range-phrase = --,
-  exponent-product = \times
+mode = match,
+propagate-math-font = true,
+reset-math-version = false,
+reset-text-family = false,
+reset-text-series = false,
+reset-text-shape = false,
+text-family-to-math = true,
+text-series-to-math = true,
+per-mode = symbol,
+range-units = single,
+range-phrase = --,
+exponent-product = \times
 }
 
 %% Microtype
@@ -52,10 +56,10 @@
 \usepackage{hyperref}
 \makeatletter
 \pdfstringdefDisableCommands{%% disable front-matter commands in PDF strings
-  \def\corref#1{}
-  \def\cortext#1{}
-  \def\cnotenum#1{}
-  \def\@corref#1{}
+\def\corref#1{}
+\def\cortext#1{}
+\def\cnotenum#1{}
+\def\@corref#1{}
 }
 \makeatother
 \newcolumntype{L}{>{\RaggedRight\arraybackslash}X}
@@ -106,10 +110,17 @@ Fluid viscous damper \sep seismic optimization \sep Cd(Re) \sep cavitation \sep 
 \renewcommand*{\theHpage}{MA\arabic{page}}
 \hypersetup{pageanchor=true}
 
-\linenumbers % satır numarası (review için önerilir)
 
 %% ---------------- Main text ----------------
 \section{Introduction}
+The overall methodology used in this study is summarized in Figure~\ref{fig:overall_workflow}.
+\begin{figure}[h!]
+  \centering
+  \includegraphics[width=\linewidth]{Genel.pdf} % <-- 1. dosya adınız
+  \caption{Overall methodological workflow: (Phase 1) Input Preparation, (Phase 2) GA Setup, and (Phase 3) Optimization Loop.}
+  \label{fig:overall_workflow}
+\end{figure}
+\FloatBarrier
 % Motivasyon, literatürde boşluk, katkılar ve makale organizasyonu.
 
 \section{Methods: Physical \& Numerical Modelling}
@@ -194,11 +205,18 @@ F_{\mathrm{laminar}}(t)=c_{\mathrm{lam}}(T)\,\Delta \dot x(t).
 \end{equation}
 Here $k_{sd}$ lumps the hydraulic/cylinder compliance in series with any coil spring; its full geometric definition is deferred to the Appendix.
 
-\paragraph{Kinematics, sign convention, multiplicity}
-Positive $\Delta x$ increases the upper chamber volume and decreases the lower one; algebraic flow is taken positive from upper to lower. For $n_\parallel$ identical devices in parallel on a storey, $A_p$, $A_o$ and $k_{sd}$ scale linearly by $n_\parallel$.
+\paragraph{Kinematics, layout, and multiplicity}
+Positive $\Delta x$ increases the upper chamber volume and decreases the lower one; algebraic flow is taken positive from upper to lower. 
+
+This study models a 2D planar shear-frame, assuming one equivalent damper element ($n_\parallel=1$) is placed at each of the 9 inter-storey levels. The optimization (Section~\ref{sec:opt_ga}) seeks a single, uniform design (i.e., one set of parameters) to be applied to all 9 devices. This $n_\parallel=1$ approach represents the total \emph{equivalent} hydraulic circuit for that storey. In a practical application where multiple physical cylinders are installed in parallel, their contributions (e.g., $A_p$, $A_o$, $hA$) are assumed to be lumped into this single optimized equivalent element, thus avoiding parameter redundancy. For a regular-plan building, the same damper design would be assumed for the orthogonal (Y) direction.
 
 \subsubsection*{Orifice hydraulics: jet loss with $C_d(\mathrm{Re})$ (no linear drop inside $\Delta p$)}
-The volumetric flow used in the jet-loss term is smoothly saturated for stability and capacity headroom:
+To establish a basis for the safety metric $(Q/Q_{\mathrm{cap}})_{95}$ and to normalize the flow saturation, we first define the theoretical flow capacity, $Q_{\mathrm{cap}}$. This value represents the theoretical maximum flow achievable under a nominal pressure cap, $\Delta p_{\mathrm{cap}}$[cite: 786]. We derive this capacity from the standard orifice equation, assuming fully turbulent conditions ($C_d^\infty$) and a fixed pressure cap (set in the model to $\Delta p_{\mathrm{cap}} = \SI{2e7}{Pa}$, or \SI{20}{MPa})[cite: 788]:
+\begin{equation}
+Q_{\mathrm{cap}} = C_d^\infty A_o \sqrt{ \frac{2 \Delta p_{\mathrm{cap}}}{\rho(T)} }
+\label{eq:Qcap_def}
+\end{equation}
+This capacity $Q_{\mathrm{cap}}$ then serves as the ceiling for the saturated flow $Q_{\mathrm{sat}}$ used in the jet-loss term, which ensures numerical stability and represents the physical headroom:
 \begin{equation}
 Q_{\mathrm{sat}}(\Delta\dot x)=
 Q_{\mathrm{cap}}\;\tanh\!\Big(\frac{A_p}{Q_{\mathrm{cap}}}\sqrt{\Delta\dot x^{\,2}+v_\varepsilon^{\,2}}\Big),
@@ -220,10 +238,10 @@ C_d^\infty-\frac{C_d^\infty-C_d^0}{1+(\mathrm{Re}/\mathrm{Re}_c)^{p_{\exp}}},
 clamped to admissible bounds for $C_d$.
 
 \paragraph{Laminar equivalent (used \emph{outside} $\Delta p_{\mathrm{kv}}$)}
-For diagnostics and the explicit viscous branch in Eq.~\eqref{eq:Felam}, the laminar network is represented by
+For diagnostics and the explicit viscous branch in Eq.~\eqref{eq:Felam}, the laminar network is represented by its equivalent flow resistance $R_{\mathrm{lam}}$. The resulting laminar coefficient $c_{\mathrm{lam}}$ follows directly from the standard hydraulic-to-mechanical equivalence $c_{\mathrm{lam}} = R_{\mathrm{lam}} A_p^2$:
 \begin{equation}
 R_{\mathrm{lam}}(T)=\frac{128\,\mu(T)\,L_{\mathrm{ori}}}{\pi\,d_o^4}\,\frac{1}{n_{\mathrm{orf}}},\qquad
-c_{\mathrm{lam}}(T)=12\,\mu(T)\,L_{\mathrm{ori}}\frac{A_p^2}{d_o^4},
+c_{\mathrm{lam}}(T)=R_{\mathrm{lam}}(T)\,A_p^2,
 \label{eq:Rlam-clam}
 \end{equation}
 so that $F_{\mathrm{laminar}}=c_{\mathrm{lam}}(T)\,\Delta\dot x$. Note that $R_{\mathrm{lam}}$ does \emph{not} enter Eq.~\eqref{eq:dp-kv}; there is no linear drop inside $\Delta p$.
@@ -262,6 +280,9 @@ C_o\,\dot T_o &= P_{\mathrm{loss}} - hA_{o\leftrightarrow s}(T_o-T_s) - hA_{o\le
 C_s\,\dot T_s &= \phantom{P_{\mathrm{loss}}}\; +\,hA_{o\leftrightarrow s}(T_o-T_s) - hA_{s\leftrightarrow \mathrm{env}}(T_s-T_\infty). \label{eq:Ts}
 \end{align}
 
+\par
+To clarify the thermal parameters, we link all three exchange coefficients in Eqs.~\eqref{eq:To}-\eqref{eq:Ts} to the single optimization variable $hA$ (Total thermal conductance) listed in Table~\ref{tab:opt-vars}. We thus assume a lumped parameter model where $hA_{o\leftrightarrow s} = hA_{o\leftrightarrow \mathrm{env}} = hA_{s\leftrightarrow \mathrm{env}} = hA$. This single $hA$ value is varied by the optimizer within its prescribed bounds. The fixed values noted in Appendix Table~\ref{tab:fixed-values-phys} (i.e., \SI{450}{W\,K^{-1}}) correspond to the baseline (non-optimized) configuration only.
+
 \noindent Consistent with the three-term force split, instantaneous mechanical power is the sum of the laminar and orifice contributions (no linear drop inside $\Delta p$):
 \begin{equation}
 P_{\mathrm{loss}}(t)=
@@ -285,7 +306,7 @@ E_{\mathrm{mech}}
 \end{equation}
 
 \paragraph{Parameters (deferred)}
-All fixed coefficients, bounds, and geometry for: (i) the discharge-coefficient transition $C_d(\mathrm{Re})$; (ii) damper geometry and elastic/compressibility terms defining $k_{sd}$; (iii) the cavitation limiter; and (iv) thermal exchange and property slopes are consolidated in the \emph{Appendix} (Tables A.1–A.3) to keep the main text physics-first and reproducible. SI units are used throughout ($Q$ in \si{m^3\,s^{-1}}, $\Delta p$ in \si{Pa}, areas in \si{m^2}).
+All fixed coefficients, bounds, and geometry for: (i) the discharge-coefficient transition $C_d(\mathrm{Re})$; (ii) damper geometry and elastic/compressibility terms defining $k_{sd}$; (iii) the cavitation limiter; and (iv) thermal exchange and property slopes are consolidated in Appendix~\ref{app:derived} to keep the main text physics-first and reproducible. SI units are used throughout ($Q$ in \si{m^3\,s^{-1}}, $\Delta p$ in \si{Pa}, areas in \si{m^2}).
 
 \subsection{Time integration}\label{sec:time_integration}
 We advance the coupled problem with a \emph{stiff, variable–step} ODE scheme. The integrated state collects the structural DOFs and the two–node thermal pair, while damper hydraulics are evaluated \emph{algebraically} inside the right–hand side. With $\boldsymbol{x}(t)\in\mathbb{R}^{10}$ the relative floor displacements and $\boldsymbol{v}(t)=\dot{\boldsymbol{x}}(t)$, the first-order form is:
@@ -306,7 +327,7 @@ The base acceleration $a_g(t)$ is accessed via linear interpolation. Given the s
 The two–node thermal block (Eqs.~\eqref{eq:To}–\eqref{eq:Ts}) is advanced concurrently and couples back through $\mu(T_o)$ and $\rho(T_o)$. The mechanical power driving the thermal balance is $P_{\mathrm{loss}}$ in Eq.~\eqref{eq:Ploss}; accumulated dissipation on $[t_5,t_{95}]$ is $E_{\mathrm{mech}}$ in Eq.~\eqref{eq:Emech}.
 
 \paragraph{Initialization and masks}
-The structure starts from rest, $\boldsymbol{x}(t_0)=\boldsymbol{0}$ and $\boldsymbol{v}(t_0)=\boldsymbol{0}$. Device multiplicity and storey–activity masks are applied algebraically (areas and linear coefficients scale with $n_\parallel$; inactive storeys are zeroed), preserving sparsity and robustness. Other numerical safeguards (e.g., soft-min sharpness, velocity smoothing) are detailed in the Appendix.
+The structure starts from rest, $\boldsymbol{x}(t_0)=\boldsymbol{0}$ and $\boldsymbol{v}(t_0)=\boldsymbol{0}$. Device multiplicity and storey–activity masks are applied algebraically (areas and linear coefficients scale with $n_\parallel$; inactive storeys are zeroed), preserving sparsity and robustness. Other numerical safeguards (e.g., soft-min sharpness, velocity smoothing) are detailed in Appendix~\ref{app:derived}.
 
 \subsection{Ground Motion Processing and Scaling}
 All analyses use a set of 10 recorded horizontal ground motions. Records are converted to SI, de-trended, and may be high-pass filtered (e.g., $f_c{=}0.05$ Hz)[cite: 340].
@@ -344,7 +365,7 @@ IR80 & Irpinia (Italy) & 1980 & Sturno (STN) / STU270    & 6.9 & 6.78  & 0.320 \
 MJ90 & Manjil & 1990 & Abbar / ABBAR-L                 & 7.3 & 12.55 & 0.510 \\
 LP89 & Loma Prieta & 1989 & Calaveras Reservoir / CLR180& 6.9 & 35.28 & 0.110 \\
 CC99 & Chi--Chi & 1999 & TCU078 / 90$^\circ$            & 7.6 & 8.30  & 0.442 \\ % 433.6 cm/s^2 → 0.442 g
-MR23 & Maras (Türkiye) & 2023 & TK~4614 / HNE             & 7.8 & 9.80  & 2.209 \\ % 2166.435 cm/s^2 → 2.209 g
+MR23 & Kahramanmaras (Türkiye) & 2023 & TK~4614 / HNE             & 7.8 & 9.80  & 2.209 \\ % 2166.435 cm/s^2 → 2.209 g
 TB78 & Tabas & 1978 & Tabas / H2                        & 7.4 & 2.10  & 0.862 \\
 CM92 & Cape Mendocino & 1992 & Petrolia / H2             & 7.0 & 8.20  & 0.662 \\
 CH07 & Chuetsu & 2007 & Joetsu Kakizaki / 65010EW      & 6.8 & 9.43  & 0.580 \\
@@ -353,24 +374,30 @@ CH07 & Chuetsu & 2007 & Joetsu Kakizaki / 65010EW      & 6.8 & 9.43  & 0.580 \\
 
 \vspace{2pt}
 {\RaggedRight\footnotesize
-Notes: Distances are closest-to-fault (R\textsubscript{rup}) where available. PGA values are in $g$; Chi--Chi and Maras are converted from cm/s$^2$ using $1\,g=980.665$ cm/s$^2$ (433.6 $\rightarrow$ 0.442 $g$; 2166.435 $\rightarrow$ 2.209 $g$).
+Notes: Distances are closest-to-fault (R\textsubscript{rup}) where available. PGA values are in $g$; Chi--Chi and Kahramanmaras are converted from cm/s$^2$ using $1\,g=980.665$ cm/s$^2$ (433.6 $\rightarrow$ 0.442 $g$; 2166.435 $\rightarrow$ 2.209 $g$).
+The record set intentionally includes high-PGA, near-fault records (e.g., MR23 at \SI{2.209}{g}) to test the model's robustness. These records are characterized by high-velocity pulses, which impose extreme demands on velocity-dependent devices; their inclusion ensures the optimized design remains safe (in terms of pressure, temperature, and cavitation) even under these severe impulsive loads.
 \par}
 \end{table}
 \FloatBarrier  % <- tablonun bu bölümden aşağı kaymasını engeller
 
 \section{Optimization Framework}\label{sec:opt_ga}
 
-\begin{figure}[t]
-  \centering
-  % \includegraphics[width=0.9\linewidth]{figs/ga_flowchart.pdf}
-  \caption{Flowchart of the NSGA-II optimization process, illustrating population evaluation, safety screening (hard constraints), and multi-objective ranking ($f_{\mathrm{pen}}, f_1, f_2$).}
-  \label{fig:ga_flowchart}
-\end{figure}
-
+% --- REVİZYON: Metin paragrafı, figürden önceye taşındı ---
 We solve a safety-first lexicographic multi-objective problem: designs are ranked by 
 $\big[f_{\mathrm{pen}},\, f_1{=}\langle\mathrm{PFA}\rangle,\, f_2{=}\langle\mathrm{IDR}\rangle\big]$; 
 we visualise the Pareto trade-off in $(f_1,f_2)$ under $f_{\mathrm{pen}}\!\approx\!0$.
  The goal, illustrated in Figure~\ref{fig:ga_flowchart}, is to identify device parameters $\boldsymbol{d}$ that simultaneously minimize the record-mean roof peak floor acceleration (PFA) and the record-mean maximum inter-storey drift ratio (IDR). These metrics are evaluated over the Arias-window responses $[t_5, t_{95}]$ for a fixed, intensity-scaled set of 10 ground motions.
+
+% --- REVİZYON: Figür, metinden sonraya taşındı ---
+\begin{figure}[h!] % <-- [t] yerine [h!] (Here!) kullanıldı
+  \centering
+  % REVİZYON: Figür, sayfaya sığması için küçültüldü
+  \includegraphics[width=0.75\linewidth]{GA.pdf} % <-- 0.9'dan 0.8'e küçültüldü
+  \caption{Flowchart of the NSGA-II optimization process, illustrating population evaluation, safety screening (hard constraints), and multi-objective ranking ($f_{\mathrm{pen}}, f_1, f_2$).}
+  \label{fig:ga_flowchart}
+\end{figure}
+
+% \FloatBarrier komutu kaldırıldı.
 
 \subsection{Objectives and Safety Constraints}\label{sec:opt_obj}
 The primary performance objectives are the record-wise arithmetic means of the structural demands:
@@ -395,12 +422,26 @@ This strategy ensures safety is the primary objective. The penalty function $f_{
 \begin{itemize}
     \item Max. 95th percentile pressure: $\Delta p_{95}\le \SI{4.0e7}{Pa}$
     \item Max. 95th percentile flow ratio: $(Q/Q_{\mathrm{cap}})_{95}\le 0.90$
-    \item Max. cavitation time fraction: $\mathrm{cav} \le 0.00$
+% --- REVISION START: Cavitation threshold updated ---
+    \item Max. cavitation time fraction: $\mathrm{cav}_{\mathrm{pct}} \le 0.5\%$
+% --- REVISION END ---
     \item Max. end-of-window temperature: $T_{\mathrm{end}}\le \SI{75}{\celsius}$
     \item Min. end-of-window viscosity: $\mu_{\mathrm{end}}\ge \SI{0.70}{Pa.s}$
 \end{itemize}
-Designs breaching any bound are rejected by the hard screen; others are penalized softly via $f_{\mathrm{pen}}$.
 }}
+
+\par
+The safety thresholds defined in the QC box were established conservatively to reflect the operational envelope of industrial FVDs, balancing device longevity, model validity, and material science constraints. These limits are intentionally stringent, aligning with the "safety-first" lexicographic policy.
+
+We justify the primary thresholds as follows:
+(i) The internal pressure limit ($\Delta p_{95}\le \SI{4.0e7}{Pa}$, or \SI{40}{MPa}) was selected to ensure mechanical integrity. This provides a significant safety factor against seal extrusion or fatigue, as high-performance damper seals are often rated for pressures up to \SI{275}{MPa}, and typical civil engineering specifications may require burst pressures exceeding \SI{138}{MPa} \cite{TaylorDevices2024}.
+(ii) The thermal limits ($T_{\mathrm{end}}\le \SI{75}{\celsius}$ and $\mu_{\mathrm{end}}\ge \SI{0.70}{Pa.s}$) serve a dual purpose. They ensure the device operates within the typical functional range reported in literature (often $-40$ to $+70\,^\circ$C) \cite{MDPI_Thermal2023} and prevent excessive thermal thinning ($\mu_{\mathrm{end}}$) or degradation, which can occur in silicone fluids above \SI{90}{\celsius}. This maintains the validity of the calibrated $\mu(T)$ and $C_d(\mathrm{Re}(T))$ models.
+(iii) The flow ratio cap ($(Q/Q_{\mathrm{cap}})_{95}\le 0.90$) imposes a 10\% headroom to prevent the orifice flow from approaching flow saturation (choking), a critical regime where compressibility or cavitation effects can dominate and performance becomes nonlinear \cite{CraneTP410}.
+% --- REVISION START: New justification for (iv) ---
+(iv) The cavitation policy ($\mathrm{cav}_{\mathrm{pct}} \le 0.5\%$) shifts from a zero-tolerance ideal to a practical, robust threshold designed to be insensitive to spurious numerical noise. To ensure only physically significant events are counted, "cavitation" is defined only when the pressure remains below the effective threshold ($p_{\mathrm{cav,eff}}$) by a \SI{0.5}{kPa} dead-band for a persistent duration ($\tau_{\mathrm{hold}} \ge \SI{5}{ms}$). This \emph{de minimis} 0.5\% time-fraction tolerance ensures that while numerical artifacts are ignored, any design initiating cumulative damage or performance degradation \cite{EN15129_Standard} is still rejected by the hard-screen policy.
+
+
+Designs breaching any bound are rejected by the hard screen; others are penalized softly via $f_{\mathrm{pen}}$.
 
 \paragraph{Fairness across records.}
 To ensure fairness, every candidate design $\boldsymbol{d}$ is evaluated against the \emph{same} set of 10 pre-scaled ground motions and identical modeling/integration policies. No per-record re-tuning is allowed, ensuring objective values reflect only design changes. While the optimization uses means, response dispersion is reported in Section~\ref{sec:results} to support robust engineering choices.
@@ -498,46 +539,50 @@ Optimized (Knee--FVD)  & \num{5.05}  & \num{0.300} & \num{61.9} & \num{65.9}\\
 \subsection{Multi-Objective Trade-off Analysis and Safety Verification}
 Figure~\ref{fig:pareto} displays the final non-dominated set in the objective space $\big(f_1{=}\langle\mathrm{PFA}\rangle,\, f_2{=}\langle\mathrm{IDR}\rangle,\, f_{\mathrm{pen}}\big)$. The proximity of many points to $f_{\mathrm{pen}}\!\approx\!0$ indicates wide feasibility under the strict safety policy defined in Section~\ref{sec:opt_obj}. The knee-selected solution (star) provides a balanced compromise between response mitigation and safety margins.
 
+\par
+The knee-selected solution (marked by a star in Figure~\ref{fig:pareto}) was identified using a quantitative compromise programming approach to ensure methodological transparency. First, the search was constrained to the feasible subset of non-dominated solutions that rigorously satisfied the safety-first policy (i.e., $f_{\mathrm{pen}}\!\approx\!0$). Second, the $f_1$ and $f_2$ objectives were normalized using min-max scaling to [0, 1] to prevent bias from their differing units and magnitudes. The 'knee' solution was then defined as the design that minimizes the L2-norm (Euclidean distance) to the normalized utopian point [0, 0], assuming equal weights for both objectives ($w_1=w_2$). This approach provides a robust and repeatable method for selecting a well-balanced compromise solution.
+
 \begin{figure}[t]
- \centering
- \includegraphics[width=0.82\linewidth]{pareto_front.pdf}
- \caption{NSGA–II Pareto front in $(f_1, f_2, f_{\mathrm{pen}})$; star marks the knee–selected design.}
- \label{fig:pareto}
+\centering
+\includegraphics[width=0.82\linewidth]{pareto_front.pdf}
+\caption{NSGA–II Pareto front in $(f_1, f_2, f_{\mathrm{pen}})$; star marks the knee–selected design.}
+\label{fig:pareto}
 \end{figure}
 
+\par
+While Table~\ref{tab:perf-summary} presented the record-averaged performance (which served as the optimization objectives), Table~\ref{tab:safety-verification} details the specific safety margins, energy dissipation components, and key peak responses---such as maximum roof displacement and acceleration---for the selected knee-point solution.
+
 \begin{table}[htbp]
-  \centering\small
-  \caption{Knee–selected design: safety and energy indicators (re–evaluated; from audit).}
-  \label{tab:safety-verification}
-  \resizebox{\linewidth}{!}{%
-  \begin{tabular}{
-   l
-   S[table-format=1.3]
-   S[table-format=2.2]
-   S[table-format=1.4]
-   S[table-format=2.2e1]
-   S[table-format=1.3]
-   S[table-format=1.2]
-   S[table-format=2.1]
-   S[table-format=1.2]
-   S[table-format=2.2e1]
-   S[table-format=2.2e1]
-   S[table-format=2.2e1]
-   S[table-format=1.2]
-  }
-  \toprule
-  Design & {$f_{\mathrm{pen}}$} & {$\mathrm{PFA}_{\mathrm{mean}}$} & {$\mathrm{IDR}_{\mathrm{mean}}$} & {dP95 [\si{Pa}]} & {Qcap95} & {cav\_\%} & {$T_{\mathrm{end}}$ [\si{\celsius}]} & {$\mu_{\mathrm{end}}$ [\si{Pa.s}]} & {$E_{\mathrm{orifice\_sum}}$ [\si{J}]} & {$E_{\mathrm{struct\_sum}}$ [\si{J}]} & {$P_{\mathrm{mech\_sum}}$ [\si{W}]} & {$E_{\mathrm{ratio}}$}\\
-  \midrule
-  Knee–FVD (Xbest) &
-  0.055 & 4.59 & 0.0014 &
-  5.98e6 & 0.634 & 0.00 &
-  74.1 & 0.70 &
-  3.52e7 & 2.15e7 & 1.48e6 & 1.63\\
-  \bottomrule
-  \end{tabular}}
+\centering\small
+\caption{Knee-selected design: detailed safety, energy, and peak response indicators (from re-evaluation audit).}
+\label{tab:safety-verification}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{
+l
+S[table-format=1.4]
+S[table-format=1.4]
+S[table-format=1.2e1]
+S[table-format=1.3]
+S[table-format=1.2]
+S[table-format=2.1]
+S[table-format=1.2]
+S[table-format=1.2e1]
+S[table-format=1.2e1]
+S[table-format=1.2e1]
+S[table-format=1.2]
+}
+\toprule
+Design & {$\mathrm{Disp}_{\mathrm{roof,peak}}$ [\si{m}]} & {$\mathrm{Acc}_{\mathrm{roof,peak}}$ [\si{m/s^2}]} & {dP95 [\si{Pa}]} & {Qcap95} & {cav\_\%} & {$T_{\mathrm{end}}$ [\si{\celsius}]} & {$\mu_{\mathrm{end}}$ [\si{Pa.s}]} & {$E_{\mathrm{orifice}}$ [\si{J}]} & {$E_{\mathrm{struct}}$ [\si{J}]} & {$P_{\mathrm{mech}}$ [\si{W}]} & {$E_{\mathrm{ratio}}$}\\
+\midrule
+Knee–FVD (Xbest) &
+0.0517 & 7.6273 &
+5.98e6 & 0.634 & 0.00 &
+74.1 & 0.70 &
+3.52e7 & 2.15e7 & 1.48e6 & 1.63\\
+\bottomrule
+\end{tabular}}
 \end{table}
 
-% --- REVİZYON #5: YENİ TABLO (DEĞERLERİNİZ GİRİLDİ VE METREYE DÖNÜŞTÜRÜLDÜ) ---
 \begin{table}[htbp]
 \centering\small
 \caption{Optimized design parameters for the knee-selected FVD (corresponds to Table~\ref{tab:safety-verification}).}
@@ -546,31 +591,30 @@ Figure~\ref{fig:pareto} displays the final non-dominated set in the objective sp
 \toprule
 Symbol & Parameter & {Value} & Unit \\
 \midrule
-$d_o$           & Orifice diameter        & {0.00140} & \si{m} \\
-$n_{\mathrm{orf}}$ & Parallel orifices \textit{(int)}  & {11} & -- \\
-$C_d^{0}$       & Discharge coeff. (laminar)   & {0.89} & -- \\
-$C_d^{\infty}$  & Discharge coeff. (turbulent) & {0.77} & -- \\
-$p_{\exp}$      & $C_d(\mathrm{Re})$ transition exp. & {1.46} & -- \\
-$L_{\mathrm{ori}}$ & Orifice length          & {0.185} & \si{m} \\
-$hA$            & Total thermal conductance   & {228} & \si{W\,K^{-1}} \\
-$D_p$           & Piston diameter         & {0.157} & \si{m} \\
-$d_w$           & Spring wire diameter    & {0.014} & \si{m} \\
-$D_m$           & Spring mean diameter    & {0.125} & \si{m} \\
-$n_{\mathrm{turn}}$ & Active spring turns \textit{(int)} & {10} & -- \\
-$\mu_{\mathrm{ref}}$ & Reference viscosity     & {1.46} & \si{Pa\,s} \\
+$d_o$              & Orifice diameter             & {0.00140} & \si{m} \\
+$n_{\mathrm{orf}}$ & Parallel orifices \textit{(int)} & {11}      & -- \\
+$C_d^{0}$          & Discharge coeff. (laminar)   & {0.89}    & -- \\
+$C_d^{\infty}$     & Discharge coeff. (turbulent) & {0.77}    & -- \\
+$p_{\exp}$          & $C_d(\mathrm{Re})$ transition exp. & {1.46}    & -- \\
+$L_{\mathrm{ori}}$ & Orifice length               & {0.185}   & \si{m} \\
+$hA$               & Total thermal conductance    & {228}     & \si{W\,K^{-1}} \\
+$D_p$              & Piston diameter              & {0.157}   & \si{m} \\
+$d_w$              & Spring wire diameter         & {0.014}   & \si{m} \\
+$D_m$              & Spring mean diameter         & {0.125}   & \si{m} \\
+$n_{\mathrm{turn}}$& Active spring turns \textit{(int)}& {10}      & -- \\
+$\mu_{\mathrm{ref}}$ & Reference viscosity          & {1.46}    & \si{Pa\,s} \\
 \bottomrule
 \end{tabular}
 \end{table}
-% --- REVİZYON SONU ---
 
 \paragraph{Safety verification.}
-The knee-selected design, whose parameters are detailed in Table~\ref{tab:optimized-params}, rigorously satisfies all safety constraints defined in Section~\ref{sec:opt_obj}. As shown in Table~\ref{tab:safety-verification}, all key metrics remained well within their prescribed limits (e.g., $dP95 < \SI{4.0e7}{Pa}$, $cav\_\% \le 0.00\%$). Notably, the end-of-window viscosity $\mu_{\mathrm{end}} = \SI{0.70}{Pa.s}$ successfully meets the updated minimum requirement of $\ge \SI{0.70}{Pa.s}$.
+The knee-selected design, whose parameters are detailed in Table~\ref{tab:optimized-params}, rigorously satisfies all safety constraints defined in Section~\ref{sec:opt_obj}. As confirmed in Table~\ref{tab:safety-verification}, all key metrics remained well within their prescribed limits (e.g., $dP95 < \SI{4.0e7}{Pa}$, $cav\_\% \le 0.00\%$). Notably, the end-of-window viscosity $\mu_{\mathrm{end}} = \SI{0.70}{Pa.s}$ successfully meets the minimum requirement of $\ge \SI{0.70}{Pa.s}$.
 
 \paragraph{Energy dissipation mechanism.}
-The re-evaluation confirms the damper's effectiveness. The orifice branch dissipated \SI{3.52e7}{J}, yielding an energy split of $E_{\mathrm{ratio}}=1.63$ relative to structural dissipation. This confirms the optimized FVDs successfully offload seismic input from the primary structure, explaining the observed reductions in PFA and IDR.
+The re-evaluation confirms the damper's effectiveness. The orifice branch dissipated \SI{3.52e7}{J}, yielding an energy split of $E_{\mathrm{ratio}}=1.63$ relative to structural dissipation (data detailed in Table~\ref{tab:safety-verification}). This confirms the optimized FVDs successfully offload seismic input from the primary structure, explaining the observed reductions in PFA and IDR reported in Table~\ref{tab:perf-summary}.
 
 \paragraph{Summary.}
-The safety-first lexicographic search produced a dense, feasible front ($f_{\mathrm{pen}}\!\approx\!0$). The selected knee solution achieved substantial record-averaged reductions in $\langle\mathrm{PFA}\rangle$ and $\langle\mathrm{IDR}\rangle$ while rigorously meeting all pressure, capacity, cavitation, and hydro-thermal safety limits under the fully-coupled model.
+The safety-first lexicographic search produced a dense, feasible front ($f_{\mathrm{pen}}\!\approx\!0$). The selected knee solution achieved substantial record-averaged reductions in $\langle\mathrm{PFA}\rangle$ and $\langle\mathrm{IDR}\rangle$ (Table~\ref{tab:perf-summary}) while rigorously meeting all pressure, capacity, cavitation, and hydro-thermal safety limits under the fully-coupled model (Table~\ref{tab:safety-verification}).
 
 \section{Conclusions}
 % Ana çıkarımlar; mühendislik önerileri; sınırlılıklar ve gelecek çalışmalar.
@@ -665,17 +709,17 @@ $h$   & storey height              & \num{3.0}          & \si{m}         & Used 
 Symbol & Value & Units & Notes \\
 \midrule
 \multicolumn{4}{@{}l}{\textit{Optimization QC Thresholds (Section 3.1)}} \\
-$\Delta p_{95}^{\max}$ & $4.0\times 10^{7}$ & Pa & QC threshold (per record, windowed)[cite: 1313]. \\
-$(Q/Q_{\mathrm{cap}})_{95}^{\max}$ & 0.90 & -- & QC threshold [cite: 1313-1314]. \\
-$\mathrm{cav}^{\max}$ & 0.00 & -- & QC threshold [cite: 1314-1315]. \\
-$T_{\mathrm{end}}^{\max}$ & 75 & $^\circ$C & QC threshold [cite: 1315-1316]. \\
-$\mu_{\mathrm{end}}^{\min}$ & \textbf{0.70} & Pa\,s & \textbf{QC threshold (updated)} . \\
+$\Delta p_{95}^{\max}$ & $4.0\times 10^{7}$ & Pa & QC threshold (per record, windowed). \\
+$(Q/Q_{\mathrm{cap}})_{95}^{\max}$ & 0.90 & -- & QC threshold. \\
+$\mathrm{cav}^{\max}$ & 0.00 & -- & QC threshold. \\
+$T_{\mathrm{end}}^{\max}$ & 75 & $^\circ$C & QC threshold. \\
+$\mu_{\mathrm{end}}^{\min}$ & 0.70 & Pa\,s & QC threshold (see Sec.~\ref{sec:opt_obj}). \\
 \midrule
 \multicolumn{4}{@{}l}{\textit{Ground Motion Parameters (Section 2.4)}} \\
-hp\_cut & 0.05 & \si{Hz} & High-pass filter cutoff[cite: 1151]. \\
-band\_fac & [0.8, 1.2] & -- & $T_1$ band factor for IM . \\
-band\_N & 21 & -- & Periods in band . \\
-s\_bounds & [0.2, 2.2] & -- & Scale factor bounds . \\
+hp_cut & 0.05 & \si{Hz} & High-pass filter cutoff. \\
+band_fac & [0.8, 1.2] & -- & $T_1$ band factor for IM . \\
+band_N & 21 & -- & Periods in band . \\
+s_bounds & [0.2, 2.2] & -- & Scale factor bounds . \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -689,24 +733,24 @@ s\_bounds & [0.2, 2.2] & -- & Scale factor bounds . \\
 \toprule
 Symbol & Value & Units & Notes \\
 \midrule
-$p_{\mathrm{cav,eff}}$ & $2.0\times 10^{3}$ & Pa & Cavitation cap (from \texttt{sade.tex}) . \\
-$\mathrm{cav\_sf}$ & 0.90 & -- & Safety factor for cavitation limit . \\
-$v_\varepsilon$ & 0.10 & m\,s$^{-1}$ & Sign/flow smoothing[cite: 839]. \\
-$\varepsilon_{\text{softmin}}$ & $1.0\times 10^{6}$ & Pa & Soft-min sharpness[cite: 846]. \\
+$p_{\mathrm{cav,eff}}$ & $2.0\times 10^{3}$ & Pa & Cavitation cap. \\
+$\mathrm{cav\_sf}$ & 0.90 & -- & Safety factor for cavitation limit. \\
+$v_\varepsilon$ & 0.10 & m\,s$^{-1}$ & Sign/flow smoothing. \\
+$\varepsilon_{\text{softmin}}$ & $1.0\times 10^{6}$ & Pa & Soft-min sharpness. \\
 $T_{\mathrm{ref}}$, $T_\infty$ & 25,\ 25 & $^\circ$C & Viscosity reference \& ambient. \\
-$\rho_{\mathrm{ref}}$ & 850 & kg\,m$^{-3}$ & Oil density (ref.)[cite: 837]. \\
-$\mathrm{Re}_c$ & 3000 & -- & Transition Reynolds (in $C_d(\mathrm{Re})$)[cite: 838].\\
-$p_{\mathrm{amb}}$ & \num{1.0e5} & Pa & Ambient pressure[cite: 838].\\
-$K_d$ & \num{1.6e9} & Pa & Bulk modulus proxy (hydraulic stiffness)[cite: 835].\\
-$L_{\mathrm{gap}}$ & 0.055 & m & Effective chamber length for $k_h, k_s$ [cite: 833-834].\\
-$E_{\mathrm{body}}$ & \num{2.1e11} & Pa & Cylinder modulus[cite: 835].\\
-$G_{\mathrm{sh}}$ & \num{7.9e10} & Pa & Spring shear modulus[cite: 835].\\
+$\rho_{\mathrm{ref}}$ & 850 & kg\,m$^{-3}$ & Oil density (ref.). \\
+$\mathrm{Re}_c$ & 3000 & -- & Transition Reynolds (in $C_d(\mathrm{Re})$).\\
+$p_{\mathrm{amb}}$ & \num{1.0e5} & Pa & Ambient pressure.\\
+$K_d$ & \num{1.6e9} & Pa & Bulk modulus proxy (hydraulic stiffness).\\
+$L_{\mathrm{gap}}$ & 0.055 & m & Effective chamber length for $k_h, k_s$.\\
+$E_{\mathrm{body}}$ & \num{2.1e11} & Pa & Cylinder modulus.\\
+$G_{\mathrm{sh}}$ & \num{7.9e10} & Pa & Spring shear modulus.\\
 $b_\mu$ & -0.013 & K$^{-1}$ & Viscosity slope ($\mu(T)$).\\
 $\alpha_\rho$ & \textit{[not specified]} & K$^{-1}$ & Density slope ($\rho(T)$).\\
-$C_o,\,C_s$ & \textit{[derived]} & J\,K$^{-1}$ & Thermal capacitances (from $m_{oil}, c_p$) [cite: 1098-1099].\\
-$hA_{o\leftrightarrow s}$ & 450 & W\,K$^{-1}$ & Oil–steel exchange [cite: 841, 1099-1100].\\
-$hA_{o\leftrightarrow \mathrm{env}}$ & 450 & W\,K$^{-1}$ & Oil–ambient exchange (assumed) .\\
-$hA_{s\leftrightarrow \mathrm{env}}$ & 450 & W\,K$^{-1}$ & Steel–ambient exchange (assumed) .\\
+$C_o,\,C_s$ & \textit{[derived]} & J\,K$^{-1}$ & Thermal capacitances (from $m_{oil}, c_p$).\\
+$hA_{o\leftrightarrow s}$ & 450 & W\,K$^{-1}$ & Oil–steel exchange.\\
+$hA_{o\leftrightarrow \mathrm{env}}$ & 450 & W\,K$^{-1}$ & Oil–ambient exchange (assumed). \\
+$hA_{s\leftrightarrow \mathrm{env}}$ & 450 & W\,K$^{-1}$ & Steel–ambient exchange (assumed). \\
 $c_p$ (oil) & 1800 & J(kg K)$^{-1}$ & Specific heat capacity (oil).\\
 $c_p$ (steel) & 500 & J(kg K)$^{-1}$ & Specific heat capacity (steel).\\
 \bottomrule
@@ -737,13 +781,17 @@ $L_h$        & $\rho L_{\mathrm{ori}}/A_o^2$ & Hydraulic inertia (if enabled). \
 \end{tabularx}
 \end{table}
 
+% --- BIBLIOGRAPHY SECTION (REVISED) ---
 \bibliographystyle{elsarticle-num}
-\IfFileExists{refs.bib}{%
-  \bibliography{refs}%
+
+% This command checks if 'bibtex.bib' exists and then uses it.
+\IfFileExists{bibtext.bib}{%
+  \bibliography{bibtext}%
 }{%
+  % If 'bibtex.bib' is not found, it prints a placeholder
   \begin{thebibliography}{00}
   \bibitem[{Placeholder(2025)}]{placeholder2025}
-  Placeholder Author, ``Provide bibliographic entries in \texttt{refs.bib} before submission,'' (2025).
+  Placeholder Author, ``CRITICAL ERROR: 'bibtext.bib' file not found. Please create it and add BibTeX entries,'' (2025).
   \end{thebibliography}%
 }
 
