@@ -2,10 +2,10 @@
 \pdfminorversion=7 % allow inclusion of up to PDF 1.7 graphics
 \documentclass[review,12pt]{elsarticle} % ilk gönderimde review + tek sütun
 \journal{Structures}
+\biboptions{square}
 
 %% Packages
 \usepackage[english]{babel}
-\usepackage[square,numbers]{natbib}
 \usepackage{amsmath,amssymb,mathtools}
 \usepackage{graphicx}
 \usepackage{siunitx}
@@ -648,16 +648,16 @@ The safety-first lexicographic search produced a dense, feasible front ($f_{\mat
 \toprule
 Symbol & Name & Units & Brief definition \\
 \midrule
-$\boldsymbol{M},\boldsymbol{C}_0,\boldsymbol{K}$ & mass, viscous, stiffness & kg; N\,s\,m$^{-1}$; N\,m$^{-1}$ & Structural operators in Eq.~\eqref{eq:eom}.\\
-$\boldsymbol{x},\boldsymbol{v}$ & rel. disp., vel. & m; m\,s$^{-1}$ & Floor DOFs w.r.t. moving base. \\
+$\boldsymbol{M},\boldsymbol{C}_0,\boldsymbol{K}$ & mass, viscous, stiffness & kg; \si{N.s.m^{-1}}; \si{N.m^{-1}} & Structural operators in Eq.~\eqref{eq:eom}.\\
+$\boldsymbol{x},\boldsymbol{v}$ & rel. disp., vel. & m; \si{m.s^{-1}} & Floor DOFs w.r.t. moving base. \\
 $\boldsymbol{B}$ & incidence operator & -- & Forms story drifts: $\Delta\boldsymbol{x}=\boldsymbol{B}\boldsymbol{x}$. \\
-$\boldsymbol{r}$, $a_g$ & base influence, ground acc. & --; m\,s$^{-2}$ & Base excitation term $-\boldsymbol{M}\boldsymbol{r}a_g$. \\
-$A_p, A_o$ & piston, total orifice area & m$^2$ & $A_p=\pi D_p^2/4$, $A_o=n_{\mathrm{orf}}\pi d_o^2/4$. \\
+$\boldsymbol{r}$, $a_g$ & base influence, ground acc. & --; \si{m.s^{-2}} & Base excitation term $-\boldsymbol{M}\boldsymbol{r}a_g$. \\
+$A_p, A_o$ & piston, total orifice area & \si{m^2} & $A_p=\pi D_p^2/4$, $A_o=n_{\mathrm{orf}}\pi d_o^2/4$. \\
 $\shortstack{$d_o$, $n_{\mathrm{orf}}$,\\ $L_{\mathrm{ori}}$, $D_p$}$ & orifice \& piston geometry & m; --; m; m & Design variables in Table~\ref{tab:opt-vars}. \\
 $C_d^0, C_d^\infty, p_{\exp}$ & discharge law params & -- & In $C_d(\mathrm{Re})$. \\
 $\mathrm{Re}$ & Reynolds number & -- & $\mathrm{Re}=\rho |Q| d_o/(\mu A_o)$. \\
-$k_{sd}$ & elastic branch stiffness & N\,m$^{-1}$ & Series(hydraulic, cylinder) $+$ spring. \\
-$c_{\mathrm{lam}}(T)$ & laminar eq. coeff. & N\,s\,m$^{-1}$ & Laminar branch (viscous term). \\
+$k_{sd}$ & elastic branch stiffness & \si{N.m^{-1}} & Series(hydraulic, cylinder) $+$ spring. \\
+$c_{\mathrm{lam}}(T)$ & laminar eq. coeff. & \si{N.s.m^{-1}} & Laminar branch (viscous term). \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -671,11 +671,11 @@ $c_{\mathrm{lam}}(T)$ & laminar eq. coeff. & N\,s\,m$^{-1}$ & Laminar branch (vi
 Symbol & Name & Units & Brief definition \\
 \midrule
 $\Delta p_{\mathrm{kv}}$, $\Delta p_{\mathrm{cav}}$, $\Delta p_{\mathrm{eff}}$ & jet, cavitation, effective drop & Pa & Jet candidate, cavitation cap, soft-min. \\
-$Q_{\mathrm{sat}}$, $Q_{\mathrm{cap}}$ & saturated flow, capacity & m$^3$\,s$^{-1}$ & $\tanh$ limiter and capacity. \\
-$v_\varepsilon$, $\varepsilon_{\text{softmin}}$ & smoothers & m\,s$^{-1}$; Pa & Sign smooth; soft-min sharpness. \\
-$\shortstack{$T_o$, $T_s$,\\ $hA$}$ & oil/steel temps., conductance & $^\circ$C; W\,K$^{-1}$ & Two-node thermal block. \\
-$\mu(T)$, $\rho(T)$ & viscosity, density & Pa\,s; kg\,m$^{-3}$ & Temperature-dependent properties. \\
-$\mathrm{PFA}$, $\mathrm{IDR}$ & peak floor acc., drift ratio & m\,s$^{-2}$; -- & Main performance metrics. \\
+$Q_{\mathrm{sat}}$, $Q_{\mathrm{cap}}$ & saturated flow, capacity & \si{m^{3}.s^{-1}} & $\tanh$ limiter and capacity. \\
+$v_\varepsilon$, $\varepsilon_{\text{softmin}}$ & smoothers & \si{m.s^{-1}}; \si{Pa} & Sign smooth; soft-min sharpness. \\
+$\shortstack{$T_o$, $T_s$,\\ $hA$}$ & oil/steel temps., conductance & $^\circ$C; \si{W.K^{-1}} & Two-node thermal block. \\
+$\mu(T)$, $\rho(T)$ & viscosity, density & \si{Pa.s}; \si{kg.m^{-3}} & Temperature-dependent properties. \\
+$\mathrm{PFA}$, $\mathrm{IDR}$ & peak floor acc., drift ratio & \si{m.s^{-2}}; -- & Main performance metrics. \\
 $t_5,t_{95}$ & Arias window bounds & s & Significant duration window for metrics. \\
 $P_{\mathrm{loss}}, E_{\mathrm{mech}}$ & mech. power, energy & W; J & Loss split (laminar + jet). \\
 \bottomrule
@@ -716,10 +716,10 @@ $T_{\mathrm{end}}^{\max}$ & 75 & $^\circ$C & QC threshold. \\
 $\mu_{\mathrm{end}}^{\min}$ & 0.70 & Pa\,s & QC threshold (see Sec.~\ref{sec:opt_obj}). \\
 \midrule
 \multicolumn{4}{@{}l}{\textit{Ground Motion Parameters (Section 2.4)}} \\
-hp_cut & 0.05 & \si{Hz} & High-pass filter cutoff. \\
-band_fac & [0.8, 1.2] & -- & $T_1$ band factor for IM . \\
-band_N & 21 & -- & Periods in band . \\
-s_bounds & [0.2, 2.2] & -- & Scale factor bounds . \\
+hp\_cut & 0.05 & \si{Hz} & High-pass filter cutoff. \\
+band\_fac & [0.8, 1.2] & -- & $T_1$ band factor for IM. \\
+band\_N & 21 & -- & Number of periods in the band. \\
+s\_bounds & [0.2, 2.2] & -- & Scale factor bounds. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -735,24 +735,24 @@ Symbol & Value & Units & Notes \\
 \midrule
 $p_{\mathrm{cav,eff}}$ & $2.0\times 10^{3}$ & Pa & Cavitation cap. \\
 $\mathrm{cav\_sf}$ & 0.90 & -- & Safety factor for cavitation limit. \\
-$v_\varepsilon$ & 0.10 & m\,s$^{-1}$ & Sign/flow smoothing. \\
+$v_\varepsilon$ & 0.10 & \si{m.s^{-1}} & Sign/flow smoothing. \\
 $\varepsilon_{\text{softmin}}$ & $1.0\times 10^{6}$ & Pa & Soft-min sharpness. \\
 $T_{\mathrm{ref}}$, $T_\infty$ & 25,\ 25 & $^\circ$C & Viscosity reference \& ambient. \\
-$\rho_{\mathrm{ref}}$ & 850 & kg\,m$^{-3}$ & Oil density (ref.). \\
+$\rho_{\mathrm{ref}}$ & 850 & \si{kg.m^{-3}} & Oil density (ref.). \\
 $\mathrm{Re}_c$ & 3000 & -- & Transition Reynolds (in $C_d(\mathrm{Re})$).\\
 $p_{\mathrm{amb}}$ & \num{1.0e5} & Pa & Ambient pressure.\\
 $K_d$ & \num{1.6e9} & Pa & Bulk modulus proxy (hydraulic stiffness).\\
 $L_{\mathrm{gap}}$ & 0.055 & m & Effective chamber length for $k_h, k_s$.\\
 $E_{\mathrm{body}}$ & \num{2.1e11} & Pa & Cylinder modulus.\\
 $G_{\mathrm{sh}}$ & \num{7.9e10} & Pa & Spring shear modulus.\\
-$b_\mu$ & -0.013 & K$^{-1}$ & Viscosity slope ($\mu(T)$).\\
-$\alpha_\rho$ & \textit{[not specified]} & K$^{-1}$ & Density slope ($\rho(T)$).\\
-$C_o,\,C_s$ & \textit{[derived]} & J\,K$^{-1}$ & Thermal capacitances (from $m_{oil}, c_p$).\\
-$hA_{o\leftrightarrow s}$ & 450 & W\,K$^{-1}$ & Oil–steel exchange.\\
-$hA_{o\leftrightarrow \mathrm{env}}$ & 450 & W\,K$^{-1}$ & Oil–ambient exchange (assumed). \\
-$hA_{s\leftrightarrow \mathrm{env}}$ & 450 & W\,K$^{-1}$ & Steel–ambient exchange (assumed). \\
-$c_p$ (oil) & 1800 & J(kg K)$^{-1}$ & Specific heat capacity (oil).\\
-$c_p$ (steel) & 500 & J(kg K)$^{-1}$ & Specific heat capacity (steel).\\
+$b_\mu$ & -0.013 & \si{K^{-1}} & Viscosity slope ($\mu(T)$).\\
+$\alpha_\rho$ & \textit{[not specified]} & \si{K^{-1}} & Density slope ($\rho(T)$).\\
+$C_o,\,C_s$ & \textit{[derived]} & \si{J.K^{-1}} & Thermal capacitances (from $m_{oil}, c_p$).\\
+$hA_{o\leftrightarrow s}$ & 450 & \si{W.K^{-1}} & Oil–steel exchange.\\
+$hA_{o\leftrightarrow \mathrm{env}}$ & 450 & \si{W.K^{-1}} & Oil–ambient exchange (assumed). \\
+$hA_{s\leftrightarrow \mathrm{env}}$ & 450 & \si{W.K^{-1}} & Steel–ambient exchange (assumed). \\
+$c_p$ (oil) & 1800 & \si{J.(kg.K)^{-1}} & Specific heat capacity (oil).\\
+$c_p$ (steel) & 500 & \si{J.(kg.K)^{-1}} & Specific heat capacity (steel).\\
 \bottomrule
 \end{tabularx}
 \end{table}
