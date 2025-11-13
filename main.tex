@@ -126,8 +126,11 @@ The overall methodology used in this study is summarized in Figure~\ref{fig:over
 \section{Methods: Physical \& Numerical Modelling}
 
 \begin{sloppypar}
-This work utilizes a high-fidelity numerical model coupling the $n$-DOF structural dynamics of a shear frame with the nonlinear hydro-thermal behavior of the FVDs. We intentionally move beyond simplified phenomenological laws (e.g., $F=C|v|^{\alpha}$). Instead, the FVD sub-model is mechanistic [cite: 328], incorporating three critical physical components: (i) orifice hydraulics governed by a Reynolds-dependent discharge coefficient, $C_d(\mathrm{Re})$[cite: 328]; (ii) a physics-based cavitation model employing a smooth pressure limiter [cite: 329]; and (iii) a two-node thermal block that couples fluid temperature directly back to viscosity, $\mu(T)$[cite: 330].
+This work utilizes a high-fidelity numerical model coupling the $n$-DOF structural dynamics of a shear frame with the nonlinear hydro–thermal behavior of the FVDs. We intentionally move beyond simplified phenomenological laws (e.g., $F=C|v|^{\alpha}$). Instead, the FVD sub-model is mechanistic, incorporating: (i) orifice hydraulics with a Reynolds-dependent discharge coefficient $C_d(\mathrm{Re})$ and jet-loss scaling $\Delta p\!\propto\!Q^2$ \citep{Yau2017,Hutagalung2019,Osman2019}; (ii) a physics-based cavitation limiter implemented via a differentiable soft–minimum between the jet candidate and an effective vapour threshold, consistent with orifice cavitation inception criteria \citep{Davoudi2021}; and (iii) a two-node thermal block that couples temperature to viscosity (and density), so that both $c_{\mathrm{lam}}(T)$ and $C_d(\mathrm{Re}(T))$ respond to heating \citep{Yau2017,Zhong2020}.
 \end{sloppypar}
+
+\noindent\textit{Rationale.} Classical $F=C|v|^{\alpha}$ laws lump laminar and jet mechanisms and cannot track pressure, cavitation, and thermal safety under pulse-type demands. For sharp-edged short orifices in the relevant $\mathrm{Re}$ range, $\Delta p$ follows a quadratic $Q$-law with $C_d$ varying with $\mathrm{Re}$ and geometry \citep{Yau2017,Hutagalung2019,Osman2019}; keeping linear viscous losses in a \emph{parallel} branch avoids double counting inside the orifice drop. Cavitation onset places a physical cap tied to vapour pressure and local accelerations \citep{Davoudi2021}, while practical FVD design/qualification likewise imposes explicit pressure/capacity limits carried forward into our QC metrics \citep{Zhong2020,Acquaro2020SDEE,Song2016ICMS}.
+
 
 \par
 This integration results in a stiff, coupled ODE system that must advance both structural DOFs and damper temperatures simultaneously[cite: 331]. For numerical robustness and reproducibility, this system is solved using MATLAB's \texttt{ode15s} integrator with strict tolerances ($\text{RelTol}=10^{-3}$ and $\text{AbsTol}=10^{-6}$)[cite: 131, 134, 150, 163]. All performance and safety metrics (PFA, IDR, pressure, temperature) are subsequently evaluated over the significant duration ($t_5-t_{95}$) of the ground motion[cite: 332, 372].
@@ -182,7 +185,8 @@ For uniform storey height $h$, the maximum inter-storey drift ratio (IDR) is
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.9\linewidth]{ViscousDamper_CAD.pdf}
-  \caption{Schematic of the high-fidelity fluid viscous damper (FVD) model. Key components include the piston head containing orifices [cite: 1512, 1513] which separates Chamber~1 and Chamber~2 [cite: 1511, 1514], the compressible silicon fluid [cite: 1508], and the parallel spring [cite: 1510] (representing $k_{sd}$).}
+  \caption{Schematic of the high-fidelity fluid viscous damper (FVD) model. Key components include the piston head containing orifices, which separates Chamber~1 and Chamber~2; the working fluid is a compressible silicone oil \citep{wacker:2002:siliconefluids,tamson:2019:siliconoil}, and a parallel coil spring represents $k_{sd}$.}
+
   \label{fig:damper_schematic}
 \end{figure}
 
@@ -211,31 +215,46 @@ Positive $\Delta x$ increases the upper chamber volume and decreases the lower o
 This study models a 2D planar shear-frame, assuming one equivalent damper element ($n_\parallel=1$) is placed at each of the 9 inter-storey levels. The optimization (Section~\ref{sec:opt_ga}) seeks a single, uniform design (i.e., one set of parameters) to be applied to all 9 devices. This $n_\parallel=1$ approach represents the total \emph{equivalent} hydraulic circuit for that storey. In a practical application where multiple physical cylinders are installed in parallel, their contributions (e.g., $A_p$, $A_o$, $hA$) are assumed to be lumped into this single optimized equivalent element, thus avoiding parameter redundancy. For a regular-plan building, the same damper design would be assumed for the orthogonal (Y) direction.
 
 \subsubsection*{Orifice hydraulics: jet loss with $C_d(\mathrm{Re})$ (no linear drop inside $\Delta p$)}
-To establish a basis for the safety metric $(Q/Q_{\mathrm{cap}})_{95}$ and to normalize the flow saturation, we first define the theoretical flow capacity, $Q_{\mathrm{cap}}$. This value represents the theoretical maximum flow achievable under a nominal pressure cap, $\Delta p_{\mathrm{cap}}$[cite: 786]. We derive this capacity from the standard orifice equation, assuming fully turbulent conditions ($C_d^\infty$) and a fixed pressure cap (set in the model to $\Delta p_{\mathrm{cap}} = \SI{2e7}{Pa}$, or \SI{20}{MPa})[cite: 788]:
+
+To establish a basis for the safety metric $(Q/Q_{\mathrm{cap}})_{95}$ and to normalize the flow saturation, we define the theoretical orifice-flow capacity under a nominal design pressure cap $\Delta p_{\mathrm{cap}}$:
 \begin{equation}
-Q_{\mathrm{cap}} = C_d^\infty A_o \sqrt{ \frac{2 \Delta p_{\mathrm{cap}}}{\rho(T)} }
+Q_{\mathrm{cap}} = C_d^\infty A_o \sqrt{ \frac{2 \Delta p_{\mathrm{cap}}}{\rho(T)} }.
 \label{eq:Qcap_def}
 \end{equation}
-This capacity $Q_{\mathrm{cap}}$ then serves as the ceiling for the saturated flow $Q_{\mathrm{sat}}$ used in the jet-loss term, which ensures numerical stability and represents the physical headroom:
+Here, the design pressure cap is defined as
+$\Delta p_{\mathrm{cap}}=\phi\,p_{\mathrm{work}}$ with $\phi=1.5$,
+where $p_{\mathrm{work}}$ is the manufacturer-rated maximum working pressure \citep{Eiga2024}.
+In the absence of a project-specific rating, we adopt a conservative
+$\Delta p_{\mathrm{cap}}=\SI{20}{MPa}$, which lies in the lower half of the
+typical operating range reported for seismic FVD orifices (14-69 MPa).
+This choice provides proof-level headroom consistent with hydraulic
+pressure-testing practice ($\ge 1.5\times$ working pressure) \citep{Eiga2024}.
+
+The saturated flow used in the jet-loss term is then
 \begin{equation}
 Q_{\mathrm{sat}}(\Delta\dot x)=
 Q_{\mathrm{cap}}\;\tanh\!\Big(\frac{A_p}{Q_{\mathrm{cap}}}\sqrt{\Delta\dot x^{\,2}+v_\varepsilon^{\,2}}\Big),
 \qquad v_\varepsilon>0.
 \label{eq:Qsat}
 \end{equation}
-\emph{Only} the quadratic (jet) head loss contributes to the orifice pressure candidate:
+
+Consistent with single–phase orifice behavior, only the quadratic (jet) head loss contributes to the orifice pressure candidate,
 \begin{equation}
 \Delta p_{\mathrm{kv}}(Q_{\mathrm{sat}},T)=\frac{\rho(T)\,Q_{\mathrm{sat}}\,|Q_{\mathrm{sat}}|}{2\,[C_d(\mathrm{Re})\,A_o]^2},
 \label{eq:dp-kv}
 \end{equation}
-which requires defining the Reynolds number and its corresponding discharge transition:
+in line with the measured $\Delta p \propto Q^2$ (equivalently $Q\propto\sqrt{\Delta p}$) relationships for sharp/short orifices at relevant Reynolds numbers \citep{Cioncolini2018,Abd2019,Golijanek-Jdrzejczyk2023}. 
+\textit{Linear viscous losses are represented explicitly by the parallel laminar branch} $c_{\mathrm{lam}}(T)$ \textit{in Eq.~\eqref{eq:Felam}; embedding an additional linear drop inside} $\Delta p$ \textit{would double-count the same mechanism}.
+
+The Reynolds number and the discharge–coefficient transition are defined as
 \begin{equation}
 \mathrm{Re}=\frac{\rho(T)\,|Q_{\mathrm{sat}}|\,d_o}{\mu(T)\,A_o},\qquad
 C_d(\mathrm{Re})=
-C_d^\infty-\frac{C_d^\infty-C_d^0}{1+(\mathrm{Re}/\mathrm{Re}_c)^{p_{\exp}}},
+C_d^\infty-\frac{C_d^\infty-C_d^0}{1+(\mathrm{Re}/\mathrm{Re}_0)^{p_{\exp}}},
 \label{eq:Cd-Re}
 \end{equation}
-clamped to admissible bounds for $C_d$.
+with $C_d$ clamped to admissible bounds. While the literature shows that $C_d$–Re behavior and the onset of a high–Re plateau depend on geometry and operating conditions \citep{laMorena2018,Lee2018,Ahmed2020,Gao2019}, in this study we hold the transition scale fixed at $\mathrm{Re}_0=\num{1000}$ to avoid over-parameterization and identifiability issues in the 12-variable design. The fixed value and justification are listed in Appendix Table~\ref{tab:fixed-values-phys}.
+
 
 \paragraph{Laminar equivalent (used \emph{outside} $\Delta p_{\mathrm{kv}}$)}
 For diagnostics and the explicit viscous branch in Eq.~\eqref{eq:Felam}, the laminar network is represented by its equivalent flow resistance $R_{\mathrm{lam}}$. The resulting laminar coefficient $c_{\mathrm{lam}}$ follows directly from the standard hydraulic-to-mechanical equivalence $c_{\mathrm{lam}} = R_{\mathrm{lam}} A_p^2$:
@@ -249,7 +268,7 @@ so that $F_{\mathrm{laminar}}=c_{\mathrm{lam}}(T)\,\Delta\dot x$. Note that $R_{
 \subsubsection*{Cavitation limiter (physical model)}\label{sec:damper_cav}
 Cavitation is handled by applying a smooth lower bound to the orifice pressure. An upstream pressure proxy follows from the \emph{elastic} term relative to ambient:
 \begin{equation}
-p_{\uparrow}(t)=p_{\mathrm{amb}}+\frac{|F_{\mathrm{elastic}}(T)|}{A_p}.
+p_{\uparrow}(t)=p_{\mathrm{amb}}+\frac{|F_{\mathrm{elastic}}(t)|}{A_p}.
 \label{eq:pup}
 \end{equation}
 Comparing $p_{\uparrow}$ to an effective vapour threshold defines the cavitation-limited drop,
@@ -263,6 +282,17 @@ and the effective orifice pressure is the differentiable minimum
 \label{eq:softmin}
 \end{equation}
 The cavitation fraction over the Arias window is the time ratio with $\Delta p_{\mathrm{kv}}>\Delta p_{\mathrm{cav}}$.
+
+\paragraph{Cavitation threshold (physical basis).}
+Room-temperature silicone oils exhibit extremely low vapour pressures (order of 1–2 Pa), and cavitation inception is strongly conditioned by dissolved gas and surface nuclei. Degassing protocols in silicone-oil Venturi experiments markedly alter inception behaviour, underscoring the role of gas content; diffusion-driven nucleation from surface nuclei further explains why inception can occur at technically relevant absolute pressures. Accordingly, we set an effective threshold $p_{\mathrm{cav,eff}}$ in the kPa range by applying a conservative safety factor above the pure vapour pressure, so that the limiter flags only physically plausible inception in civil-scale FVDs \citep{Croci2020ApplSci, GrossPelz2017JFM}.
+
+\paragraph{Smooth minimum for numerical robustness.}
+To keep the right–hand side differentiable for stiff time integration and gradient-based penalties, we use the log-sum-exp smooth minimum
+\[
+\operatorname{softmin}_{\varepsilon}(a,b)
+= -\,\varepsilon \,\log\!\big(\mathrm{e}^{-a/\varepsilon}+\mathrm{e}^{-b/\varepsilon}\big),
+\]
+which monotonically approaches $\min(a,b)$ as $\varepsilon\!\downarrow\!0$, eliminating non-physical kinks while preserving the correct limiting behaviour \citep{Cuturi2013OTSoftmin}.
 
 \paragraph{Orifice force with smoothed sign}
 The hydraulic contribution to the storey force is
@@ -281,7 +311,7 @@ C_s\,\dot T_s &= \phantom{P_{\mathrm{loss}}}\; +\,hA_{o\leftrightarrow s}(T_o-T_
 \end{align}
 
 \par
-To clarify the thermal parameters, we link all three exchange coefficients in Eqs.~\eqref{eq:To}-\eqref{eq:Ts} to the single optimization variable $hA$ (Total thermal conductance) listed in Table~\ref{tab:opt-vars}. We thus assume a lumped parameter model where $hA_{o\leftrightarrow s} = hA_{o\leftrightarrow \mathrm{env}} = hA_{s\leftrightarrow \mathrm{env}} = hA$. This single $hA$ value is varied by the optimizer within its prescribed bounds. The fixed values noted in Appendix Table~\ref{tab:fixed-values-phys} (i.e., \SI{450}{W\,K^{-1}}) correspond to the baseline (non-optimized) configuration only.
+To clarify the thermal parameters, we link all three exchange coefficients in Eqs.~\eqref{eq:To}-\eqref{eq:Ts} to the single optimization variable $hA$ (total thermal conductance) listed in Table~\ref{tab:opt-vars}. We adopt a lumped model where $hA_{o\leftrightarrow s} = hA_{o\leftrightarrow \mathrm{env}} = hA_{s\leftrightarrow \mathrm{env}} = hA$; hence, no fixed baseline value is listed in the Appendix.
 
 \noindent Consistent with the three-term force split, instantaneous mechanical power is the sum of the laminar and orifice contributions (no linear drop inside $\Delta p$):
 \begin{equation}
@@ -291,12 +321,34 @@ P_{\mathrm{loss}}(t)=
 \;\ge 0 .
 \label{eq:Ploss}
 \end{equation}
+
+\noindent\textit{Energy transfer and power split.}
+The power split in Eq.~\eqref{eq:Ploss} follows standard hydraulic energetics:
+the laminar branch dissipates mechanical power as
+$P_{\mathrm{laminar}}=c_{\mathrm{lam}}(T_o)\,\Delta\dot x^{\,2}$,
+whereas the orifice branch converts hydraulic power
+$P=\Delta p_{\mathrm{eff}}\,|Q_{\mathrm{sat}}|$ into heat.
+Summing these terms yields the total mechanical-to-thermal conversion that drives the two-node balance in Eqs.~\eqref{eq:To}–\eqref{eq:Ts}.
+This is consistent with the mechanical-energy balance for short, sharp-edged orifices,
+$Q=C_d(\mathrm{Re})\,A_o\sqrt{2\,\Delta p/\rho}$, hence $\Delta p\!\propto\!Q^{2}$; here $C_d$ is Reynolds-dependent at low to intermediate $\mathrm{Re}$ and approaches a plateau as $\mathrm{Re}$ increases \citep{Yau2017,Cheng2020,Ahmed2020}.
+
 Temperature-dependent properties follow smooth laws:
 \begin{equation}
 \mu(T)=\mu_{\mathrm{ref}}\,\exp\!\big(b_\mu (T-T_{\mathrm{ref}})\big),\qquad
 \rho(T)=\frac{\rho_{\mathrm{ref}}}{1+\alpha_\rho (T-T_{\mathrm{ref}})}.
 \label{eq:props}
 \end{equation}
+
+\noindent\textit{Temperature-dependent properties.}
+For PDMS silicone oils, the viscosity–temperature relation is well captured over engineering ranges 
+(roughly $20$–$100\,^{\circ}$C and low-to-moderate shear) by log-linear/Arrhenius-type fits, which motivates 
+the exponential form in Eq.~\eqref{eq:props}. We calibrate the fit around 
+$T_{\mathrm{ref}}=\SI{25}{^\circ C}$ using manufacturer data for the specific oil grade (zero-shear region). 
+The same dataset provides the density slope $\alpha_{\rho}$ used in Eq.~\eqref{eq:props}, ensuring that 
+$\rho(T)$ and thus $\mathrm{Re}(T)$ and $C_d(\mathrm{Re}(T))$ respond consistently to heating 
+\citep{Swallow2002,Venczel2021,Zhai2019,wacker:2002:siliconefluids,tamson:2019:siliconoil}.
+\noindent The property slopes $b_\mu$, $\alpha_\rho$, and the optional $b_\rho$ used in Eq.~\eqref{eq:props} were obtained by least-squares fits to manufacturer data for PDMS silicone oils around $T_{\mathrm{ref}}=\SI{25}{^\circ C}$ \citep{tamson:2019:siliconoil,wacker:2002:siliconefluids}.
+
 The accumulated dissipation reported on the Arias window is
 \begin{equation}
 E_{\mathrm{mech}}
@@ -306,7 +358,7 @@ E_{\mathrm{mech}}
 \end{equation}
 
 \paragraph{Parameters (deferred)}
-All fixed coefficients, bounds, and geometry for: (i) the discharge-coefficient transition $C_d(\mathrm{Re})$; (ii) damper geometry and elastic/compressibility terms defining $k_{sd}$; (iii) the cavitation limiter; and (iv) thermal exchange and property slopes are consolidated in Appendix~\ref{app:derived} to keep the main text physics-first and reproducible. SI units are used throughout ($Q$ in \si{m^3\,s^{-1}}, $\Delta p$ in \si{Pa}, areas in \si{m^2}).
+All fixed coefficients, bounds, and geometry for: (i) the discharge-coefficient transition $C_d(\mathrm{Re})$ (with fixed $\mathrm{Re}_0$); (ii) damper geometry and elastic/compressibility terms defining $k_{sd}$; (iii) the cavitation limiter; and (iv) thermal exchange and property slopes are consolidated in Appendix~\ref{app:derived} to keep the main text physics-first and reproducible. SI units are used throughout ($Q$ in \si{m^3\,s^{-1}}, $\Delta p$ in \si{Pa}, areas in \si{m^2}).
 
 \subsection{Time integration}\label{sec:time_integration}
 We advance the coupled problem with a \emph{stiff, variable–step} ODE scheme. The integrated state collects the structural DOFs and the two–node thermal pair, while damper hydraulics are evaluated \emph{algebraically} inside the right–hand side. With $\boldsymbol{x}(t)\in\mathbb{R}^{10}$ the relative floor displacements and $\boldsymbol{v}(t)=\dot{\boldsymbol{x}}(t)$, the first-order form is:
@@ -337,9 +389,12 @@ To ensure a consistent intensity measure (IM) across records, each accelerogram 
 \mathrm{IM}_{\mathrm{band}}=\exp\!\left(\frac{1}{N}\sum_{k=1}^{N}\ln S_a^{(5\%)}(T_k)\right), \quad T_k \in [T_1/\gamma,\ \gamma T_1].
 \label{eq:IMband}
 \end{equation}
+
+The band-averaged geometric mean PSA in Eq.~\eqref{eq:IMband} follows the family of $S_a$-based intensity measures that average logarithmic ordinates over a period band; centering the band on $T_1$ improves efficiency and sufficiency for first-mode dominated shear frames. This is analogous to Sa,avg- or AvSv-type IMs used in record selection and scaling studies \citep{Vargas-Alzate2022}. The Arias window $[t_5,t_{95}]$ is used throughout to avoid start-up and coda artefacts in peak/percentile metrics, consistent with significant-duration definitions based on $D_{5\text{--}95}$ \citep{Davatgari-Tafreshi2023,Jiang2025}.
+
 The scale factor $s=\mathrm{IM}_\star/\mathrm{IM}_{\mathrm{band}}$, clamped to admissible bounds (e.g., [0.2, 2.2]), is applied to obtain the scaled motion $\tilde a_g(t)$. This scaled motion is then used identically for the bare frame and all damper configurations.
 
-All performance metrics (e.g., PFA, IDR) are evaluated over the significant duration of the motion, defined by the 5\%–95\% Arias-intensity window $[t_5, t_{95}]$, to suppress start-up and coda artefacts[cite: 343]. Per-record metrics are then aggregated (arithmetic means) for the optimization objectives.
+All performance metrics (e.g., PFA, IDR) are evaluated over the significant duration of the motion, defined by the 5\%–95\% Arias-intensity window $[t_5, t_{95}]$, to suppress start-up and coda artefacts \citep{Davatgari-Tafreshi2023,Jiang2025}. Per-record metrics are then aggregated (arithmetic means) for the optimization objectives.
 
 \begin{table}[!t]
 \centering\footnotesize
@@ -374,11 +429,13 @@ CH07 & Chuetsu & 2007 & Joetsu Kakizaki / 65010EW      & 6.8 & 9.43  & 0.580 \\
 
 \vspace{2pt}
 {\RaggedRight\footnotesize
-Notes: Distances are closest-to-fault (R\textsubscript{rup}) where available. PGA values are in $g$; Chi--Chi and Kahramanmaras are converted from cm/s$^2$ using $1\,g=980.665$ cm/s$^2$ (433.6 $\rightarrow$ 0.442 $g$; 2166.435 $\rightarrow$ 2.209 $g$).
-The record set intentionally includes high-PGA, near-fault records (e.g., MR23 at \SI{2.209}{g}) to test the model's robustness. These records are characterized by high-velocity pulses, which impose extreme demands on velocity-dependent devices; their inclusion ensures the optimized design remains safe (in terms of pressure, temperature, and cavitation) even under these severe impulsive loads.
+Sources: PEER NGA-West2 and AFAD Strong Motion Databases.
+
+Notes: Distances are closest-to-fault (R\textsubscript{rup}) where available. PGA values are in $g$; Chi--Chi and Kahramanmaras are converted from cm/s$^2$ using $1\,g=980.665$ cm/s$^2$ (433.6 $\rightarrow$ 0.442 $g$; 2166.435 $\rightarrow$ 2.209 $g$). Codes refer to internal labels; MR23 corresponds to AFAD record TK~4614 (HNE component), while the remaining records are taken from PEER NGA-West2 with the station/component identifiers shown in the table. The record set intentionally includes high-PGA, near-fault records (e.g., MR23 at \SI{2.209}{g}) to test the model's robustness. These records are characterized by high-velocity pulses, which impose extreme demands on velocity-dependent devices; their inclusion ensures the optimized design remains safe (in terms of pressure, temperature, and cavitation) even under these severe impulsive loads.
 \par}
 \end{table}
-\FloatBarrier  % <- tablonun bu bölümden aşağı kaymasını engeller
+\FloatBarrier
+
 
 \section{Optimization Framework}\label{sec:opt_ga}
 
@@ -436,9 +493,9 @@ The safety thresholds defined in the QC box were established conservatively to r
 We justify the primary thresholds as follows:
 (i) The internal pressure limit ($\Delta p_{95}\le \SI{4.0e7}{Pa}$, or \SI{40}{MPa}) was selected to ensure mechanical integrity. This provides a significant safety factor against seal extrusion or fatigue, as high-performance damper seals are often rated for pressures up to \SI{275}{MPa}, and typical civil engineering specifications may require burst pressures exceeding \SI{138}{MPa} \cite{TaylorDevices2024}.
 (ii) The thermal limits ($T_{\mathrm{end}}\le \SI{75}{\celsius}$ and $\mu_{\mathrm{end}}\ge \SI{0.70}{Pa.s}$) serve a dual purpose. They ensure the device operates within the typical functional range reported in literature (often $-40$ to $+70\,^\circ$C) \cite{MDPI_Thermal2023} and prevent excessive thermal thinning ($\mu_{\mathrm{end}}$) or degradation, which can occur in silicone fluids above \SI{90}{\celsius}. This maintains the validity of the calibrated $\mu(T)$ and $C_d(\mathrm{Re}(T))$ models.
-(iii) The flow ratio cap ($(Q/Q_{\mathrm{cap}})_{95}\le 0.90$) imposes a 10\% headroom to prevent the orifice flow from approaching flow saturation (choking), a critical regime where compressibility or cavitation effects can dominate and performance becomes nonlinear \cite{CraneTP410}.
+(iii) The flow ratio cap ($(Q/Q_{\mathrm{cap}})_{95}\le 0.90$) imposes a 10\% headroom to prevent the orifice flow from approaching flow saturation (choking), a critical regime where compressibility or cavitation effects can dominate and performance becomes nonlinear \cite{crane:1982:flowfluids}.
 % --- REVISION START: New justification for (iv) ---
-(iv) The cavitation policy ($\mathrm{cav}_{\mathrm{pct}} \le 0.5\%$) shifts from a zero-tolerance ideal to a practical, robust threshold designed to be insensitive to spurious numerical noise. To ensure only physically significant events are counted, "cavitation" is defined only when the pressure remains below the effective threshold ($p_{\mathrm{cav,eff}}$) by a \SI{0.5}{kPa} dead-band for a persistent duration ($\tau_{\mathrm{hold}} \ge \SI{5}{ms}$). This \emph{de minimis} 0.5\% time-fraction tolerance ensures that while numerical artifacts are ignored, any design initiating cumulative damage or performance degradation \cite{EN15129_Standard} is still rejected by the hard-screen policy.
+(iv) The cavitation policy ($\mathrm{cav}_{\mathrm{pct}} \le 0.5\%$) shifts from a zero-tolerance ideal to a practical, robust threshold designed to be insensitive to spurious numerical noise. To ensure only physically significant events are counted, "cavitation" is defined only when the pressure remains below the effective threshold ($p_{\mathrm{cav,eff}}$) by a \SI{0.5}{kPa} dead-band for a persistent duration ($\tau_{\mathrm{hold}} \ge \SI{5}{ms}$). This \emph{de minimis} 0.5\% time-fraction tolerance ensures that while numerical artifacts are ignored, any design initiating cumulative damage or performance degradation \cite{sist:2018:en15129} is still rejected by the hard-screen policy.
 
 
 Designs breaching any bound are rejected by the hard screen; others are penalized softly via $f_{\mathrm{pen}}$.
@@ -455,7 +512,7 @@ d_o,\ n_{\mathrm{orf}},\ C_d^{0},\ C_d^{\infty},\ p_{\exp},\ L_{\mathrm{ori}},\ 
 \]
 where $d_o$ is the orifice diameter, $n_{\mathrm{orf}}$ the number of parallel orifices (integer), $(C_d^{0},C_d^{\infty},p_{\exp})$ the discharge-law parameters, $L_{\mathrm{ori}}$ the orifice length, $hA$ the total heat-transfer conductance, $(D_p,d_w,D_m,n_{\mathrm{turn}})$ the piston/spring geometry (with $n_{\mathrm{turn}}$ integer), and $\mu_{\mathrm{ref}}$ the reference viscosity.
 
-The feasible region $\mathcal{X}$ is a box-constrained domain (Table~\ref{tab:opt-vars}) with integrality enforced on $n_{\mathrm{orf}}$ and $n_{\mathrm{turn}}$. Bounds are chosen to enforce manufacturability (e.g., minimal drillable $d_o$, feasible spring index $D_m/d_w$) and consistency with the physical models.
+The feasible region $\mathcal{X}$ is a box-constrained domain (Table~\ref{tab:opt-vars}) with integrality enforced on $n_{\mathrm{orf}}$ and $n_{\mathrm{turn}}$. Bounds in Table~\ref{tab:opt-vars} reflect manufacturability and physics. The lower orifice-diameter bound avoids sub-millimetre drilling that would otherwise require EDM/laser processes and compromised tolerances, while the selected $L_{\mathrm{ori}}/d_o$ range keeps the device in a short, sharp-edged orifice-tube regime where $C_d(\mathrm{Re})$ exhibits a well-defined plateau and predictable sensitivity to thickness and length-to-diameter ratio \citep{Abdelrahman2021,Jankowski2008,Simpson2018}. Spring geometry enforces a practical spring index $C=D_m/d_w$ in the conventional design range, supported by recent numerical and failure analyses of low-index helical springs, to avoid buckling, excessive stress concentrations, and premature fatigue \citep{Holschuh2015,Tan2020,Michalczyk2024,Yetgin2024}. Integer constraints on $n_{\mathrm{orf}}$ and $n_{\mathrm{turn}}$ simply encode physical multiplicities of orifices and active coils, while piston-diameter bounds follow standard seal availability and machining constraints in industrial hydraulic cylinders.
 
 \begin{table}[htbp]
   \centering\footnotesize
@@ -479,12 +536,13 @@ The feasible region $\mathcal{X}$ is a box-constrained domain (Table~\ref{tab:op
   $hA$            & Total thermal conductance              & \num{150} & \num{400} & \si{W\,K^{-1}} \\
   $D_p$           & Piston diameter                        & \num{0.110} & \num{0.260} & \si{m} \\
   $d_w$           & Spring wire diameter                   & \num{0.008} & \num{0.020} & \si{m} \\
-  $D_m$           & Spring mean diameter                   & \num{0.080} & \num{0.200} & \si{m} \\
+  $D_m^{\dagger}$ & Spring mean diameter                   & \num{0.080} & \num{0.200} & \si{m} \\
   $n_{\mathrm{turn}}$ & Active spring turns \textit{(integer)} & \num{6} & \num{15} & -- \\
   $\mu_{\mathrm{ref}}$ & Reference viscosity at $T_{\mathrm{ref}}$ & \num{0.60} & \num{2.00} & \si{Pa\,s} \\
   \bottomrule
   \end{tabularx}
   \setlength{\tabcolsep}{6pt}% restore default spacing
+  \par\vspace{0.3em}\noindent\footnotesize\emph{Manufacturability note.} Bounds enforce drillable orifice diameters, short sharp-edged orifice-tube aspect ratios, practical spring index, and seal-compatible piston sizes. $^{\dagger}$Spring index defined as $C=D_m/d_w$.
 \end{table}
 
 \paragraph{Search strategy and audit.}
@@ -711,7 +769,7 @@ Symbol & Value & Units & Notes \\
 \multicolumn{4}{@{}l}{\textit{Optimization QC Thresholds (Section 3.1)}} \\
 $\Delta p_{95}^{\max}$ & $4.0\times 10^{7}$ & Pa & QC threshold (per record, windowed). \\
 $(Q/Q_{\mathrm{cap}})_{95}^{\max}$ & 0.90 & -- & QC threshold. \\
-$\mathrm{cav}^{\max}$ & 0.00 & -- & QC threshold. \\
+$\mathrm{cav}^{\max}$ & 0.005 & -- & QC threshold (time fraction; 0.5\%). \\
 $T_{\mathrm{end}}^{\max}$ & 75 & $^\circ$C & QC threshold. \\
 $\mu_{\mathrm{end}}^{\min}$ & 0.70 & Pa\,s & QC threshold (see Sec.~\ref{sec:opt_obj}). \\
 \midrule
@@ -729,33 +787,33 @@ s\_bounds & [0.2, 2.2] & -- & Scale factor bounds. \\
 \caption{Fixed numeric settings used in this study: physical constants for the damper model.}
 \label{tab:fixed-values-phys}
 \setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.1}
 \begin{tabularx}{\linewidth}{@{}>{\RaggedRight\arraybackslash}p{0.27\linewidth}>{\RaggedRight\arraybackslash}p{0.20\linewidth}>{\RaggedRight\arraybackslash}p{0.16\linewidth}>{\RaggedRight\arraybackslash}X@{}}
 \toprule
 Symbol & Value & Units & Notes \\
 \midrule
-$p_{\mathrm{cav,eff}}$ & $2.0\times 10^{3}$ & Pa & Cavitation cap. \\
-$\mathrm{cav\_sf}$ & 0.90 & -- & Safety factor for cavitation limit. \\
-$v_\varepsilon$ & 0.10 & \si{m.s^{-1}} & Sign/flow smoothing. \\
-$\varepsilon_{\text{softmin}}$ & $1.0\times 10^{6}$ & Pa & Soft-min sharpness. \\
-$T_{\mathrm{ref}}$, $T_\infty$ & 25,\ 25 & $^\circ$C & Viscosity reference \& ambient. \\
-$\rho_{\mathrm{ref}}$ & 850 & \si{kg.m^{-3}} & Oil density (ref.). \\
-$\mathrm{Re}_c$ & 3000 & -- & Transition Reynolds (in $C_d(\mathrm{Re})$).\\
-$p_{\mathrm{amb}}$ & \num{1.0e5} & Pa & Ambient pressure.\\
-$K_d$ & \num{1.6e9} & Pa & Bulk modulus proxy (hydraulic stiffness).\\
-$L_{\mathrm{gap}}$ & 0.055 & m & Effective chamber length for $k_h, k_s$.\\
-$E_{\mathrm{body}}$ & \num{2.1e11} & Pa & Cylinder modulus.\\
-$G_{\mathrm{sh}}$ & \num{7.9e10} & Pa & Spring shear modulus.\\
-$b_\mu$ & -0.013 & \si{K^{-1}} & Viscosity slope ($\mu(T)$).\\
-$\alpha_\rho$ & \textit{[not specified]} & \si{K^{-1}} & Density slope ($\rho(T)$).\\
-$C_o,\,C_s$ & \textit{[derived]} & \si{J.K^{-1}} & Thermal capacitances (from $m_{oil}, c_p$).\\
-$hA_{o\leftrightarrow s}$ & 450 & \si{W.K^{-1}} & Oil–steel exchange.\\
-$hA_{o\leftrightarrow \mathrm{env}}$ & 450 & \si{W.K^{-1}} & Oil–ambient exchange (assumed). \\
-$hA_{s\leftrightarrow \mathrm{env}}$ & 450 & \si{W.K^{-1}} & Steel–ambient exchange (assumed). \\
-$c_p$ (oil) & 1800 & \si{J.(kg.K)^{-1}} & Specific heat capacity (oil).\\
-$c_p$ (steel) & 500 & \si{J.(kg.K)^{-1}} & Specific heat capacity (steel).\\
+$ p_{\mathrm{cav,eff}} $ & $2.0\times 10^{3}$ & Pa & Cavitation cap (basis: PDMS vapour pressure + safety factor). \\
+\texttt{cav\_sf} & 0.90 & -- & Safety factor for cavitation limit. \\
+$ v_{\varepsilon} $ & 0.10 & \si{m.s^{-1}} & Sign/flow smoothing. \\
+$ \varepsilon_{\text{softmin}} $ & $1.0\times 10^{6}$ & Pa & Soft-min sharpness. \\
+$ T_{\mathrm{ref}},\, T_{\infty} $ & 25,\ 25 & \si{\celsius} & Viscosity reference and ambient. \\
+$ \rho_{\mathrm{ref}} $ & 850 & \si{kg.m^{-3}} & Oil density (ref.). \\
+$ p_{\mathrm{amb}} $ & \num{1.0e5} & Pa & Ambient pressure.\\
+$ K_d $ & \num{1.6e9} & Pa & Bulk modulus proxy (hydraulic stiffness).\\
+$ L_{\mathrm{gap}} $ & 0.055 & m & Effective chamber length for $k_h$ and $k_s$.\\
+$ E_{\mathrm{body}} $ & \num{2.1e11} & Pa & Cylinder modulus.\\
+$ G_{\mathrm{sh}} $ & \num{7.9e10} & Pa & Spring shear modulus.\\
+$ b_{\mu} $ & -0.013 & \si{K^{-1}} & Viscosity slope $\mu(T)$ (fit to silicone-oil data) \citep{tamson:2019:siliconoil,wacker:2002:siliconefluids}.\\
+$ \alpha_{\rho} $ & $9.2\times 10^{-4}$ & \si{K^{-1}} & Density slope for silicone oils (25\,\si{\celsius} ref.; manufacturer fit) \citep{wacker:2002:siliconefluids,tamson:2019:siliconoil}.\\
+$\mathrm{Re}_0$ & 1000 & -- & $C_d(\mathrm{Re})$ transition scale in Eq.~\eqref{eq:Cd-Re}; fixed (lit.-informed) \citep{laMorena2018,Ahmed2020,Lee2018}.\\
+$ b_{\rho} $      & $4.5\times 10^{-7}$ & \si{K^{-2}} & Optional quadratic correction for $\rho(T)$ (AK-series fit) \citep{wacker:2002:siliconefluids}.\\
+$ C_o,\, C_s $ & \textit{[derived]} & \si{J.K^{-1}} & Thermal capacitances (from $m_{\mathrm{oil}}$, $c_p$).\\
+$ c_p $ (oil) & 1800 & \si{J.(kg.K)^{-1}} & Specific heat capacity (oil).\\
+$ c_p $ (steel) & 500 & \si{J.(kg.K)^{-1}} & Specific heat capacity (steel).\\
 \bottomrule
 \end{tabularx}
 \end{table}
+
 
 % --- TABLO A.4 (Yeniden numaralandırıldı) ---
 \begin{table}[htbp]
@@ -770,7 +828,6 @@ Quantity & Definition & Role \\
 $A_p$        & $\pi D_p^2/4$               & Piston area (force $=A_p\,\Delta p$). \\
 $A_o$        & $n_{\mathrm{orf}}\pi d_o^2/4$ & Total orifice area. \\
 $R_{\mathrm{lam}}$ & Eq.~\eqref{eq:Rlam-clam}  & Laminar head loss term. \\
-$C_d(\mathrm{Re})$ & Eq.~\eqref{eq:Cd-Re}     & Discharge coefficient. \\
 $k_h$        & $K_d A_p^2/L_{\mathrm{gap}}$ & Hydraulic stiffness (oil compressibility). \\
 $k_s$        & $E_{\mathrm{body}} A_p/L_{\mathrm{gap}}$ & Cylinder-wall stiffness. \\
 $k_{\mathrm{hyd}}$ & $(1/k_h+1/k_s)^{-1}$     & Combined compliance. \\
@@ -784,7 +841,6 @@ $L_h$        & $\rho L_{\mathrm{ori}}/A_o^2$ & Hydraulic inertia (if enabled). \
 % --- BIBLIOGRAPHY SECTION (REVISED) ---
 \bibliographystyle{elsarticle-num}
 
-% This command checks if 'bibtex.bib' exists and then uses it.
 \IfFileExists{bibtext.bib}{%
   \bibliography{bibtext}%
 }{%
