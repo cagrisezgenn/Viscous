@@ -384,9 +384,18 @@ We integrated the coupled frame and damper model with a stiff variable step ODE 
 \boldsymbol{v}(t)\\[2pt]
 T_o(t)\\[2pt]
 T_s(t)
-\end{bmatrix},\qquad
-\dot{\boldsymbol{x}}(t)=\boldsymbol{v}(t),\qquad
-\dot{\boldsymbol{v}}(t)= -\,\boldsymbol{M}^{-1}\!\Big(\boldsymbol{C}_0\,\boldsymbol{v}(t)+\boldsymbol{K}\,\boldsymbol{x}(t)+\boldsymbol{f}_{\mathrm{d}}(t)\Big)\;-\;\boldsymbol{r}\,a_g(t),
+\end{bmatrix},
+\qquad
+\begin{aligned}[t]
+\dot{\boldsymbol{x}}(t)&=\boldsymbol{v}(t),\\
+\dot{\boldsymbol{v}}(t)&=
+-\,\boldsymbol{M}^{-1}\!\Big(
+  \boldsymbol{C}_0\,\boldsymbol{v}(t)
+  +\boldsymbol{K}\,\boldsymbol{x}(t)
+  +\boldsymbol{f}_{\mathrm{d}}(t)
+\Big)
+-\boldsymbol{r}\,a_g(t),
+\end{aligned}
 \]
 where $\boldsymbol{f}_{\mathrm{d}}(t)=\boldsymbol{B}^{\mathsf T}\boldsymbol{f}_{\mathrm{story}}(t)$ and $\boldsymbol{f}_{\mathrm{story}}(t)$ is returned by the mechanistic device model from the instantaneous storey drift and drift rate.
 
@@ -457,11 +466,11 @@ CH07 & Chuetsu & 2007 & Joetsu Kakizaki / 65010EW      & 6.8 & 9.43  & 0.580 \\
 \bottomrule
 \end{tabularx}
 
-\vspace{2pt}
-{\RaggedRight\footnotesize
-Sources: PEER NGA-West2 and AFAD Strong Motion Databases.
-
-Notes: Distances are closest-to-fault (R\textsubscript{rup}) where available. PGA values are in $g$; Chi--Chi and Kahramanmaras are converted from cm/s$^2$ using $1\,g=980.665$ cm/s$^2$ (433.6 $\rightarrow$ 0.442 $g$; 2166.435 $\rightarrow$ 2.209 $g$). Codes refer to internal labels; MR23 corresponds to AFAD record TK~4614 (HNE component), while the remaining records are taken from PEER NGA-West2 with the station/component identifiers shown in the table. The record set intentionally includes high PGA near fault records (for example MR23 at \SI{2.209}{g}) to test the model response under severe pulse like demands on velocity dependent devices; this helps check that the optimised damper designs remain within the pressure, temperature and cavitation limits enforced in the quality control metrics.
+\vspace{1pt}
+{\RaggedRight\scriptsize
+Sources: PEER NGA-West2 (all but MR23) and AFAD Strong Motion Databases (MR23).
+Distances use closest-to-fault values ($R_{\mathrm{rup}}$) when available and all PGA entries are reported in $g$; Chi--Chi and Kahramanmaras were converted from cm/s$^2$ using $1\,g=980.665$~cm/s$^2$.
+Codes coincide with the internal labels used in the optimisation runs (MR23 corresponds to AFAD TK~4614, HNE component), and the mix intentionally retains high-PGA near-fault motions (for example MR23 at \SI{2.209}{g}) to exercise the pressure, temperature and cavitation limits enforced by the QC metrics.
 \par}
 \end{table}
 \FloatBarrier
@@ -474,10 +483,10 @@ We solved a safety first lexicographic multi objective problem. Candidate design
 Figure~\ref{fig:ga_flowchart} sketches the workflow. The aim was to identify device parameters \(\boldsymbol{d}\) that reduce the record mean roof peak floor acceleration (PFA) and the record mean maximum interstorey drift ratio (IDR) at the same time. These metrics were evaluated on the Arias window responses \([t_5,t_{95}]\) for a fixed set of ten intensity scaled ground motions.
 
 % --- REVİZYON: Figür, metinden sonraya taşındı ---
-\begin{figure}[h!] % <-- [t] yerine [h!] (Here!) kullanıldı
+\begin{figure}[!htbp]
   \centering
   % REVİZYON: Figür, sayfaya sığması için küçültüldü
-  \includegraphics[width=0.75\linewidth]{GA.pdf}
+  \includegraphics[width=0.72\linewidth]{GA.pdf}
   \caption{Flowchart of the NSGA-II optimization process, illustrating population evaluation, safety screening (hard constraints), and multi objective ranking ($f_{\mathrm{pen}}, f_1, f_2$).}
   \label{fig:ga_flowchart}
 \end{figure}
@@ -884,6 +893,8 @@ $L_h$        & $\rho L_{\mathrm{ori}}/A_o^2$ & Hydraulic inertia (if enabled). \
 \end{table}
 
 % --- BIBLIOGRAPHY SECTION (REVISED) ---
+\begingroup
+\sloppy
 \bibliographystyle{elsarticle-num}
 
 \IfFileExists{bibtext.bib}{%
@@ -895,5 +906,6 @@ $L_h$        & $\rho L_{\mathrm{ori}}/A_o^2$ & Hydraulic inertia (if enabled). \
   Placeholder Author, ``CRITICAL ERROR: 'bibtext.bib' file not found. Please create it and add BibTeX entries,'' (2025).
   \end{thebibliography}%
 }
+\endgroup
 
 \end{document}
