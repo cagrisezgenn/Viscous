@@ -1,11 +1,8 @@
-%% Elsevier 'elsarticle' template — Structures (review mode)
 \pdfminorversion=7 % allow inclusion of up to PDF 1.7 graphics
-%\documentclass[review,12pt]{elsarticle} % ilk gönderimde review + tek sütun
 \documentclass[final,5p,times]{elsarticle}
 \journal{Structures}
 \biboptions{square}
 
-%% Packages
 \usepackage[english]{babel}
 \usepackage{amsmath,amssymb,mathtools}
 \usepackage{graphicx}
@@ -23,7 +20,6 @@
 
 
 
-%% siunitx
 \sisetup{
 mode = match,
 propagate-math-font = true,
@@ -39,12 +35,10 @@ range-phrase = --,
 exponent-product = \times
 }
 
-%% Microtype
 \microtypesetup{expansion,protrusion}
 \emergencystretch=3em
 \allowdisplaybreaks[1]
 
-% --- HYPERREF EN SONDA ---
 \usepackage{hyperref}
 \makeatletter
 \pdfstringdefDisableCommands{%% disable front-matter commands in PDF strings
@@ -65,7 +59,6 @@ exponent-product = \times
 
 \title{Hydrothermal Physics Based Modelling and Safety Constrained Multi Objective Seismic Design of Fluid Viscous Dampers}
 
-%% Authors
 \author[aff1]{Haşmet Çağrı SEZGEN\corref{cor1}}
 \ead{hasmetcagri.sezgen@erbakan.edu.tr}
 \cortext[cor1]{Corresponding author.}
@@ -76,7 +69,6 @@ exponent-product = \times
 Recent earthquakes show that some buildings with code compliant design and fluid viscous dampers (FVDs) still develop large interstorey drifts and floor accelerations in rare, high intensity events. A reason is that design models often reduce FVDs to black box power law dashpots, so internal pressure, cavitation and temperature never appear as explicit constraints. We address this by coupling a hydro thermal FVD model to a ten storey shear frame and optimising damper properties for both structural demand and device scale safety. The model captures laminar and jet branches, cavitation and temperature dependent oil properties through a Reynolds dependent discharge coefficient and a two node thermal block that feeds back into viscosity. We embed this device in time history analyses of the frame under ten ground motions, scaled to a spectral acceleration band centred on the first mode period. All response and safety metrics are evaluated on the 5-95\% Arias intensity window. A multi parameter design space is then explored with NSGA II. Quality control thresholds on pressure, flow capacity ratio, cavitation, temperature and viscosity are enforced before trading off mean roof peak floor acceleration (PFA) and maximum interstorey drift ratio (IDR). The selected knee point on the Pareto front reduces the mean roof PFA from 13.27 to 5.05~m/s$^2$ and the mean maximum IDR from 0.88\% to 0.30\%, while satisfying all safety limits. An energy balance indicates that the orifice branch dissipates about $3.5\times 10^{7}$~J versus $2.2\times 10^{7}$~J in the structural viscous branch. In this configuration, most seismic input is converted to heat in the devices. Taken together, these results bring damper scale hydro thermal physics into safety first, performance based design for code oriented building archetypes.
 \end{abstract}
 
-%% Keywords
 \begin{keyword}
 Fluid viscous damper \sep seismic optimization \sep Cd(Re) \sep cavitation \sep thermal coupling \sep NSGA-II
 \end{keyword}
@@ -88,7 +80,6 @@ Fluid viscous damper \sep seismic optimization \sep Cd(Re) \sep cavitation \sep 
 \hypersetup{pageanchor=true}
 
 
-%% ---------------- Main text ----------------
 \section{Introduction}
 Many code compliant buildings still experience large interstorey drifts and floor accelerations during rare but intense earthquakes. Despite the shift from simple strength checks to performance based design, serviceability related demands in high seismic regions remain difficult to control. In practice, some frames satisfy global strength and code level ductility checks and still develop interstorey drift ratios (IDR) large enough to crack non structural components and architectural finishes. At the same time, peak floor accelerations (PFA) increase the fragility of suspended ceilings, façades, contents and sensitive equipment. When large IDR and high PFA occur together, they can trigger disproportionate economic and functional losses. To control these demands without resorting to very stiff or heavily over strengthened lateral systems, engineers increasingly rely on supplemental damping devices. Examples include metallic yielding dampers, friction devices, tuned mass dampers, base isolation systems and, in particular, velocity dependent fluid viscous dampers (FVDs), which are widely used in buildings and bridges as passive energy dissipation devices \cite{Zoccolini2023,Frings2017,Zhang2024}. Major design codes such as EN~15129 and ASCE~7 explicitly recognise FVDs and provide guidance on their use in seismic applications \cite{sist:2018:en15129,asce7}. In most design procedures, these devices are represented through equivalent viscous damping and a power law force velocity relation of the form
 \[
@@ -120,7 +111,6 @@ At structural level, numerous studies have optimised FVD parameters and placemen
 
 In this context, the present paper proposes a safety driven design framework for FVD equipped shear buildings that links device scale physics with multi record, performance based seismic assessment. First, we develop an ODE-only fluid viscous damper model that separates laminar gap and orifice jet branches and assigns a Reynolds-dependent discharge coefficient with a soft minimum cavitation limiter. The same model also couples a two-node thermal block to temperature-dependent viscosity and density. This model tracks pressure, flow and temperature histories consistently while the damper is embedded in the equations of motion of a ten degree of freedom shear frame. In contrast to detailed CFD simulations conducted at specimen level \cite{Agha2023,Lak2023,Frings2017,Zhong2020}, it is deliberately kept inexpensive enough for large ground motion sets. Second, we adopt a band averaged geometric mean spectral acceleration centred at the first mode period as intensity measure. We evaluate both structural and device metrics within a common Arias window \([t_5,t_{95}]\), including peak floor accelerations, interstorey drifts, pressure percentiles, \(Q/Q_{\mathrm{cap}}\), cavitation ratio, end of record temperature and viscosity, thereby extending Sa,avg type intensity measures and significant duration concepts to a joint assessment of building performance and internal damper safety \cite{Vargas-Alzate2022,Davatgari-Tafreshi2023,Hu2025}. Third, we cast the FVD design problem as a lexicographic multi objective optimisation in a twelve dimensional space of orifice geometry, piston and spring parameters and thermal properties. We first minimise an aggregated penalty $f_{\mathrm{pen}}$ that counts hydraulic and thermal quality control violations (pressure capacity, flow throttling, cavitation onset, temperature and viscosity limits). Only designs with low $f_{\mathrm{pen}}$ are then used to trade off average peak floor accelerations and interstorey drifts via NSGA II. This safety first formulation goes beyond existing multi objective or risk informed designs that tune simple power law or Maxwell type dampers at structural level. Those approaches typically do not impose explicit limits on pressure, cavitation or temperature \cite{Kolour2021,Bakhshinezhad2020,Zhong2020,Arjmand2024}. Finally, we examine the resulting Pareto fronts and summarise the main design trends. Near optimal solutions tend to cluster around medium piston diameters, multiple small orifices, intermediate oil viscosity and moderate heat transfer capacity. We discuss how these patterns can be distilled into design charts or surrogate models that complement current code oriented practice and placement studies \cite{Cetin2019,SiamiKaleybar2021,Farahpour2023}. The overall three phase workflow, from record processing and intensity measure selection through genetic algorithm setup with hydraulic and thermal safety constraints to multi objective optimisation and Pareto front analysis, is summarised in Figure~\ref{fig:overall_workflow} and detailed in the following sections.
 
-% Motivasyon, literatürde boşluk, katkılar ve makale organizasyonu.
 
 \section{Methods: Physical \& Numerical Modelling}
 
@@ -437,19 +427,15 @@ Codes coincide with the internal labels used in the optimisation runs (MR23 corr
 
 \section{Optimization Framework}\label{sec:opt_ga}
 
-% --- REVİZYON: Metin paragrafı, figürden önceye taşındı ---
 We solved a safety first, lexicographic multi objective optimisation problem. Candidate designs were ordered by the triplet \((f_{\mathrm{pen}}, f_1, f_2)\), with \(f_1 = \langle\mathrm{PFA}\rangle\) and \(f_2 = \langle\mathrm{IDR}\rangle\), and we examined the Pareto trade-off in the \((f_1,f_2)\) plane for solutions with \(f_{\mathrm{pen}}\approx 0\). Figure~\ref{fig:ga_flowchart} sketches the workflow. The aim was to identify device parameter vectors \(\boldsymbol{d}\) that reduce both the record mean roof peak floor acceleration (PFA) and the record-mean maximum interstorey drift ratio (IDR). All metrics were evaluated on responses restricted to the Arias-intensity window \([t_5,t_{95}]\) for a fixed set of ten intensity-scaled ground motions.
 
-% --- REVİZYON: Figür, metinden sonraya taşındı ---
 \begin{figure}[!t]
   \centering
-  % REVİZYON: Figür, sayfaya sığması için küçültüldü
   \includegraphics[width=1\linewidth]{GA.pdf}
   \caption{Flowchart of the NSGA-II optimization process, illustrating population evaluation, safety screening (hard constraints), and multi objective ranking ($f_{\mathrm{pen}}, f_1, f_2$).}
   \label{fig:ga_flowchart}
 \end{figure}
 
-% \FloatBarrier komutu kaldırıldı.
 
 \subsection{Objectives and Safety Constraints}\label{sec:opt_obj}
 The primary performance objectives are the record wise arithmetic means of the structural demands:
@@ -686,7 +672,6 @@ in Eq.~\eqref{eq:Ploss} and with the audit in Table~\ref{tab:safety-verification
 The present framework is demonstrated on a single, planar, first mode dominated ten storey shear frame with one equivalent device per interstorey level and a single family of silicone oils. The damper model is assembled from literature based hydro thermal building blocks and calibrated against manufacturer property data rather than against a dedicated prototype test for this particular hardware, and the optimisation is run on a fixed set of ten horizontal ground motions. As such, the results should be read as a proof of concept for this archetype, not as a general recipe covering all FVD equipped buildings and bridges.
 
 From an engineering standpoint, the optimized device sits in the middle of the explored design space and combines a moderate piston diameter, a relatively large number of small orifices, an intermediate reference viscosity and an intermediate thermal conductance; this mix yields substantial response reduction while keeping pressure and temperature in a conservative range (Table~\ref{tab:optimized-params}). Within these limits, the workflow complements standard code-oriented procedures with a more explicit treatment of damper physics. For a chosen building archetype, an engineer may fix a target IM band level, set application-specific QC thresholds (for example, consistent with EN~15129 limits), and then use a multi-objective search to map out a family of safe and efficient FVD designs that can later be condensed into design charts or surrogate models for routine use \citep{sist:2018:en15129,TaylorDevices2024}. Future work should address the remaining gaps by (i) validating the coupled thermal and hydraulic model against prototype self heating tests, (ii) extending the framework to three dimensional building archetypes with plan irregularity and torsional response and to alternative damper layouts (for example, perimeter frames, corner braces, outrigger levels or partial storey coverage), (iii) exploring bridge applications in which FVDs already play a key role, and (iv) incorporating life cycle cost, ageing and maintenance metrics, and possibly semi active valve laws, into the objective set so that structural safety, device durability and economic performance can be optimised jointly within a performance based design loop. A direct, one to one calibration of the present hydro thermal damper model against a new self heating test campaign for a specific prototype is therefore left to future work; here the constitutive choices and parameter windows are inherited from specimen scale experimental and CFD studies on civil FVDs \citep{Frings2017,Zhong2020,Lak2023,Zhang2024}, and the focus is on how such a physically informed device behaves when it is optimised and embedded in a ten storey shear frame under strong ground motions.
-% --- BURAYA EKLE ---
 \FloatBarrier        % tüm figür ve tabloları bu satırın üstünde çöker
 
 
@@ -696,15 +681,12 @@ that could have appeared to influence the work reported in this paper.
 
 \FloatBarrier
 
-% --------------------
-%% --- Appendices (place before the bibliography) ---
 \appendix
 \section{Supplementary symbols and derived quantities}\label{app:derived}
 \setcounter{table}{0}
 \renewcommand{\thetable}{A.\arabic{table}}
 \renewcommand{\theHtable}{A\arabic{table}}
 
-% --- TABLO A.1 ---
 \begin{table}[htbp]
 \centering\small
 \caption{Core structural and coupling symbols (definitions and SI units).}
@@ -860,7 +842,6 @@ $L_h$        & $\rho L_{\mathrm{ori}}/A_o^2$ & Hydraulic inertia. \\
 
 \FloatBarrier        % deklarasyonla ilgili float bırakmayalım
 \clearpage           % Appendix mutlaka yeni sayfanın tepesinde başlasın
-% --- BIBLIOGRAPHY SECTION (REVISED) ---
 \begingroup
 \sloppy
 \raggedright
@@ -869,7 +850,6 @@ $L_h$        & $\rho L_{\mathrm{ori}}/A_o^2$ & Hydraulic inertia. \\
 \IfFileExists{bibtext.bib}{%
   \bibliography{bibtext}%
 }{%
-  % If 'bibtex.bib' is not found, it prints a placeholder
   \begin{thebibliography}{00}
   \bibitem[{Placeholder(2025)}]{placeholder2025}
   Placeholder Author, ``CRITICAL ERROR: 'bibtext.bib' file not found. Please create it and add BibTeX entries,'' (2025).
